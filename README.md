@@ -70,16 +70,18 @@ T003 uses the PostgreSQL server running locally on your machine. Docker Compose 
 4. Set database URLs in `.env`:
 
    ```bash
-   DATABASE_URL="postgresql://<user>:<password>@localhost:5432/sme_invoicing_dev"
-   TEST_DATABASE_URL="postgresql://<user>:<password>@localhost:5432/sme_invoicing_test"
+   DATABASE_URL="postgresql://your_user:your_password@localhost:5432/sme_invoicing_dev"
+   TEST_DATABASE_URL="postgresql://your_user:your_password@localhost:5432/sme_invoicing_test"
    ```
 
    If local PostgreSQL uses peer/trust authentication and no password is required:
 
    ```bash
-   DATABASE_URL="postgresql://<user>@localhost:5432/sme_invoicing_dev"
-   TEST_DATABASE_URL="postgresql://<user>@localhost:5432/sme_invoicing_test"
+   DATABASE_URL="postgresql://your_user@localhost:5432/sme_invoicing_dev"
+   TEST_DATABASE_URL="postgresql://your_user@localhost:5432/sme_invoicing_test"
    ```
+
+   Replace `your_user` and `your_password` with real local PostgreSQL credentials. Do not include literal placeholder brackets such as `<user>`.
 
 5. Run migrations:
 

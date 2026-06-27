@@ -14,7 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
-    "db:test:migrate": "DATABASE_URL=$TEST_DATABASE_URL drizzle-kit migrate"
+    "db:test:migrate": "drizzle-kit migrate --config drizzle.test.config.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
