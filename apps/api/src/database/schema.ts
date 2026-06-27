@@ -1,3 +1,161 @@
-// Drizzle schema tables will be introduced in the relevant implementation task.
-// T002 intentionally avoids creating database tables or migrations.
-export {};
+import { relations } from "drizzle-orm";
+import {
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar
+} from "drizzle-orm/pg-core";
+
+export const organisationRoleEnum = pgEnum("organisation_role", [
+  "owner",
+  "admin",
+  "accountant",
+  "viewer"
+]);
+
+export const organisationMemberStatusEnum = pgEnum("organisation_member_status", [
+  "active",
+  "suspended",
+  "removed"
+]);
+
+const timestamps = {
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+};
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  ...timestamps
+});
+
+export const organisations = pgTable("organisations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 220 }).notNull().unique(),
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+  ...timestamps
+});
+
+export const organisationMembers = pgTable(
+  "organisation_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: organisationRoleEnum("role").notNull(),
+    status: organisationMemberStatusEnum("status").notNull().default("active"),
+    ...timestamps
+  },
+  (table) => ({
+    organisationUserUnique: uniqueIndex("organisation_members_org_user_unique").on(
+      table.organisationId,
+      table.userId
+    )
+  })
+);
+
+export const businessProfiles = pgTable("business_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organisationId: uuid("organisation_id")
+    .notNull()
+    .unique()
+    .references(() => organisations.id, { onDelete: "cascade" }),
+  businessName: varchar("business_name", { length: 200 }),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 50 }),
+  address: text("address"),
+  logoFileId: uuid("logo_file_id"),
+  setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
+  ...timestamps
+});
+
+export const refreshTokens = pgTable("refresh_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  ...timestamps
+});
+
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organisationId: uuid("organisation_id").references(() => organisations.id, {
+    onDelete: "set null"
+  }),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 120 }).notNull(),
+  entityType: varchar("entity_type", { length: 120 }).notNull(),
+  entityId: uuid("entity_id"),
+  metadataRedacted: jsonb("metadata_redacted").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+  memberships: many(organisationMembers),
+  refreshTokens: many(refreshTokens)
+}));
+
+export const organisationsRelations = relations(organisations, ({ many, one }) => ({
+  members: many(organisationMembers),
+  businessProfile: one(businessProfiles),
+  auditLogs: many(auditLogs)
+}));
+
+export const organisationMembersRelations = relations(organisationMembers, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [organisationMembers.organisationId],
+    references: [organisations.id]
+  }),
+  user: one(users, {
+    fields: [organisationMembers.userId],
+    references: [users.id]
+  })
+}));
+
+export const businessProfilesRelations = relations(businessProfiles, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [businessProfiles.organisationId],
+    references: [organisations.id]
+  })
+}));
+
+export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [refreshTokens.userId],
+    references: [users.id]
+  })
+}));
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [auditLogs.organisationId],
+    references: [organisations.id]
+  }),
+  actor: one(users, {
+    fields: [auditLogs.actorUserId],
+    references: [users.id]
+  })
+}));
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Organisation = typeof organisations.$inferSelect;
+export type OrganisationMember = typeof organisationMembers.$inferSelect;
+export type BusinessProfile = typeof businessProfiles.$inferSelect;
+export type RefreshToken = typeof refreshTokens.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

@@ -9,7 +9,12 @@
     "start": "node dist/main.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:push": "drizzle-kit push",
+    "db:test:migrate": "drizzle-kit migrate --config drizzle.test.config.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -17,10 +22,13 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/swagger": "^11.0.0",
+    "argon2": "^0.44.0",
     "class-transformer": "^0.5.0",
     "class-validator": "^0.14.0",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.44.0",
     "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.0.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.0.0",
@@ -29,6 +37,7 @@
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
     "@types/jest": "^29.5.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.0.0",
     "drizzle-kit": "^0.31.0",

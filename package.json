@@ -9,6 +9,11 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "db:generate": "pnpm --filter @sme-invoicing/api db:generate",
+    "db:migrate": "pnpm --filter @sme-invoicing/api db:migrate",
+    "db:studio": "pnpm --filter @sme-invoicing/api db:studio",
+    "db:push": "pnpm --filter @sme-invoicing/api db:push",
+    "db:test:migrate": "pnpm --filter @sme-invoicing/api db:test:migrate",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
