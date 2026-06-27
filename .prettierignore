@@ -1,0 +1,9 @@
+node_modules
+.turbo
+dist
+coverage
+.next
+pnpm-lock.yaml
+
+docs/**/*.md
+.github/pull_request_template.md

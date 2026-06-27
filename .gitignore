@@ -1,0 +1,15 @@
+node_modules
+.turbo
+dist
+coverage
+.next
+out
+
+.env
+.env.*
+!.env.example
+
+*.log
+*.tsbuildinfo
+.DS_Store
+pnpm-debug.log*
