@@ -64,7 +64,10 @@ Rules:
 | `GET /team/invitations` | Required | Owner/Admin | Query filters | `{ invitations }` | Forbidden. |
 | `POST /team/invitations/:id/revoke` | Required | Owner/Admin | None | `{ invitation }` | Not found, already accepted. |
 | `GET /team/members` | Required | Owner/Admin | None | `{ members }` | Forbidden. |
-| `POST /invitations/:token/accept` | User auth or registration flow | Invited email | `{ name?, password? }` | `{ user, organisation, membership }` | Invalid, expired, revoked, email mismatch. |
+| `PATCH /team/members/:id` | Required | Owner/Admin | `{ role?, status? }` | `{ member }` | Not found, forbidden target role, self-management. |
+| `POST /team/members/:id/remove` | Required | Owner/Admin | None | `{ member }` | Not found, forbidden target role, self-removal. |
+| `GET /invitations/:token` | Public | None | None | `{ invitation: { organisationName, email, role, expiresAt } }` | Invalid, expired, revoked, accepted. |
+| `POST /invitations/:token/accept` | User auth or registration flow | Invited email | Existing user: `{ mode: "existing" }`; new user: `{ mode: "new", name, password }` | `{ user, organisation, membership, accessToken, refreshToken, onboardingRequired }` | Invalid, expired, revoked, email mismatch. |
 
 Rules:
 
@@ -74,6 +77,12 @@ Rules:
 - Accepted invite creates organisation membership.
 - A user is not an organisation member until the invitation is accepted.
 - Duplicate pending invitations for the same organisation and email must be blocked.
+- Owner can invite Admin, Accountant, and Viewer.
+- Admin can invite Accountant and Viewer only.
+- Owner can update/remove Admin, Accountant, and Viewer members.
+- Admin can update/remove Accountant and Viewer members only.
+- Owner transfer and Owner removal are out of scope for the MVP.
+- Production email delivery is deferred; the create-invitation response may include `inviteUrl` for development/demo use.
 
 ## Customers
 

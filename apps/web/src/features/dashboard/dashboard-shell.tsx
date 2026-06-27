@@ -88,6 +88,16 @@ export function DashboardShell() {
           Logout
         </button>
       </div>
+      {["owner", "admin"].includes(me.membership.role) ? (
+        <div className="mt-6 border-t border-slate-100 pt-5">
+          <a
+            className="inline-flex rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white"
+            href="/settings/team"
+          >
+            Manage team
+          </a>
+        </div>
+      ) : null}
     </section>
   );
 }

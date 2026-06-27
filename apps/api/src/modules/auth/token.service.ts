@@ -39,8 +39,16 @@ export class TokenService {
     return randomBytes(48).toString("base64url");
   }
 
+  generateInvitationToken(): string {
+    return randomBytes(48).toString("base64url");
+  }
+
   hashRefreshToken(refreshToken: string): string {
     return createHmac("sha256", this.refreshSecret).update(refreshToken).digest("hex");
+  }
+
+  hashInvitationToken(invitationToken: string): string {
+    return createHmac("sha256", this.refreshSecret).update(invitationToken).digest("hex");
   }
 
   getRefreshTokenExpiry(): Date {
