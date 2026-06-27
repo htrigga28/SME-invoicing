@@ -8,5 +8,6 @@ onlyBuiltDependencies:
   - sharp
 allowBuilds:
   "@scarf/scarf": true
+  argon2: true
   esbuild: true
   sharp: true
