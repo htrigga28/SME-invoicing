@@ -152,7 +152,7 @@ Seeded Owner/Admin users can access `/settings/team`. Seeded Accountant/Viewer u
 
 The seed also adds 12 realistic demo customers to the demo organisation. Ten are active and two are archived so `/customers` can demonstrate active, archived, and all status filters.
 
-The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. T006 intentionally does not seed paid or partially paid invoices because payment and reconciliation flows start in later tasks.
+The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. It also prints sample public invoice URLs for sent/viewed/overdue invoices. Paid and partially paid invoices are intentionally not seeded yet because payment and reconciliation flows start in later tasks.
 
 ## Auth Session Trade-Off
 
@@ -160,7 +160,7 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 ## Current Implementation Status
 
-T006 adds invoice core on top of the auth, tenant context, RBAC foundation, database foundation, business profile onboarding flow, team management, and customer management. It intentionally does not implement public invoice pages, payments, receipts, dashboard metrics, exports, or Paystack logic.
+T007 adds the public customer-facing invoice page on top of invoice core. It intentionally does not implement Paystack payment initialization, payment records, receipts, dashboard metrics, exports, email, PDF generation, or reminders.
 
 Implemented so far:
 
@@ -179,5 +179,8 @@ Implemented so far:
 - Idempotent development seed data with active and archived demo customers.
 - Invoice list, create, draft edit, detail, send, cancel, and void API/UI.
 - Server-side invoice numbering, public tokens, totals, status events, and invoice seed data.
+- Public invoice API and `/invoice/[token]` page with customer-facing invoice details.
+- Public view tracking that moves sent invoices to viewed without duplicating transitions.
+- Payment placeholder copy for the next Paystack milestone.
 
-Next planned task: T007 public invoice page.
+Next planned task: T008 Paystack payment initialization.

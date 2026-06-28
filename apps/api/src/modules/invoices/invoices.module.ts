@@ -10,10 +10,11 @@ import { TokenService } from "../auth/token.service";
 import { TenantContextService } from "../tenant/tenant-context.service";
 import { InvoicesController } from "./invoices.controller";
 import { InvoicesService } from "./invoices.service";
+import { PublicInvoicesController } from "./public-invoices.controller";
 
 @Module({
   imports: [ConfigModule, DatabaseModule, AuditLogModule],
-  controllers: [InvoicesController],
+  controllers: [InvoicesController, PublicInvoicesController],
   providers: [
     AuthRepository,
     InvoicesService,

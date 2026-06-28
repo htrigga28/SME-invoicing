@@ -39,7 +39,14 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Cancel invoice | Set `cancelled` only when invoice is not fully paid. |
 | Void invoice | Set `void` for correction/error cases and retain all records. |
 
-T006 implements create, send, draft edit, cancel, and void transitions only. Public view transitions, payment-derived statuses, receipt generation, and Paystack-driven recalculation are reserved for later tasks.
+T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. Payment-derived statuses, receipt generation, and Paystack-driven recalculation are reserved for later tasks.
+
+Public view tracking rules:
+
+- Public invoice view moves `sent` to `viewed` only.
+- Repeated public views do not create repeated viewed status events.
+- `overdue`, `partially_paid`, `paid`, `cancelled`, and `void` invoices must not move to `viewed`.
+- Public view events use `actor_user_id = null` and safe redacted metadata only.
 
 ## Amount Recalculation
 

@@ -44,6 +44,7 @@ export function InvoiceDetailContent({
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [dialogAction, setDialogAction] = useState<DialogAction>(null);
   const [reason, setReason] = useState("");
   const [isMutating, setIsMutating] = useState(false);
@@ -116,6 +117,17 @@ export function InvoiceDetailContent({
     }
   }
 
+  async function handleCopyPublicUrl(publicUrl: string) {
+    setCopySuccess(null);
+
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopySuccess("Public URL copied.");
+    } catch {
+      setCopySuccess("Copy failed. Select and copy the URL manually.");
+    }
+  }
+
   if (state === "loading") {
     return <StatusPanel message="Loading invoice..." />;
   }
@@ -144,6 +156,10 @@ export function InvoiceDetailContent({
     canCancelVoid && ["draft", "sent", "viewed", "overdue"].includes(invoice.status);
   const canVoid =
     canCancelVoid && ["draft", "sent", "viewed", "overdue", "cancelled"].includes(invoice.status);
+  const canSharePublicUrl =
+    response.publicUrl &&
+    invoice.publicAccessEnabled &&
+    ["sent", "viewed", "overdue", "partially_paid", "paid"].includes(invoice.status);
 
   return (
     <section className="space-y-5">
@@ -278,17 +294,28 @@ export function InvoiceDetailContent({
 
           <div className="rounded-lg border border-slate-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-slate-950">Public link</h2>
-            {response.publicUrl ? (
-              <p className="mt-2 break-all rounded-md bg-slate-50 p-3 text-sm text-slate-700">
-                {response.publicUrl}
-              </p>
+            {canSharePublicUrl ? (
+              <>
+                <p className="mt-2 break-all rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+                  {response.publicUrl}
+                </p>
+                <button
+                  className="mt-3 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                  onClick={() => void handleCopyPublicUrl(response.publicUrl!)}
+                  type="button"
+                >
+                  Copy public URL
+                </button>
+                {copySuccess ? <p className="mt-2 text-sm text-slate-600">{copySuccess}</p> : null}
+              </>
             ) : (
               <p className="mt-2 text-sm text-slate-600">
-                Send this draft to enable public access.
+                Send this draft to enable public access. Cancelled and void invoices are not
+                publicly available.
               </p>
             )}
             <p className="mt-3 text-xs text-slate-500">
-              Public invoice page will be completed in T007.
+              The public page is customer-facing and does not expose internal app data.
             </p>
           </div>
         </aside>

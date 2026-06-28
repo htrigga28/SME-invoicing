@@ -136,17 +136,22 @@ Rules:
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
 | `GET /public/invoices/:token` | Public | None | None | `{ invoice, business, customer, lineItems, paymentSummary }` |
-| `POST /public/invoices/:token/view` | Public | None | `{ viewedAt? }` | `{ success: true }` |
+| `POST /public/invoices/:token/view` | Public | None | None | `{ success: true }` |
 | `POST /public/invoices/:token/pay` | Public | None | `{}` | `{ authorizationUrl, accessCode, reference }` |
 
 Rules:
 
 - No authentication required.
 - Token must be unguessable.
-- Public invoice lookup requires a valid `public_token`, `public_access_enabled = true`, and an invoice that is not `void`.
-- Invalid token returns safe error.
-- Public response exposes only invoice/payment-facing data.
+- T007 implements public invoice lookup and view tracking only.
+- Public invoice lookup requires a valid `public_token`, `public_access_enabled = true`, and an invoice that is not `draft`, `cancelled`, or `void`.
+- Invalid, disabled, cancelled, void, or otherwise unavailable invoice links return the same safe not-found response.
+- Public response exposes only customer-facing invoice data: invoice display fields, business contact fields, customer billing fields, line items, and payment placeholder.
 - Public page must not expose internal organisation/member data.
+- Public view tracking moves `sent` to `viewed` only once and writes a safe status event and audit log.
+- Repeated public views must not create duplicate viewed transitions.
+- Overdue invoices must not move back to `viewed`.
+- `POST /public/invoices/:token/pay` is T008 and must not be implemented in T007.
 - Payment initialization amount is calculated server-side from `invoice.balance_due_kobo`.
 - The frontend must never send or control the payable amount.
 - Public partial payment entry is not exposed in MVP.
