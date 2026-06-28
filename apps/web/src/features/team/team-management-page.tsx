@@ -26,6 +26,15 @@ const roleLabels: Record<string, string> = {
 };
 
 const teamRoles = ["owner", "admin"] as const;
+const selectControlClassName =
+  "min-w-40 appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-10 text-sm";
+const selectControlStyle = {
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E\")",
+  backgroundPosition: "right 0.85rem center",
+  backgroundRepeat: "no-repeat",
+  backgroundSize: "1rem"
+};
 
 export function TeamManagementPage() {
   return (
@@ -298,18 +307,19 @@ function MemberRow({
 
   return (
     <div className="border-b border-slate-100 py-4 last:border-0">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="min-w-0 pt-2">
           <p className="font-medium text-slate-950">{member.user?.name ?? "Unknown user"}</p>
           <p className="text-sm text-slate-600">
             {member.user?.email} · {roleLabels[member.role]} · {member.status}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 sm:grid-cols-[10rem_10rem_4.75rem_6rem]">
           <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className={selectControlClassName}
             disabled={!canManage}
             onChange={(event) => setRole(event.target.value as InviteRole)}
+            style={selectControlStyle}
             value={role}
           >
             {roleOptions.map((option) => (
@@ -319,9 +329,10 @@ function MemberRow({
             ))}
           </select>
           <select
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className={selectControlClassName}
             disabled={!canManage || member.status === "removed"}
             onChange={(event) => setStatus(event.target.value as "active" | "suspended")}
+            style={selectControlStyle}
             value={status}
           >
             <option value="active">Active</option>

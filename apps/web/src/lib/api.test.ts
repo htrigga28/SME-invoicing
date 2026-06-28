@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getApiBaseUrl } from "./api";
+import { ApiRequestError, apiRequest, getApiBaseUrl } from "./api";
 
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
 
 afterEach(() => {
+  vi.unstubAllGlobals();
+
   if (originalApiUrl === undefined) {
     delete process.env.NEXT_PUBLIC_API_URL;
     return;
@@ -24,5 +26,20 @@ describe("getApiBaseUrl", () => {
     delete process.env.NEXT_PUBLIC_API_URL;
 
     expect(getApiBaseUrl()).toBe("http://localhost:4000");
+  });
+
+  it("throws a typed error with response status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401
+      })
+    );
+
+    await expect(apiRequest("/me")).rejects.toMatchObject({
+      name: "ApiRequestError",
+      status: 401
+    } satisfies Partial<ApiRequestError>);
   });
 });

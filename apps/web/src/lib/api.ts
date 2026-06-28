@@ -1,5 +1,19 @@
 const DEFAULT_API_URL = "http://localhost:4000";
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+export function isApiRequestError(error: unknown): error is ApiRequestError {
+  return error instanceof ApiRequestError;
+}
+
 export function getApiBaseUrl() {
   return process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL;
 }
@@ -33,7 +47,7 @@ export async function apiRequest<TResponse>(
   const response = await fetch(new URL(path, getApiBaseUrl()), request);
 
   if (!response.ok) {
-    throw new Error(`API request failed with status ${response.status}`);
+    throw new ApiRequestError(`API request failed with status ${response.status}`, response.status);
   }
 
   return response.json() as Promise<TResponse>;

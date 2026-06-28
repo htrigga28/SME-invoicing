@@ -6,6 +6,7 @@ import React, { useEffect, useState } from "react";
 import { getMe, logout } from "@/features/auth/auth-api";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
 import type { MeResponse, Membership } from "@/features/auth/types";
+import { isApiRequestError } from "@/lib/api";
 
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -60,6 +61,12 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
         setState("ready");
       })
       .catch((loadError) => {
+        if (isApiRequestError(loadError) && loadError.status === 401) {
+          clearStoredSession();
+          router.replace("/login");
+          return;
+        }
+
         setError(loadError instanceof Error ? loadError.message : "Could not load workspace.");
         setState("error");
       });
@@ -87,7 +94,11 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
   }
 
   if (!context) {
-    return null;
+    return (
+      <main className="min-h-screen bg-slate-50 p-6">
+        <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
+      </main>
+    );
   }
 
   return (
