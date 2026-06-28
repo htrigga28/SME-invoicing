@@ -78,6 +78,7 @@ A user is not an organisation member until an invitation is accepted. Invitation
 | invited_by_user_id | References users. |
 | expires_at | Expiration timestamp. |
 | accepted_at | Nullable acceptance timestamp. |
+| revoked_at | Nullable revocation timestamp. |
 | created_at, updated_at | Timestamps. |
 
 Constraints:

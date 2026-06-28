@@ -45,6 +45,17 @@ Customers paying public invoices do not need a platform account.
 
 Admin cannot invite Owner or transfer ownership.
 
+## Team Management Permissions
+
+| Actor | Can manage |
+| --- | --- |
+| Owner | Admin, Accountant, Viewer |
+| Admin | Accountant, Viewer |
+| Accountant | Nobody |
+| Viewer | Nobody |
+
+Owner role transfer, Owner removal, and self-removal are out of scope for the MVP.
+
 ## Registration and Invitation Rules
 
 - Direct public registration creates a new organisation.

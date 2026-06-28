@@ -52,7 +52,7 @@ Required categories:
 
 ## Local PostgreSQL Setup
 
-T003 uses the PostgreSQL server running locally on your machine. Docker Compose is not the primary database workflow for this task.
+The app uses the PostgreSQL server running locally on your machine. Docker Compose is not the primary database workflow.
 
 1. Ensure PostgreSQL is running locally on port `5432`.
 2. Create the development database:
@@ -83,20 +83,40 @@ T003 uses the PostgreSQL server running locally on your machine. Docker Compose 
 
    Replace `your_user` and `your_password` with real local PostgreSQL credentials. Do not include literal placeholder brackets such as `<user>`.
 
-5. Run migrations:
+5. Install dependencies:
+
+   ```bash
+   pnpm install
+   ```
+
+6. Run migrations:
 
    ```bash
    pnpm db:migrate
    ```
 
-6. Run validation:
+7. Seed development demo data:
 
    ```bash
-   pnpm lint
-   pnpm typecheck
-   pnpm test
-   pnpm build
+   pnpm db:seed
    ```
+
+8. Start the app:
+
+   ```bash
+   pnpm dev
+   ```
+
+9. Login at `/login` with `owner@demo.com` / `DemoPass123!`.
+
+10. Run validation:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
 
 ## Scripts
 
@@ -112,17 +132,31 @@ pnpm db:generate
 pnpm db:migrate
 pnpm db:studio
 pnpm db:test:migrate
+pnpm db:seed
 ```
 
 `pnpm db:push` is available for local development experiments only. Migrations remain the source of truth.
 
+## Demo Login
+
+Run `pnpm db:migrate` and `pnpm db:seed` first. The seed is idempotent and can be run multiple times without duplicating the demo organisation, users, memberships, business profile, or seeded invitations.
+
+| Role       | Email                 | Password       |
+| ---------- | --------------------- | -------------- |
+| Owner      | `owner@demo.com`      | `DemoPass123!` |
+| Admin      | `admin@demo.com`      | `DemoPass123!` |
+| Accountant | `accountant@demo.com` | `DemoPass123!` |
+| Viewer     | `viewer@demo.com`     | `DemoPass123!` |
+
+Seeded Owner/Admin users can access `/settings/team`. Seeded Accountant/Viewer users should receive an access-denied state. Pending development invitation URLs are printed to the console when `pnpm db:seed` runs; raw invitation tokens are not stored in the database.
+
 ## Auth Session Trade-Off
 
-The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps T003 simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
+The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps the MVP simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
 
 ## Current Implementation Status
 
-T003 adds the auth, session, tenant context, RBAC foundation, database foundation, and business profile onboarding flow. It intentionally does not implement team invitations, customers, invoices, payments, receipts, dashboard metrics, exports, or Paystack logic.
+T004 adds team invitations, member management, and development seed data on top of the auth, tenant context, RBAC foundation, database foundation, and business profile onboarding flow. It intentionally does not implement customers, invoices, payments, receipts, dashboard metrics, exports, or Paystack logic.
 
 Implemented so far:
 
@@ -134,5 +168,8 @@ Implemented so far:
 - Auth endpoints for register, login, refresh, logout, and current user.
 - Business profile onboarding endpoints and UI.
 - Dashboard shell gated by onboarding status.
+- Team invitation and member management endpoints.
+- Team settings and invitation acceptance UI.
+- Idempotent development seed data with demo users and invitation records.
 
-Next planned task: T004 team invitations and member management.
+Next planned task: T005 customer management.

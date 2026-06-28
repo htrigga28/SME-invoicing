@@ -14,6 +14,7 @@
     "db:studio": "pnpm --filter @sme-invoicing/api db:studio",
     "db:push": "pnpm --filter @sme-invoicing/api db:push",
     "db:test:migrate": "pnpm --filter @sme-invoicing/api db:test:migrate",
+    "db:seed": "pnpm --filter @sme-invoicing/api db:seed",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

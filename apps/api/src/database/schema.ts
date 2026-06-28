@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   jsonb,
   pgEnum,
@@ -21,6 +21,13 @@ export const organisationMemberStatusEnum = pgEnum("organisation_member_status",
   "active",
   "suspended",
   "removed"
+]);
+
+export const organisationInvitationStatusEnum = pgEnum("organisation_invitation_status", [
+  "pending",
+  "accepted",
+  "revoked",
+  "expired"
 ]);
 
 const timestamps = {
@@ -66,6 +73,32 @@ export const organisationMembers = pgTable(
   })
 );
 
+export const organisationInvitations = pgTable(
+  "organisation_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    role: organisationRoleEnum("role").notNull(),
+    status: organisationInvitationStatusEnum("status").notNull().default("pending"),
+    invitedByUserId: uuid("invited_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    pendingInvitationEmailUnique: uniqueIndex("organisation_invitations_pending_email_unique")
+      .on(table.organisationId, sql`lower(${table.email})`)
+      .where(sql`${table.status} = 'pending'`)
+  })
+);
+
 export const businessProfiles = pgTable("business_profiles", {
   id: uuid("id").primaryKey().defaultRandom(),
   organisationId: uuid("organisation_id")
@@ -107,11 +140,13 @@ export const auditLogs = pgTable("audit_logs", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(organisationMembers),
+  sentInvitations: many(organisationInvitations),
   refreshTokens: many(refreshTokens)
 }));
 
 export const organisationsRelations = relations(organisations, ({ many, one }) => ({
   members: many(organisationMembers),
+  invitations: many(organisationInvitations),
   businessProfile: one(businessProfiles),
   auditLogs: many(auditLogs)
 }));
@@ -123,6 +158,17 @@ export const organisationMembersRelations = relations(organisationMembers, ({ on
   }),
   user: one(users, {
     fields: [organisationMembers.userId],
+    references: [users.id]
+  })
+}));
+
+export const organisationInvitationsRelations = relations(organisationInvitations, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [organisationInvitations.organisationId],
+    references: [organisations.id]
+  }),
+  invitedBy: one(users, {
+    fields: [organisationInvitations.invitedByUserId],
     references: [users.id]
   })
 }));
@@ -156,6 +202,7 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Organisation = typeof organisations.$inferSelect;
 export type OrganisationMember = typeof organisationMembers.$inferSelect;
+export type OrganisationInvitation = typeof organisationInvitations.$inferSelect;
 export type BusinessProfile = typeof businessProfiles.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
