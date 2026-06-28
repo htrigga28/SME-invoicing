@@ -88,13 +88,22 @@ Rules:
 
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
-| `GET /customers` | Required | Owner/Admin/Accountant/Viewer | Query: search, status, page | `{ customers, pagination }` |
+| `GET /customers` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?=active|archived|all`, `page?`, `limit?` | `{ customers, pagination }` |
 | `POST /customers` | Required | Owner/Admin/Accountant | `{ name, email, phone?, billingAddress? }` | `{ customer }` |
-| `GET /customers/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ customer, invoicesSummary }` |
-| `PATCH /customers/:id` | Required | Owner/Admin/Accountant | Customer fields | `{ customer }` |
-| `POST /customers/:id/archive` | Required | Owner/Admin/Accountant | None | `{ customer }` |
+| `GET /customers/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ customer, invoiceSummary }` |
+| `PATCH /customers/:id` | Required | Owner/Admin/Accountant | `{ name?, email?, phone?, billingAddress? }` | `{ customer }` |
+| `POST /customers/:id/archive` | Required | Owner/Admin/Accountant | `{ reason? }` | `{ customer }` |
 
 Tenant rule: customer lookup and mutation must include current organisation scope.
+
+Customer rules:
+
+- Customer responses include `id`, `name`, `email`, `phone`, `billingAddress`, `status`, `archivedAt`, `createdAt`, and `updatedAt`.
+- `organisationId` is not accepted from the frontend and is not exposed in customer responses.
+- Emails are normalized to lowercase before persistence.
+- Duplicate active customer emails are blocked within the same organisation.
+- Archived customers are excluded from the default list, remain readable, and cannot be updated in the MVP.
+- `invoiceSummary` is a placeholder until T006 Invoice Core.
 
 ## Invoices
 

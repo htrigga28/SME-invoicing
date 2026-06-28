@@ -8,6 +8,7 @@ import { Pool } from "pg";
 
 import {
   businessProfiles,
+  customers,
   organisationInvitations,
   organisationMembers,
   organisations,
@@ -54,6 +55,83 @@ const demoInvitations = [
     status: "revoked",
     token: "dev-revoked-accountant-demo-token",
     daysFromNow: 7
+  }
+] as const;
+
+const demoCustomers = [
+  {
+    name: "Lagos Bright Prints",
+    email: "accounts@lagosbrightprints.test",
+    phone: "+2348010000001",
+    billingAddress: "14 Allen Avenue, Ikeja, Lagos"
+  },
+  {
+    name: "Northstar Foods Ltd",
+    email: "finance@northstarfoods.test",
+    phone: "+2348010000002",
+    billingAddress: "22 Ahmadu Bello Way, Victoria Island, Lagos"
+  },
+  {
+    name: "Lekki Dental Studio",
+    email: "billing@lekkidental.test",
+    phone: "+2348010000003",
+    billingAddress: "8 Admiralty Road, Lekki Phase 1, Lagos"
+  },
+  {
+    name: "BluePeak Logistics",
+    email: "ops@bluepeaklogistics.test",
+    phone: "+2348010000004",
+    billingAddress: "31 Airport Road, Ikeja, Lagos"
+  },
+  {
+    name: "Abuja Creative Hub",
+    email: "admin@abujacreativehub.test",
+    phone: "+2348010000005",
+    billingAddress: "6 Gana Street, Maitama, Abuja"
+  },
+  {
+    name: "Prime Tutors Academy",
+    email: "bursar@primetutors.test",
+    phone: "+2348010000006",
+    billingAddress: "10 Toyin Street, Ikeja, Lagos"
+  },
+  {
+    name: "Mainland Events Co",
+    email: "payments@mainlandevents.test",
+    phone: "+2348010000007",
+    billingAddress: "44 Bode Thomas Street, Surulere, Lagos"
+  },
+  {
+    name: "Greenline Pharmacy",
+    email: "accounts@greenlinepharmacy.test",
+    phone: "+2348010000008",
+    billingAddress: "19 Herbert Macaulay Way, Yaba, Lagos"
+  },
+  {
+    name: "Coral Edge Consulting",
+    email: "finance@coraledge.test",
+    phone: "+2348010000009",
+    billingAddress: "2 Ligali Ayorinde Street, Victoria Island, Lagos"
+  },
+  {
+    name: "Swift Repairs NG",
+    email: "billing@swiftrepairs.test",
+    phone: "+2348010000010",
+    billingAddress: "15 Ikorodu Road, Maryland, Lagos"
+  },
+  {
+    name: "Archived Customer One",
+    email: "archived.one@example.test",
+    phone: "+2348010000011",
+    billingAddress: "1 Old Marina Road, Lagos",
+    archived: true
+  },
+  {
+    name: "Archived Customer Two",
+    email: "archived.two@example.test",
+    phone: "+2348010000012",
+    billingAddress: "2 Old Marina Road, Lagos",
+    archived: true
   }
 ] as const;
 
@@ -229,9 +307,44 @@ async function main() {
       }
     }
 
+    for (const customer of demoCustomers) {
+      const archivedAt = "archived" in customer && customer.archived ? now : null;
+      const [existingCustomer] = await db
+        .select()
+        .from(customers)
+        .where(
+          and(eq(customers.organisationId, organisation.id), eq(customers.email, customer.email))
+        )
+        .limit(1);
+
+      if (existingCustomer) {
+        await db
+          .update(customers)
+          .set({
+            name: customer.name,
+            phone: customer.phone,
+            billingAddress: customer.billingAddress,
+            archivedAt,
+            updatedAt: now
+          })
+          .where(eq(customers.id, existingCustomer.id));
+      } else {
+        await db.insert(customers).values({
+          organisationId: organisation.id,
+          createdByUserId: owner.id,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          billingAddress: customer.billingAddress,
+          archivedAt
+        });
+      }
+    }
+
     console.log("Development seed complete.");
     console.log(`Demo organisation: ${organisationName}`);
     console.log("Demo password for all seeded users: DemoPass123!");
+    console.log(`Seeded demo customers: ${demoCustomers.length}`);
     console.log(
       "Dev-only pending invite URLs. Raw tokens are printed here only and are not stored:"
     );
