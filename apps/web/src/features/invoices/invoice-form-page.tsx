@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { primaryActionClassName, selectClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCustomers } from "@/features/customers/customers-api";
 import type { Customer } from "@/features/customers/types";
@@ -254,7 +255,7 @@ function InvoiceFormContent({
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Customer" error={errors.customerId}>
               <select
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                className={selectClassName}
                 disabled={isSubmitting}
                 onChange={(event) => updateField("customerId", event.target.value)}
                 value={form.customerId}
@@ -390,11 +391,7 @@ function InvoiceFormContent({
             >
               Cancel
             </Link>
-            <button
-              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-              disabled={isSubmitting}
-              type="submit"
-            >
+            <button className={primaryActionClassName} disabled={isSubmitting} type="submit">
               {isSubmitting ? "Saving..." : mode === "create" ? "Create invoice" : "Save changes"}
             </button>
           </div>

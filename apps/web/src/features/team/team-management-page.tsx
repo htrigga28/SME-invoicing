@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import {
+  bareSelectClassName,
+  primaryActionClassName,
+  selectClassName
+} from "@/components/ui/styles";
 import type { MeResponse } from "@/features/auth/types";
 
 import {
@@ -26,15 +31,6 @@ const roleLabels: Record<string, string> = {
 };
 
 const teamRoles = ["owner", "admin"] as const;
-const selectControlClassName =
-  "w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-10 text-sm";
-const selectControlStyle = {
-  backgroundImage:
-    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E\")",
-  backgroundPosition: "right 0.85rem center",
-  backgroundRepeat: "no-repeat",
-  backgroundSize: "1rem"
-};
 
 export function TeamManagementPage() {
   return (
@@ -210,7 +206,7 @@ function TeamManagementContent({ accessToken, me }: { accessToken: string; me: M
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Role</span>
             <select
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className={selectClassName}
               onChange={(event) => setRole(event.target.value as InviteRole)}
               value={role}
             >
@@ -223,7 +219,7 @@ function TeamManagementContent({ accessToken, me }: { accessToken: string; me: M
             </select>
           </label>
           <button
-            className="self-end rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            className={`${primaryActionClassName} self-end`}
             disabled={isSubmitting}
             type="submit"
           >
@@ -328,10 +324,9 @@ function MemberRow({
         </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_6rem]">
           <select
-            className={selectControlClassName}
+            className={bareSelectClassName}
             disabled={!canManage}
             onChange={(event) => setRole(event.target.value as TeamRole)}
-            style={selectControlStyle}
             value={role}
           >
             {roleOptions.map((option) => (
@@ -341,10 +336,9 @@ function MemberRow({
             ))}
           </select>
           <select
-            className={selectControlClassName}
+            className={bareSelectClassName}
             disabled={!canManage || member.status === "removed"}
             onChange={(event) => setStatus(event.target.value as "active" | "suspended")}
-            style={selectControlStyle}
             value={status}
           >
             <option value="active">Active</option>

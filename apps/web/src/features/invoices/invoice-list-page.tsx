@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { compactPrimaryActionClassName, selectClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCustomers } from "@/features/customers/customers-api";
 import type { Customer, Pagination } from "@/features/customers/types";
@@ -128,7 +129,7 @@ export function InvoiceListContent({
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Status</span>
             <select
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              className={selectClassName}
               onChange={(event) => setStatus(event.target.value as InvoiceStatus | "")}
               value={status}
             >
@@ -143,7 +144,7 @@ export function InvoiceListContent({
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Customer</span>
             <select
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              className={selectClassName}
               onChange={(event) => setCustomerId(event.target.value)}
               value={customerId}
             >
@@ -170,7 +171,7 @@ export function InvoiceListContent({
         <StatusPanel
           action={
             <button
-              className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+              className={compactPrimaryActionClassName}
               onClick={() => void loadInvoices()}
               type="button"
             >

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { primaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -222,7 +223,7 @@ function CustomerFormContent({
             Cancel
           </Link>
           <button
-            className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            className={primaryActionClassName}
             disabled={isArchived || isSubmitting}
             type="submit"
           >

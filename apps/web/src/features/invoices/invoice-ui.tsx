@@ -6,6 +6,8 @@ import {
   type InvoiceStatus
 } from "@sme-invoicing/shared";
 
+import { primaryActionClassName } from "@/components/ui/styles";
+
 export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
   const styles: Record<InvoiceStatus, string> = {
     draft: "bg-slate-100 text-slate-700 ring-slate-200",
@@ -49,7 +51,7 @@ export function PageHeader({
 
 export function PrimaryLink({ children, href }: { children: ReactNode; href: string }) {
   return (
-    <Link className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" href={href}>
+    <Link className={primaryActionClassName} href={href}>
       {children}
     </Link>
   );

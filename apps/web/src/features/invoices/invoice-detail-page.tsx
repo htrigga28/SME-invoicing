@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -124,7 +125,7 @@ export function InvoiceDetailContent({
       <StatusPanel
         action={
           <button
-            className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+            className={compactPrimaryActionClassName}
             onClick={() => void loadInvoice()}
             type="button"
           >
@@ -189,7 +190,7 @@ export function InvoiceDetailContent({
                 ) : null}
                 {canSend ? (
                   <button
-                    className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+                    className={compactPrimaryActionClassName}
                     onClick={() => setDialogAction("send")}
                     type="button"
                   >

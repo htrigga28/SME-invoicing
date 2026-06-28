@@ -1,6 +1,8 @@
 import Link from "next/link";
 import React, { type ReactNode } from "react";
 
+import { primaryActionClassName } from "@/components/ui/styles";
+
 import type { Customer } from "./types";
 
 export function CustomerStatusBadge({ status }: { status: Customer["status"] }) {
@@ -43,7 +45,7 @@ export function PageHeader({
 
 export function PrimaryLink({ children, href }: { children: ReactNode; href: string }) {
   return (
-    <Link className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" href={href}>
+    <Link className={primaryActionClassName} href={href}>
       {children}
     </Link>
   );
