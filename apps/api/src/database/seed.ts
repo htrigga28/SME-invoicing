@@ -412,6 +412,7 @@ async function main() {
     const activeCustomerEmails = demoCustomers
       .filter((customer) => !("archived" in customer && customer.archived))
       .map((customer) => customer.email);
+    const publicInvoiceUrls: string[] = [];
 
     for (const [index, status] of invoiceStatuses.entries()) {
       const sequenceNumber = index + 1;
@@ -460,6 +461,10 @@ async function main() {
       const publicToken = createHmac("sha256", refreshSecret)
         .update(`invoice:${invoiceNumber}`)
         .digest("hex");
+
+      if (["sent", "viewed", "overdue"].includes(status) && publicInvoiceUrls.length < 3) {
+        publicInvoiceUrls.push(`${frontendUrl}/invoice/${publicToken}`);
+      }
 
       const [existingInvoice] = await db
         .select()
@@ -594,6 +599,10 @@ async function main() {
     console.log("Demo password for all seeded users: DemoPass123!");
     console.log(`Seeded demo customers: ${demoCustomers.length}`);
     console.log(`Seeded demo invoices: ${invoiceStatuses.length}`);
+    console.log("Sample public invoice URLs:");
+    for (const invoiceUrl of publicInvoiceUrls) {
+      console.log(`- ${invoiceUrl}`);
+    }
     console.log(
       "Dev-only pending invite URLs. Raw tokens are printed here only and are not stored:"
     );

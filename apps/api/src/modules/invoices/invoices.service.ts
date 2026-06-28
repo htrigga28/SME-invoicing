@@ -12,11 +12,14 @@ import { and, asc, count, desc, eq, gte, ilike, lte, or, sql, type SQL } from "d
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { DatabaseService } from "../../database/database.service";
 import {
+  businessProfiles,
   auditLogs,
   customers,
   invoiceLineItems,
   invoiceStatusEvents,
   invoices,
+  organisations,
+  type BusinessProfile,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
@@ -38,6 +41,13 @@ type InvoiceStatusValue = Invoice["status"];
 type InvoiceWithCustomer = {
   customer: Customer;
   invoice: Invoice;
+};
+
+type PublicInvoiceRow = InvoiceWithCustomer & {
+  businessProfile: BusinessProfile | null;
+  organisation: {
+    name: string;
+  };
 };
 
 type SequenceExecutor = {
@@ -447,6 +457,70 @@ export class InvoicesService {
     return this.getInvoice(context, invoiceId);
   }
 
+  async getPublicInvoice(publicToken: string) {
+    const publicInvoice = await this.requirePublicInvoice(publicToken);
+    const lineItems = await this.findLineItems(
+      publicInvoice.invoice.organisationId,
+      publicInvoice.invoice.id
+    );
+
+    return this.toPublicInvoiceResponse(publicInvoice, lineItems);
+  }
+
+  async markPublicInvoiceViewed(publicToken: string) {
+    const publicInvoice = await this.requirePublicInvoice(publicToken);
+    const displayStatus = this.displayStatus(publicInvoice.invoice);
+
+    if (publicInvoice.invoice.status !== "sent" || displayStatus === "overdue") {
+      return { success: true };
+    }
+
+    const viewedAt = publicInvoice.invoice.viewedAt ?? new Date();
+
+    await this.databaseService.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(invoices)
+        .set({
+          status: "viewed",
+          viewedAt,
+          updatedAt: viewedAt
+        })
+        .where(and(eq(invoices.id, publicInvoice.invoice.id), eq(invoices.status, "sent")))
+        .returning();
+
+      if (!updated) {
+        return;
+      }
+
+      await tx.insert(invoiceStatusEvents).values({
+        organisationId: publicInvoice.invoice.organisationId,
+        invoiceId: publicInvoice.invoice.id,
+        fromStatus: "sent",
+        toStatus: "viewed",
+        reason: "invoice_viewed",
+        actorUserId: null,
+        metadataRedacted: {
+          invoiceNumber: publicInvoice.invoice.invoiceNumber,
+          source: "public_invoice_page"
+        }
+      });
+
+      await tx.insert(auditLogs).values({
+        organisationId: publicInvoice.invoice.organisationId,
+        actorUserId: null,
+        action: "invoice_viewed",
+        entityType: "invoice",
+        entityId: publicInvoice.invoice.id,
+        metadataRedacted: {
+          invoiceNumber: publicInvoice.invoice.invoiceNumber,
+          source: "public_invoice_page"
+        }
+      });
+    });
+
+    return { success: true };
+  }
+
   private async transitionInvoice(
     context: ActiveOrganisationContext,
     invoice: Invoice,
@@ -544,6 +618,40 @@ export class InvoicesService {
       .limit(1);
 
     return row as InvoiceWithCustomer | undefined;
+  }
+
+  private async findPublicInvoice(publicToken: string) {
+    const [row] = await this.databaseService.db
+      .select({
+        invoice: invoices,
+        customer: customers,
+        businessProfile: businessProfiles,
+        organisation: {
+          name: organisations.name
+        }
+      })
+      .from(invoices)
+      .innerJoin(customers, eq(customers.id, invoices.customerId))
+      .innerJoin(organisations, eq(organisations.id, invoices.organisationId))
+      .leftJoin(businessProfiles, eq(businessProfiles.organisationId, invoices.organisationId))
+      .where(eq(invoices.publicToken, publicToken))
+      .limit(1);
+
+    return row as PublicInvoiceRow | undefined;
+  }
+
+  private async requirePublicInvoice(publicToken: string) {
+    const publicInvoice = await this.findPublicInvoice(publicToken);
+
+    if (!publicInvoice || !this.isPublicInvoiceAvailable(publicInvoice.invoice)) {
+      throw new NotFoundException("Invoice is not available.");
+    }
+
+    return publicInvoice;
+  }
+
+  private isPublicInvoiceAvailable(invoice: Invoice) {
+    return invoice.publicAccessEnabled && !["draft", "cancelled", "void"].includes(invoice.status);
   }
 
   private async findLineItems(organisationId: string, invoiceId: string) {
@@ -775,6 +883,54 @@ export class InvoicesService {
       archivedAt: customer.archivedAt,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt
+    };
+  }
+
+  private toPublicInvoiceResponse(publicInvoice: PublicInvoiceRow, lineItems: InvoiceLineItem[]) {
+    const { businessProfile, customer, invoice, organisation } = publicInvoice;
+
+    return {
+      invoice: {
+        invoiceNumber: invoice.invoiceNumber,
+        status: this.displayStatus(invoice),
+        currency: invoice.currency,
+        issueDate: invoice.issueDate,
+        dueDate: invoice.dueDate,
+        notes: invoice.notes,
+        subtotalKobo: invoice.subtotalKobo,
+        discountKobo: invoice.discountKobo,
+        taxKobo: invoice.taxKobo,
+        totalKobo: invoice.totalKobo,
+        amountPaidKobo: invoice.amountPaidKobo,
+        balanceDueKobo: invoice.balanceDueKobo,
+        sentAt: invoice.sentAt,
+        viewedAt: invoice.viewedAt,
+        paidAt: invoice.paidAt
+      },
+      business: {
+        businessName: businessProfile?.businessName ?? organisation.name,
+        email: businessProfile?.email ?? null,
+        phone: businessProfile?.phone ?? null,
+        address: businessProfile?.address ?? null,
+        logoUrl: null
+      },
+      customer: {
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        billingAddress: customer.billingAddress
+      },
+      lineItems: lineItems.map((lineItem) => ({
+        description: lineItem.description,
+        quantity: Number(lineItem.quantity),
+        unitPriceKobo: lineItem.unitPriceKobo,
+        lineTotalKobo: lineItem.lineTotalKobo,
+        sortOrder: lineItem.sortOrder
+      })),
+      paymentSummary: {
+        available: false,
+        message: "Online payment will be available in the next milestone."
+      }
     };
   }
 }
