@@ -2,6 +2,8 @@
 
 Paystack webhook handling must be secure, idempotent, and safe when Paystack retries events.
 
+T008 creates pending Paystack payment records during checkout initialization. T009 must treat verified webhooks as the source of truth for changing payment status, invoice balances, invoice status, and receipts.
+
 ## Required Rules
 
 - Paystack webhook signature verification is mandatory.

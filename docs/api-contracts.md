@@ -111,7 +111,7 @@ Customer rules:
 | --- | --- | --- | --- | --- |
 | `GET /invoices` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?`, `customerId?`, `fromDate?`, `toDate?`, `page?`, `limit?` | `{ invoices, pagination }` |
 | `POST /invoices` | Required | Owner/Admin/Accountant | `{ customerId, issueDate, dueDate, lineItems, discount?, tax?, notes? }` | `{ invoice }` |
-| `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, payments, statusEvents }` |
+| `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary }` |
 | `PATCH /invoices/:id` | Required | Owner/Admin/Accountant | Draft-only editable invoice fields | `{ invoice }` |
 | `POST /invoices/:id/send` | Required | Owner/Admin/Accountant | None | `{ invoice, publicUrl }` |
 | `POST /invoices/:id/cancel` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
@@ -143,19 +143,20 @@ Rules:
 
 - No authentication required.
 - Token must be unguessable.
-- T007 implements public invoice lookup and view tracking only.
 - Public invoice lookup requires a valid `public_token`, `public_access_enabled = true`, and an invoice that is not `draft`, `cancelled`, or `void`.
 - Invalid, disabled, cancelled, void, or otherwise unavailable invoice links return the same safe not-found response.
-- Public response exposes only customer-facing invoice data: invoice display fields, business contact fields, customer billing fields, line items, and payment placeholder.
+- Public response exposes only customer-facing invoice data: invoice display fields, business contact fields, customer billing fields, line items, and a safe payment summary.
 - Public page must not expose internal organisation/member data.
 - Public view tracking moves `sent` to `viewed` only once and writes a safe status event and audit log.
 - Repeated public views must not create duplicate viewed transitions.
 - Overdue invoices must not move back to `viewed`.
-- `POST /public/invoices/:token/pay` is T008 and must not be implemented in T007.
 - Payment initialization amount is calculated server-side from `invoice.balance_due_kobo`.
 - The frontend must never send or control the payable amount.
-- Public partial payment entry is not exposed in MVP.
-- Payment initialization is blocked for paid, cancelled, void, or public-access-disabled invoices.
+- Payment initialization is available for payable `sent`, `viewed`, `overdue`, and `partially_paid` public invoices with an outstanding balance.
+- Payment initialization is blocked for draft, paid, cancelled, void, or public-access-disabled invoices.
+- `POST /public/invoices/:token/pay` creates a pending payment record, calls Paystack transaction initialization, stores `authorizationUrl`, `accessCode`, and `reference`, and writes a `payment_initialized` audit log.
+- Payment initialization does not mark the invoice paid, does not update `amount_paid_kobo`, and does not update `balance_due_kobo`.
+- Paystack secret keys are backend-only. The public frontend only receives the Paystack authorization URL returned by the API.
 
 ## Payments
 
@@ -166,6 +167,8 @@ Rules:
 | `GET /payments/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ payment, invoice, customer, events }` |
 
 Webhook endpoint must verify signature with raw request body before trusting payload content.
+
+Webhook processing, payment reconciliation, receipt generation, and invoice balance updates begin in T009/T011. T008 only creates pending Paystack payment records.
 
 ## Receipts
 

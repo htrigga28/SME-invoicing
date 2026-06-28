@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import {
   BadRequestException,
+  BadGatewayException,
   Inject,
   Injectable,
   NotFoundException,
@@ -19,13 +20,16 @@ import {
   invoiceStatusEvents,
   invoices,
   organisations,
+  payments,
   type BusinessProfile,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
-  type InvoiceStatusEvent
+  type InvoiceStatusEvent,
+  type Payment
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { PaystackService } from "../paystack/paystack.service";
 import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
 import type { InvoiceLineItemDto } from "./dto/invoice-line-item.dto";
 import type { ListInvoicesQueryDto } from "./dto/list-invoices-query.dto";
@@ -113,7 +117,8 @@ export class InvoicesService {
   constructor(
     @Inject(DatabaseService) private readonly databaseService: DatabaseService,
     @Inject(AuditLogService) private readonly auditLogService: AuditLogService,
-    @Inject(ConfigService) private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService,
+    @Inject(PaystackService) private readonly paystackService: PaystackService
   ) {}
 
   async listInvoices(context: ActiveOrganisationContext, query: ListInvoicesQueryDto) {
@@ -284,10 +289,7 @@ export class InvoicesService {
       publicUrl: invoiceWithCustomer.invoice.publicAccessEnabled
         ? this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
         : null,
-      paymentSummary: {
-        available: false,
-        message: "Payments will be available after payment processing is implemented."
-      }
+      paymentSummary: this.toAuthenticatedPaymentSummary(invoiceWithCustomer.invoice)
     };
   }
 
@@ -521,6 +523,99 @@ export class InvoicesService {
     return { success: true };
   }
 
+  async initializePublicInvoicePayment(publicToken: string) {
+    const publicInvoice = await this.requirePublicInvoice(publicToken);
+    this.assertInvoicePayable(publicInvoice.invoice, publicInvoice.customer);
+
+    const amountKobo = publicInvoice.invoice.balanceDueKobo;
+    const reference = this.generatePaymentReference(publicInvoice.invoice.invoiceNumber);
+    const callbackUrl = this.createPaymentCallbackUrl(publicToken, reference);
+    const initializedAt = new Date();
+    const metadata = {
+      invoiceId: publicInvoice.invoice.id,
+      invoiceNumber: publicInvoice.invoice.invoiceNumber,
+      customerId: publicInvoice.customer.id,
+      organisationId: publicInvoice.invoice.organisationId,
+      source: "public_invoice_page"
+    };
+
+    const [payment] = await this.databaseService.db
+      .insert(payments)
+      .values({
+        organisationId: publicInvoice.invoice.organisationId,
+        invoiceId: publicInvoice.invoice.id,
+        customerId: publicInvoice.customer.id,
+        provider: "paystack",
+        providerReference: reference,
+        status: "pending",
+        currency: "NGN",
+        amountKobo,
+        initializedAt,
+        metadataRedacted: metadata
+      })
+      .returning();
+
+    if (!payment) {
+      throw new Error("Payment initialization record could not be created.");
+    }
+
+    try {
+      const paystackResponse = await this.paystackService.initializeTransaction({
+        email: publicInvoice.customer.email,
+        amountKobo,
+        currency: "NGN",
+        reference,
+        callbackUrl,
+        metadata: {
+          ...metadata,
+          paymentId: payment.id
+        }
+      });
+
+      const [updatedPayment] = await this.databaseService.db
+        .update(payments)
+        .set({
+          providerAccessCode: paystackResponse.accessCode,
+          providerAuthorizationUrl: paystackResponse.authorizationUrl,
+          metadataRedacted: {
+            ...metadata,
+            paymentId: payment.id
+          },
+          updatedAt: new Date()
+        })
+        .where(eq(payments.id, payment.id))
+        .returning();
+
+      if (!updatedPayment) {
+        throw new Error("Payment initialization record could not be updated.");
+      }
+
+      await this.databaseService.db.insert(auditLogs).values({
+        organisationId: publicInvoice.invoice.organisationId,
+        actorUserId: null,
+        action: "payment_initialized",
+        entityType: "payment",
+        entityId: payment.id,
+        metadataRedacted: {
+          invoiceNumber: publicInvoice.invoice.invoiceNumber,
+          paymentId: payment.id,
+          provider: "paystack",
+          providerReference: reference,
+          amountKobo
+        }
+      });
+
+      return {
+        authorizationUrl: paystackResponse.authorizationUrl,
+        accessCode: paystackResponse.accessCode,
+        reference
+      };
+    } catch (error) {
+      await this.markPaymentInitializationFailed(payment, error);
+      throw new BadGatewayException("Payment initialization failed. Please try again later.");
+    }
+  }
+
   private async transitionInvoice(
     context: ActiveOrganisationContext,
     invoice: Invoice,
@@ -654,6 +749,41 @@ export class InvoicesService {
     return invoice.publicAccessEnabled && !["draft", "cancelled", "void"].includes(invoice.status);
   }
 
+  private assertInvoicePayable(invoice: Invoice, customer: Customer) {
+    const displayStatus = this.displayStatus(invoice);
+
+    if (
+      !invoice.publicAccessEnabled ||
+      ["draft", "cancelled", "void", "paid"].includes(invoice.status)
+    ) {
+      throw new NotFoundException("Invoice is not available for payment.");
+    }
+
+    if (!["sent", "viewed", "overdue", "partially_paid"].includes(displayStatus)) {
+      throw new UnprocessableEntityException("Online payment is unavailable for this invoice.");
+    }
+
+    if (invoice.balanceDueKobo <= 0) {
+      throw new UnprocessableEntityException("This invoice has no outstanding balance.");
+    }
+
+    if (!customer.email) {
+      throw new UnprocessableEntityException("This invoice customer cannot be paid online.");
+    }
+  }
+
+  private async markPaymentInitializationFailed(payment: Payment, _error: unknown) {
+    await this.databaseService.db
+      .update(payments)
+      .set({
+        status: "failed",
+        failedAt: new Date(),
+        gatewayResponse: "Payment initialization failed.",
+        updatedAt: new Date()
+      })
+      .where(eq(payments.id, payment.id));
+  }
+
   private async findLineItems(organisationId: string, invoiceId: string) {
     return this.databaseService.db
       .select()
@@ -780,10 +910,19 @@ export class InvoicesService {
     return randomBytes(32).toString("hex");
   }
 
+  private generatePaymentReference(invoiceNumber: string) {
+    const suffix = randomBytes(4).toString("hex").toUpperCase();
+    return `SME-${invoiceNumber.replace(/[^A-Z0-9]/gi, "")}-${suffix}`;
+  }
+
   private createPublicInvoiceUrl(publicToken: string) {
     const frontendUrl =
       this.configService.get<string>("FRONTEND_APP_URL") ?? "http://localhost:3000";
     return `${frontendUrl.replace(/\/$/, "")}/invoice/${publicToken}`;
+  }
+
+  private createPaymentCallbackUrl(publicToken: string, reference: string) {
+    return `${this.createPublicInvoiceUrl(publicToken)}?payment=callback&reference=${encodeURIComponent(reference)}`;
   }
 
   private getPagination(input: PaginationInput) {
@@ -928,9 +1067,57 @@ export class InvoicesService {
         sortOrder: lineItem.sortOrder
       })),
       paymentSummary: {
-        available: false,
-        message: "Online payment will be available in the next milestone."
+        ...this.toPublicPaymentSummary(invoice)
       }
+    };
+  }
+
+  private toPublicPaymentSummary(invoice: Invoice) {
+    const displayStatus = this.displayStatus(invoice);
+
+    if (!invoice.publicAccessEnabled || ["draft", "cancelled", "void"].includes(invoice.status)) {
+      return {
+        available: false as const,
+        message: "This invoice is no longer available for payment."
+      };
+    }
+
+    if (invoice.status === "paid" || invoice.balanceDueKobo <= 0) {
+      return {
+        available: false as const,
+        message: "This invoice has no outstanding balance."
+      };
+    }
+
+    if (!["sent", "viewed", "overdue", "partially_paid"].includes(displayStatus)) {
+      return {
+        available: false as const,
+        message: "Online payment is unavailable for this invoice."
+      };
+    }
+
+    return {
+      available: true as const,
+      provider: "paystack" as const,
+      amountKobo: invoice.balanceDueKobo,
+      currency: "NGN" as const,
+      message: "Pay securely online."
+    };
+  }
+
+  private toAuthenticatedPaymentSummary(invoice: Invoice) {
+    const publicSummary = this.toPublicPaymentSummary(invoice);
+
+    if (!publicSummary.available) {
+      return {
+        available: false,
+        message: "Online payment is unavailable for this invoice."
+      };
+    }
+
+    return {
+      ...publicSummary,
+      message: "Paystack checkout is enabled on the public invoice page."
     };
   }
 }

@@ -21,14 +21,17 @@ describe("PublicInvoicesController", () => {
   it("delegates public invoice requests to the invoice service", () => {
     const service = {
       getPublicInvoice: jest.fn(),
+      initializePublicInvoicePayment: jest.fn(),
       markPublicInvoiceViewed: jest.fn()
     };
     const controller = new PublicInvoicesController(service as never);
 
     controller.getPublicInvoice("token");
+    controller.initializePublicInvoicePayment("token");
     controller.markPublicInvoiceViewed("token");
 
     expect(service.getPublicInvoice).toHaveBeenCalledWith("token");
+    expect(service.initializePublicInvoicePayment).toHaveBeenCalledWith("token");
     expect(service.markPublicInvoiceViewed).toHaveBeenCalledWith("token");
   });
 });
