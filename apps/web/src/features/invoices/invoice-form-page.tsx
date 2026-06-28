@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { primaryActionClassName, selectClassName } from "@/components/ui/styles";
+import { Select } from "@/components/ui/select";
+import { primaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCustomers } from "@/features/customers/customers-api";
 import type { Customer } from "@/features/customers/types";
@@ -254,11 +255,11 @@ function InvoiceFormContent({
         <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5">
           <div className="grid gap-4 md:grid-cols-3">
             <Field label="Customer" error={errors.customerId}>
-              <select
-                className={selectClassName}
+              <Select
                 disabled={isSubmitting}
                 onChange={(event) => updateField("customerId", event.target.value)}
                 value={form.customerId}
+                wrapperClassName="mt-1"
               >
                 <option value="">Select customer</option>
                 {customers.map((customer) => (
@@ -266,7 +267,7 @@ function InvoiceFormContent({
                     {customer.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field label="Issue date" error={errors.issueDate}>
               <input

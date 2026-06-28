@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { primaryActionClassName } from "@/components/ui/styles";
+
 import { register } from "./auth-api";
 import { setStoredSession } from "./session";
 import { isSubmitDisabled, validateRegisterForm } from "./validation";
@@ -86,7 +88,7 @@ export function RegisterForm() {
       ) : null}
 
       <button
-        className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+        className={`${primaryActionClassName} w-full`}
         disabled={isSubmitDisabled(isSubmitting)}
         type="submit"
       >

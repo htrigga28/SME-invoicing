@@ -5,7 +5,8 @@ import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { compactPrimaryActionClassName, selectClassName } from "@/components/ui/styles";
+import { Select } from "@/components/ui/select";
+import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCustomers } from "@/features/customers/customers-api";
 import type { Customer, Pagination } from "@/features/customers/types";
@@ -128,10 +129,10 @@ export function InvoiceListContent({
           </label>
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Status</span>
-            <select
-              className={selectClassName}
+            <Select
               onChange={(event) => setStatus(event.target.value as InvoiceStatus | "")}
               value={status}
+              wrapperClassName="mt-1"
             >
               <option value="">All statuses</option>
               {INVOICE_STATUSES.map((option) => (
@@ -139,14 +140,14 @@ export function InvoiceListContent({
                   {option.replaceAll("_", " ")}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Customer</span>
-            <select
-              className={selectClassName}
+            <Select
               onChange={(event) => setCustomerId(event.target.value)}
               value={customerId}
+              wrapperClassName="mt-1"
             >
               <option value="">All customers</option>
               {customers.map((customer) => (
@@ -154,7 +155,7 @@ export function InvoiceListContent({
                   {customer.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"

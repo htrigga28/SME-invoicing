@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import {
-  bareSelectClassName,
-  primaryActionClassName,
-  selectClassName
-} from "@/components/ui/styles";
+import { Select } from "@/components/ui/select";
+import { primaryActionClassName } from "@/components/ui/styles";
 import type { MeResponse } from "@/features/auth/types";
 
 import {
@@ -43,7 +40,13 @@ export function TeamManagementPage() {
   );
 }
 
-function TeamManagementContent({ accessToken, me }: { accessToken: string; me: MeResponse }) {
+export function TeamManagementContent({
+  accessToken,
+  me
+}: {
+  accessToken: string;
+  me: MeResponse;
+}) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -205,10 +208,10 @@ function TeamManagementContent({ accessToken, me }: { accessToken: string; me: M
           </label>
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Role</span>
-            <select
-              className={selectClassName}
+            <Select
               onChange={(event) => setRole(event.target.value as InviteRole)}
               value={role}
+              wrapperClassName="mt-1"
             >
               <option value="">Select role</option>
               {inviteRoles.map((inviteRole) => (
@@ -216,7 +219,7 @@ function TeamManagementContent({ accessToken, me }: { accessToken: string; me: M
                   {roleLabels[inviteRole]}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             className={`${primaryActionClassName} self-end`}
@@ -323,8 +326,7 @@ function MemberRow({
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_6rem]">
-          <select
-            className={bareSelectClassName}
+          <Select
             disabled={!canManage}
             onChange={(event) => setRole(event.target.value as TeamRole)}
             value={role}
@@ -334,16 +336,15 @@ function MemberRow({
                 {roleLabels[option]}
               </option>
             ))}
-          </select>
-          <select
-            className={bareSelectClassName}
+          </Select>
+          <Select
             disabled={!canManage || member.status === "removed"}
             onChange={(event) => setStatus(event.target.value as "active" | "suspended")}
             value={status}
           >
             <option value="active">Active</option>
             <option value="suspended">Suspended</option>
-          </select>
+          </Select>
           <button
             className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
             disabled={!canManage}
