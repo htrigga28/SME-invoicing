@@ -13,7 +13,7 @@ import {
   revokeTeamInvitation,
   updateTeamMember
 } from "./team-api";
-import type { InviteRole, TeamInvitation, TeamMember } from "./types";
+import type { InviteRole, TeamInvitation, TeamMember, TeamRole } from "./types";
 import { validateInvitationForm } from "./validation";
 
 type LoadState = "loading" | "ready" | "error";
@@ -27,7 +27,7 @@ const roleLabels: Record<string, string> = {
 
 const teamRoles = ["owner", "admin"] as const;
 const selectControlClassName =
-  "min-w-40 appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-10 text-sm";
+  "w-full appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 pr-10 text-sm";
 const selectControlStyle = {
   backgroundImage:
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E\")",
@@ -293,7 +293,7 @@ function MemberRow({
     input: { role?: InviteRole; status?: "active" | "suspended" }
   ) => Promise<void>;
 }) {
-  const [role, setRole] = useState<InviteRole>(member.role === "owner" ? "viewer" : member.role);
+  const [role, setRole] = useState<TeamRole>(member.role);
   const [status, setStatus] = useState<"active" | "suspended">(
     member.status === "suspended" ? "suspended" : "active"
   );
@@ -302,23 +302,35 @@ function MemberRow({
     !isSelf &&
     member.role !== "owner" &&
     (actorRole === "owner" || (actorRole === "admin" && member.role !== "admin"));
-  const roleOptions: InviteRole[] =
-    actorRole === "owner" ? ["admin", "accountant", "viewer"] : ["accountant", "viewer"];
+  const roleOptions: TeamRole[] =
+    member.role === "owner"
+      ? ["owner"]
+      : actorRole === "owner"
+        ? ["admin", "accountant", "viewer"]
+        : ["accountant", "viewer"];
+
+  function handleSave() {
+    if (role === "owner") {
+      return;
+    }
+
+    void onUpdate(member, { role, status });
+  }
 
   return (
     <div className="border-b border-slate-100 py-4 last:border-0">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-        <div className="min-w-0 pt-2">
+      <div className="space-y-3">
+        <div className="min-w-0">
           <p className="font-medium text-slate-950">{member.user?.name ?? "Unknown user"}</p>
           <p className="text-sm text-slate-600">
             {member.user?.email} · {roleLabels[member.role]} · {member.status}
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-[10rem_10rem_4.75rem_6rem]">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_6rem]">
           <select
             className={selectControlClassName}
             disabled={!canManage}
-            onChange={(event) => setRole(event.target.value as InviteRole)}
+            onChange={(event) => setRole(event.target.value as TeamRole)}
             style={selectControlStyle}
             value={role}
           >
@@ -341,7 +353,7 @@ function MemberRow({
           <button
             className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
             disabled={!canManage}
-            onClick={() => void onUpdate(member, { role, status })}
+            onClick={handleSave}
             type="button"
           >
             Save
