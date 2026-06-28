@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
+import { primaryActionClassName } from "@/components/ui/styles";
 import { getBusinessProfile, updateBusinessProfile } from "@/features/auth/auth-api";
 import { getStoredSession } from "@/features/auth/session";
 import { isSubmitDisabled, validateBusinessProfileForm } from "@/features/auth/validation";
@@ -157,7 +158,7 @@ export function BusinessOnboardingForm() {
       ) : null}
 
       <button
-        className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+        className={primaryActionClassName}
         disabled={isSubmitDisabled(isSubmitting)}
         type="submit"
       >

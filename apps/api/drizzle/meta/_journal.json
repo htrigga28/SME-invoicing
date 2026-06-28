@@ -22,6 +22,13 @@
       "when": 1782636689933,
       "tag": "0002_complete_doctor_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782652732174,
+      "tag": "0003_adorable_hannibal_king",
+      "breakpoints": true
     }
   ]
 }

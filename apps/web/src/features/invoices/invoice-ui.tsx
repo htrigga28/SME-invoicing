@@ -1,19 +1,30 @@
 import Link from "next/link";
 import React, { type ReactNode } from "react";
+import {
+  INVOICE_STATUS_LABELS,
+  formatKoboToNaira,
+  type InvoiceStatus
+} from "@sme-invoicing/shared";
 
 import { primaryActionClassName } from "@/components/ui/styles";
 
-import type { Customer } from "./types";
-
-export function CustomerStatusBadge({ status }: { status: Customer["status"] }) {
-  const className =
-    status === "active"
-      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      : "bg-slate-100 text-slate-600 ring-slate-200";
+export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const styles: Record<InvoiceStatus, string> = {
+    draft: "bg-slate-100 text-slate-700 ring-slate-200",
+    sent: "bg-blue-50 text-blue-700 ring-blue-200",
+    viewed: "bg-cyan-50 text-cyan-700 ring-cyan-200",
+    partially_paid: "bg-amber-50 text-amber-800 ring-amber-200",
+    paid: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    overdue: "bg-red-50 text-red-700 ring-red-200",
+    cancelled: "bg-slate-100 text-slate-500 ring-slate-200",
+    void: "bg-zinc-100 text-zinc-700 ring-zinc-200"
+  };
 
   return (
-    <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ring-1 ${className}`}>
-      {status === "active" ? "Active" : "Archived"}
+    <span
+      className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ring-1 ${styles[status]}`}
+    >
+      {INVOICE_STATUS_LABELS[status]}
     </span>
   );
 }
@@ -21,20 +32,15 @@ export function CustomerStatusBadge({ status }: { status: Customer["status"] }) 
 export function PageHeader({
   action,
   description,
-  eyebrow,
   title
 }: {
   action?: ReactNode;
   description: string;
-  eyebrow?: string;
   title: string;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        {eyebrow ? (
-          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">{eyebrow}</p>
-        ) : null}
         <h1 className="text-3xl font-semibold text-slate-950">{title}</h1>
         <p className="mt-2 text-sm text-slate-600">{description}</p>
       </div>
@@ -80,5 +86,9 @@ export function formatDate(value: string) {
     day: "2-digit",
     month: "short",
     year: "numeric"
-  }).format(new Date(value));
+  }).format(new Date(`${value}T00:00:00.000Z`));
+}
+
+export function formatMoney(kobo: number) {
+  return formatKoboToNaira(kobo);
 }

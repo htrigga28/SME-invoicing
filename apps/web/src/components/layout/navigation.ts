@@ -11,7 +11,7 @@ export type AppRoute = {
 export const appRoutes: AppRoute[] = [
   { href: "/dashboard", label: "Dashboard", status: "available" },
   { href: "/customers", label: "Customers", status: "available" },
-  { href: "/invoices", label: "Invoices", status: "coming-soon", task: "T006" },
+  { href: "/invoices", label: "Invoices", status: "available" },
   { href: "/payments", label: "Payments", status: "coming-soon", task: "T010" },
   { href: "/receipts", label: "Receipts", status: "coming-soon", task: "T011" },
   { href: "/exports", label: "Exports", status: "coming-soon", task: "T013" },

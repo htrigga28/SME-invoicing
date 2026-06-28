@@ -1,0 +1,105 @@
+import type { InvoiceStatus } from "@sme-invoicing/shared";
+
+import type { Customer, Pagination } from "@/features/customers/types";
+
+export type InvoiceLineItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPriceKobo: number;
+  lineTotalKobo: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InvoiceStatusEvent = {
+  id: string;
+  fromStatus: InvoiceStatus | null;
+  toStatus: InvoiceStatus;
+  reason: string | null;
+  metadataRedacted: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type Invoice = {
+  id: string;
+  invoiceNumber: string;
+  customer: Customer;
+  status: InvoiceStatus;
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  notes?: string | null;
+  publicToken?: string;
+  subtotalKobo: number;
+  discountKobo: number;
+  taxKobo: number;
+  totalKobo: number;
+  amountPaidKobo: number;
+  balanceDueKobo: number;
+  publicAccessEnabled: boolean;
+  sentAt: string | null;
+  viewedAt?: string | null;
+  paidAt: string | null;
+  cancelledAt: string | null;
+  voidedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InvoiceDetailResponse = {
+  invoice: Invoice;
+  lineItems: InvoiceLineItem[];
+  statusEvents: InvoiceStatusEvent[];
+  publicUrl: string | null;
+  paymentSummary: {
+    available: false;
+    message: string;
+  };
+};
+
+export type InvoiceListResponse = {
+  invoices: Invoice[];
+  pagination: Pagination;
+};
+
+export type InvoiceFormLineItem = {
+  description: string;
+  quantity: string;
+  unitPriceNaira: string;
+};
+
+export type InvoiceFormState = {
+  customerId: string;
+  issueDate: string;
+  dueDate: string;
+  notes: string;
+  discountNaira: string;
+  taxNaira: string;
+  lineItems: InvoiceFormLineItem[];
+};
+
+export type InvoiceMutationPayload = {
+  customerId: string;
+  issueDate: string;
+  dueDate: string;
+  notes?: string | null;
+  discountKobo?: number;
+  taxKobo?: number;
+  lineItems: {
+    description: string;
+    quantity: number;
+    unitPriceKobo: number;
+  }[];
+};
+
+export const invoiceManagerRoles = ["owner", "admin", "accountant"] as const;
+
+export function canManageInvoices(role: string) {
+  return invoiceManagerRoles.includes(role as (typeof invoiceManagerRoles)[number]);
+}
+
+export function canCancelOrVoidInvoices(role: string) {
+  return role === "owner" || role === "admin";
+}

@@ -129,6 +129,13 @@ describe("CustomerListContent archive actions", () => {
     expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
   });
 
+  it("renders the status filter with the shared select chevron", async () => {
+    render(<CustomerListContent accessToken="token" role="owner" />);
+
+    expect(await screen.findByRole("combobox", { name: "Status" })).toHaveClass("pr-12");
+    expect(screen.getByTestId("select-chevron")).toBeInTheDocument();
+  });
+
   it("does not use native browser prompts in customer archive flows", () => {
     const customerListSource = readFileSync(
       "src/features/customers/customer-list-page.tsx",

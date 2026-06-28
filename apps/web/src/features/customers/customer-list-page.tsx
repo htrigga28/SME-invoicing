@@ -5,6 +5,8 @@ import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Select } from "@/components/ui/select";
+import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -149,17 +151,17 @@ export function CustomerListContent({
           </label>
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Status</span>
-            <select
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+            <Select
               onChange={(event) => setStatus(event.target.value as CustomerListStatus)}
               value={status}
+              wrapperClassName="mt-1"
             >
               {statusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <button
             className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
@@ -176,7 +178,7 @@ export function CustomerListContent({
         <StatusPanel
           action={
             <button
-              className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+              className={compactPrimaryActionClassName}
               onClick={() => void loadCustomers()}
               type="button"
             >

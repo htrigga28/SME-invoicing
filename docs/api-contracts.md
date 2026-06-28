@@ -109,10 +109,10 @@ Customer rules:
 
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
-| `GET /invoices` | Required | Owner/Admin/Accountant/Viewer | Query: status, customer, dates, page | `{ invoices, pagination }` |
+| `GET /invoices` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?`, `customerId?`, `fromDate?`, `toDate?`, `page?`, `limit?` | `{ invoices, pagination }` |
 | `POST /invoices` | Required | Owner/Admin/Accountant | `{ customerId, issueDate, dueDate, lineItems, discount?, tax?, notes? }` | `{ invoice }` |
 | `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, payments, statusEvents }` |
-| `PATCH /invoices/:id` | Required | Owner/Admin/Accountant | Editable invoice fields | `{ invoice }` |
+| `PATCH /invoices/:id` | Required | Owner/Admin/Accountant | Draft-only editable invoice fields | `{ invoice }` |
 | `POST /invoices/:id/send` | Required | Owner/Admin/Accountant | None | `{ invoice, publicUrl }` |
 | `POST /invoices/:id/cancel` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
 | `POST /invoices/:id/void` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
@@ -121,9 +121,14 @@ Rules:
 
 - Totals are calculated server-side.
 - Invoice numbers and public tokens are generated server-side.
+- Invoice numbers are organisation-scoped and use the format `INV-000001`.
+- Created invoices start as private drafts. Sending a draft enables public access and returns the generated public URL for T007.
 - MVP uses invoice-level `discount_kobo` and `tax_kobo`; line items do not have per-line tax or discount.
 - Invoice `subtotal_kobo` is the sum of server-calculated line totals, and `total_kobo` is `subtotal_kobo - discount_kobo + tax_kobo`.
 - Accountant can create, edit, and send invoices but cannot cancel or void invoices.
+- Draft edit replaces line items transactionally and recalculates totals server-side.
+- Cancel requires Owner/Admin, a reason, and status `draft`, `sent`, `viewed`, or `overdue`.
+- Void requires Owner/Admin, a reason, and status `draft`, `sent`, `viewed`, `overdue`, or `cancelled`; public access is disabled.
 - Mutations are blocked for invoices in incompatible statuses.
 
 ## Public Invoice and Paystack Initialization

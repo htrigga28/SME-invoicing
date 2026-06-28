@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { primaryActionClassName } from "@/components/ui/styles";
 import { getMe } from "@/features/auth/auth-api";
 import { clearStoredSession, getStoredSession, setStoredSession } from "@/features/auth/session";
 import type { MeResponse } from "@/features/auth/types";
@@ -154,7 +155,7 @@ export function AcceptInvitePage({ token }: { token: string }) {
                 organisation.
               </p>
               <button
-                className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400"
+                className={`${primaryActionClassName} w-full`}
                 disabled={isSubmitting}
                 onClick={() => void handleAcceptExisting()}
                 type="button"
@@ -200,7 +201,7 @@ export function AcceptInvitePage({ token }: { token: string }) {
             />
           </label>
           <button
-            className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400"
+            className={`${primaryActionClassName} w-full`}
             disabled={isSubmitting}
             type="submit"
           >
