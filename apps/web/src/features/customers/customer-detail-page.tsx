@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
 import { archiveCustomer, getCustomer } from "./customers-api";
 import { CustomerStatusBadge, formatDate, PageHeader, StatusPanel } from "./customer-ui";
-import type { Customer, CustomerDetailResponse } from "./types";
+import type { CustomerDetailResponse } from "./types";
 import { canManageCustomers } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -29,7 +30,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
   );
 }
 
-function CustomerDetailContent({
+export function CustomerDetailContent({
   accessToken,
   customerId,
   role
@@ -43,6 +44,8 @@ function CustomerDetailContent({
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const canManage = canManageCustomers(role);
   const customer = response?.customer;
 
@@ -65,20 +68,19 @@ function CustomerDetailContent({
     }
   }
 
-  async function handleArchive(target: Customer) {
-    const confirmed = window.confirm(`Archive ${target.name}? Archived customers are read-only.`);
-
-    if (!confirmed) {
+  async function handleArchiveConfirm() {
+    if (!customer) {
       return;
     }
 
+    setIsArchiving(true);
     setError(null);
     setSuccess(null);
 
     try {
       const archiveResponse = await archiveCustomer(
         accessToken,
-        target.id,
+        customer.id,
         "Archived from detail page."
       );
       setResponse((current) =>
@@ -90,11 +92,14 @@ function CustomerDetailContent({
           : current
       );
       setSuccess("Customer archived.");
+      setShowArchiveDialog(false);
     } catch (archiveError) {
       handleAuthError(archiveError);
       setError(
         archiveError instanceof Error ? archiveError.message : "Could not archive customer."
       );
+    } finally {
+      setIsArchiving(false);
     }
   }
 
@@ -167,7 +172,7 @@ function CustomerDetailContent({
                 </Link>
                 <button
                   className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700"
-                  onClick={() => void handleArchive(customer)}
+                  onClick={() => setShowArchiveDialog(true)}
                   type="button"
                 >
                   Archive
@@ -209,6 +214,18 @@ function CustomerDetailContent({
       >
         Return to customer list
       </button>
+
+      <ConfirmDialog
+        confirmLabel="Archive customer"
+        description="Archived customers are read-only and hidden from the active customer list. Historical records remain available."
+        destructive
+        isLoading={isArchiving}
+        loadingLabel="Archiving..."
+        onCancel={() => setShowArchiveDialog(false)}
+        onConfirm={() => void handleArchiveConfirm()}
+        open={showArchiveDialog}
+        title="Archive customer?"
+      />
     </section>
   );
 }

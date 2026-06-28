@@ -37,3 +37,4 @@ Status values:
 - Implementation tasks should include validation results in the PR.
 - T001 was patched for auth/session storage, RBAC, invoice payment, active organisation handling, and schema clarity before implementation.
 - T004 was patched before T005 to add a reusable authenticated app shell, sidebar navigation, and coming-soon placeholders for future modules.
+- T005 was patched before merge to replace native browser prompts with app-level confirmation UI for customer archive actions.

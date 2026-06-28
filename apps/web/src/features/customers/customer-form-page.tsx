@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import React, { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { clearStoredSession } from "@/features/auth/session";

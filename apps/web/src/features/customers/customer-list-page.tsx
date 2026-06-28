@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -36,7 +37,7 @@ export function CustomerListPage() {
   );
 }
 
-function CustomerListContent({
+export function CustomerListContent({
   accessToken,
   role
 }: {
@@ -56,6 +57,8 @@ function CustomerListContent({
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [customerPendingArchive, setCustomerPendingArchive] = useState<Customer | null>(null);
+  const [isArchiving, setIsArchiving] = useState(false);
   const canManage = canManageCustomers(role);
 
   const isFiltered = useMemo(
@@ -99,26 +102,26 @@ function CustomerListContent({
     setSearch(searchInput);
   }
 
-  async function handleArchive(customer: Customer) {
-    const confirmed = window.confirm(
-      `Archive ${customer.name}? Archived customers remain readable.`
-    );
-
-    if (!confirmed) {
+  async function handleArchiveConfirm() {
+    if (!customerPendingArchive) {
       return;
     }
 
+    setIsArchiving(true);
     setError(null);
     setSuccess(null);
 
     try {
-      await archiveCustomer(accessToken, customer.id, "Archived from customer list.");
+      await archiveCustomer(accessToken, customerPendingArchive.id, "Archived from customer list.");
       setSuccess("Customer archived.");
+      setCustomerPendingArchive(null);
       await loadCustomers(1);
     } catch (archiveError) {
       setError(
         archiveError instanceof Error ? archiveError.message : "Could not archive customer."
       );
+    } finally {
+      setIsArchiving(false);
     }
   }
 
@@ -244,7 +247,7 @@ function CustomerListContent({
                             </Link>
                             <button
                               className="rounded-md border border-red-200 px-3 py-2 font-medium text-red-700"
-                              onClick={() => void handleArchive(customer)}
+                              onClick={() => setCustomerPendingArchive(customer)}
                               type="button"
                             >
                               Archive
@@ -320,6 +323,18 @@ function CustomerListContent({
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        confirmLabel="Archive customer"
+        description="Archived customers are read-only and hidden from the active customer list. Historical records remain available."
+        destructive
+        isLoading={isArchiving}
+        loadingLabel="Archiving..."
+        onCancel={() => setCustomerPendingArchive(null)}
+        onConfirm={() => void handleArchiveConfirm()}
+        open={customerPendingArchive !== null}
+        title="Archive customer?"
+      />
     </section>
   );
 }
