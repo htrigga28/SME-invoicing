@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   jsonb,
+  index,
   pgEnum,
   pgTable,
   text,
@@ -114,6 +115,37 @@ export const businessProfiles = pgTable("business_profiles", {
   ...timestamps
 });
 
+export const customers = pgTable(
+  "customers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 200 }).notNull(),
+    email: varchar("email", { length: 320 }).notNull(),
+    phone: varchar("phone", { length: 50 }),
+    billingAddress: text("billing_address"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    organisationIndex: index("customers_organisation_id_idx").on(table.organisationId),
+    organisationArchivedIndex: index("customers_org_archived_at_idx").on(
+      table.organisationId,
+      table.archivedAt
+    ),
+    organisationEmailIndex: index("customers_org_email_idx").on(table.organisationId, table.email),
+    organisationNameIndex: index("customers_org_name_idx").on(table.organisationId, table.name),
+    activeEmailUnique: uniqueIndex("customers_active_email_unique")
+      .on(table.organisationId, sql`lower(${table.email})`)
+      .where(sql`${table.archivedAt} is null`)
+  })
+);
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -147,6 +179,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 export const organisationsRelations = relations(organisations, ({ many, one }) => ({
   members: many(organisationMembers),
   invitations: many(organisationInvitations),
+  customers: many(customers),
   businessProfile: one(businessProfiles),
   auditLogs: many(auditLogs)
 }));
@@ -180,6 +213,17 @@ export const businessProfilesRelations = relations(businessProfiles, ({ one }) =
   })
 }));
 
+export const customersRelations = relations(customers, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [customers.organisationId],
+    references: [organisations.id]
+  }),
+  createdBy: one(users, {
+    fields: [customers.createdByUserId],
+    references: [users.id]
+  })
+}));
+
 export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   user: one(users, {
     fields: [refreshTokens.userId],
@@ -204,5 +248,6 @@ export type Organisation = typeof organisations.$inferSelect;
 export type OrganisationMember = typeof organisationMembers.$inferSelect;
 export type OrganisationInvitation = typeof organisationInvitations.$inferSelect;
 export type BusinessProfile = typeof businessProfiles.$inferSelect;
+export type Customer = typeof customers.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

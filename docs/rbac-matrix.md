@@ -75,6 +75,9 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Every organisation-scoped table must include `organisation_id`.
 - Every protected query must be scoped by the authenticated user's active organisation membership.
 - Never trust `organisationId` from the frontend.
+- Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
+- Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
+- Archived customers remain readable but cannot be updated in the MVP.
 - The backend should derive active organisation access from the authenticated session and membership.
 - Customers, invoices, payments, receipts, exports, audit logs, and dashboard data must be organisation-scoped.
 - Public invoice endpoints are scoped by unguessable public token and must expose only customer-facing invoice data.

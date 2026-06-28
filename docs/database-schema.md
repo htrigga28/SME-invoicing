@@ -114,10 +114,21 @@ Constraint: `business_profiles.organisation_id` unique.
 | email | Customer billing email. |
 | phone | Optional. |
 | billing_address | Optional. |
+| created_by_user_id | Nullable reference to the user who created the customer. |
 | archived_at | Nullable soft archive timestamp. |
 | created_at, updated_at | Timestamps. |
 
-Customers are organisation-scoped. Archived customers remain available for historical invoices.
+Customers are organisation-scoped. Archived customers remain available for historical invoices, are excluded from the default active list, and are read-only in the MVP.
+
+Indexes and constraints:
+
+- Index on `organisation_id`.
+- Index on `organisation_id + archived_at`.
+- Index on `organisation_id + email`.
+- Index on `organisation_id + name`.
+- Partial unique index on `organisation_id + lower(email)` where `archived_at is null`.
+
+Duplicate active customer emails are blocked within an organisation. Archived customers do not block creating a new active customer with the same email.
 
 ### invoices
 

@@ -29,7 +29,6 @@ describe("authenticated navigation", () => {
   it("represents future modules as coming soon placeholders", () => {
     expect(getNavigationItems("viewer")).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ href: "/customers", status: "coming-soon", task: "T005" }),
         expect.objectContaining({ href: "/invoices", status: "coming-soon", task: "T006" }),
         expect.objectContaining({ href: "/payments", status: "coming-soon", task: "T010" }),
         expect.objectContaining({ href: "/receipts", status: "coming-soon", task: "T011" }),
