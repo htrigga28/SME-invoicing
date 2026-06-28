@@ -39,6 +39,8 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Cancel invoice | Set `cancelled` only when invoice is not fully paid. |
 | Void invoice | Set `void` for correction/error cases and retain all records. |
 
+T006 implements create, send, draft edit, cancel, and void transitions only. Public view transitions, payment-derived statuses, receipt generation, and Paystack-driven recalculation are reserved for later tasks.
+
 ## Amount Recalculation
 
 `amount_paid_kobo` is the sum of successful, non-refunded payments for the invoice.
@@ -59,7 +61,7 @@ An invoice is overdue when:
 - `balance_due_kobo > 0`.
 - Status is not `draft`, `paid`, `cancelled`, or `void`.
 
-Overdue status is deterministic and can be recalculated by a scheduled job, read-time query, or explicit status refresh. Persisting the status is acceptable if status events are written consistently.
+Overdue status is deterministic and can be recalculated by a scheduled job, read-time query, or explicit status refresh. T006 displays overdue state at read time without introducing scheduled jobs.
 
 ## Partial Payment Behaviour
 

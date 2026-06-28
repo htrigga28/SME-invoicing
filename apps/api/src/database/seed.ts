@@ -2,13 +2,17 @@ import "dotenv/config";
 
 import { createHmac } from "crypto";
 import * as argon2 from "argon2";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
 import {
   businessProfiles,
   customers,
+  invoiceLineItems,
+  invoiceNumberSequences,
+  invoices,
+  invoiceStatusEvents,
   organisationInvitations,
   organisationMembers,
   organisations,
@@ -134,6 +138,61 @@ const demoCustomers = [
     archived: true
   }
 ] as const;
+
+const invoiceStatuses = [
+  ...Array.from({ length: 6 }, () => "draft" as const),
+  ...Array.from({ length: 6 }, () => "sent" as const),
+  ...Array.from({ length: 4 }, () => "viewed" as const),
+  ...Array.from({ length: 5 }, () => "overdue" as const),
+  ...Array.from({ length: 2 }, () => "cancelled" as const),
+  "void" as const
+];
+type SeedInvoiceStatus = (typeof invoiceStatuses)[number];
+type SeedInvoiceEvent = {
+  createdAt: Date;
+  fromStatus: SeedInvoiceStatus | null;
+  reason: string;
+  toStatus: SeedInvoiceStatus;
+};
+
+const serviceLineItems = [
+  ["Brand strategy workshop", 1, 180000],
+  ["Monthly bookkeeping support", 1, 220000],
+  ["Social media campaign design", 2, 95000],
+  ["Website maintenance retainer", 1, 150000],
+  ["Delivery route planning", 1, 125000],
+  ["Printed marketing materials", 4, 35000],
+  ["Staff training session", 2, 80000],
+  ["Dental equipment servicing", 1, 175000],
+  ["Event production coordination", 1, 300000],
+  ["Business advisory session", 3, 60000]
+] as const;
+
+function invoiceDate(daysFromNow: number) {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + daysFromNow);
+  return date.toISOString().slice(0, 10);
+}
+
+function calculateSeedTotals(
+  lineItems: { quantity: number; unitPriceKobo: number }[],
+  discountKobo: number,
+  taxKobo: number
+) {
+  const lineTotals = lineItems.map((lineItem) =>
+    Math.round(lineItem.quantity * lineItem.unitPriceKobo)
+  );
+  const subtotalKobo = lineTotals.reduce((sum, lineTotal) => sum + lineTotal, 0);
+  const totalKobo = subtotalKobo - discountKobo + taxKobo;
+
+  return {
+    lineTotals,
+    subtotalKobo,
+    totalKobo,
+    balanceDueKobo: totalKobo
+  };
+}
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -341,10 +400,200 @@ async function main() {
       }
     }
 
+    const activeCustomers = await db
+      .select()
+      .from(customers)
+      .where(
+        and(eq(customers.organisationId, organisation.id), sql`${customers.archivedAt} is null`)
+      );
+    const activeCustomerByEmail = new Map(
+      activeCustomers.map((customer) => [customer.email, customer])
+    );
+    const activeCustomerEmails = demoCustomers
+      .filter((customer) => !("archived" in customer && customer.archived))
+      .map((customer) => customer.email);
+
+    for (const [index, status] of invoiceStatuses.entries()) {
+      const sequenceNumber = index + 1;
+      const invoiceNumber = `INV-${sequenceNumber.toString().padStart(6, "0")}`;
+      const customerEmail = activeCustomerEmails[index % activeCustomerEmails.length];
+
+      if (!customerEmail) {
+        throw new Error("No active demo customers were found for invoice seeding.");
+      }
+
+      const customer = activeCustomerByEmail.get(customerEmail);
+
+      if (!customer) {
+        throw new Error(`Seed customer was not found for invoice: ${customerEmail}`);
+      }
+
+      const issueDate =
+        status === "overdue" ? invoiceDate(-60 + index) : invoiceDate(-20 + index * 2);
+      const dueDate = status === "overdue" ? invoiceDate(-15 + index) : invoiceDate(10 + index * 2);
+      const itemCount = (index % 5) + 1;
+      const selectedLineItems = Array.from({ length: itemCount }, (_value, itemIndex) => {
+        const serviceLineItem = serviceLineItems[(index + itemIndex) % serviceLineItems.length];
+
+        if (!serviceLineItem) {
+          throw new Error("Seed line item was not found.");
+        }
+
+        const [description, quantity, unitPriceKobo] = serviceLineItem;
+        return {
+          description,
+          quantity,
+          unitPriceKobo
+        };
+      });
+      const discountKobo = index % 4 === 0 ? 10000 : 0;
+      const taxKobo = index % 3 === 0 ? 7500 : 0;
+      const totals = calculateSeedTotals(selectedLineItems, discountKobo, taxKobo);
+      const sentAt = ["sent", "viewed", "overdue", "cancelled", "void"].includes(status)
+        ? new Date(`${issueDate}T09:00:00.000Z`)
+        : null;
+      const viewedAt = ["viewed", "overdue"].includes(status)
+        ? new Date(`${issueDate}T12:00:00.000Z`)
+        : null;
+      const cancelledAt = status === "cancelled" ? new Date(`${dueDate}T10:00:00.000Z`) : null;
+      const voidedAt = status === "void" ? new Date(`${dueDate}T10:00:00.000Z`) : null;
+      const publicToken = createHmac("sha256", refreshSecret)
+        .update(`invoice:${invoiceNumber}`)
+        .digest("hex");
+
+      const [existingInvoice] = await db
+        .select()
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.organisationId, organisation.id),
+            eq(invoices.invoiceNumber, invoiceNumber)
+          )
+        )
+        .limit(1);
+
+      const invoiceValues = {
+        organisationId: organisation.id,
+        customerId: customer.id,
+        invoiceNumber,
+        publicToken,
+        publicAccessEnabled: ["sent", "viewed", "overdue"].includes(status),
+        status,
+        currency: "NGN",
+        issueDate,
+        dueDate,
+        notes: `Demo ${status.replace("_", " ")} invoice for portfolio walkthrough.`,
+        subtotalKobo: totals.subtotalKobo,
+        discountKobo,
+        taxKobo,
+        totalKobo: totals.totalKobo,
+        amountPaidKobo: 0,
+        balanceDueKobo: totals.balanceDueKobo,
+        sentAt,
+        viewedAt,
+        paidAt: null,
+        cancelledAt,
+        voidedAt,
+        createdByUserId: owner.id,
+        updatedAt: now
+      };
+
+      const [invoice] = existingInvoice
+        ? await db
+            .update(invoices)
+            .set(invoiceValues)
+            .where(eq(invoices.id, existingInvoice.id))
+            .returning()
+        : await db.insert(invoices).values(invoiceValues).returning();
+
+      if (!invoice) {
+        throw new Error(`Demo invoice could not be created: ${invoiceNumber}`);
+      }
+
+      await db.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, invoice.id));
+      await db.delete(invoiceStatusEvents).where(eq(invoiceStatusEvents.invoiceId, invoice.id));
+
+      await db.insert(invoiceLineItems).values(
+        selectedLineItems.map((lineItem, itemIndex) => ({
+          organisationId: organisation.id,
+          invoiceId: invoice.id,
+          description: lineItem.description,
+          quantity: lineItem.quantity.toFixed(2),
+          unitPriceKobo: lineItem.unitPriceKobo,
+          lineTotalKobo: totals.lineTotals[itemIndex] ?? 0,
+          sortOrder: itemIndex
+        }))
+      );
+
+      const events: SeedInvoiceEvent[] = [
+        {
+          fromStatus: null,
+          toStatus: "draft" as const,
+          reason: "invoice_created",
+          createdAt: new Date(`${issueDate}T08:00:00.000Z`)
+        }
+      ];
+
+      if (status !== "draft") {
+        events.push({
+          fromStatus: "draft",
+          toStatus: status === "cancelled" || status === "void" ? "sent" : status,
+          reason:
+            status === "sent" || status === "cancelled" || status === "void"
+              ? "invoice_sent"
+              : `invoice_${status}`,
+          createdAt: sentAt ?? now
+        });
+      }
+
+      if (status === "cancelled") {
+        events.push({
+          fromStatus: "sent",
+          toStatus: "cancelled",
+          reason: "Demo cancellation",
+          createdAt: cancelledAt ?? now
+        });
+      }
+
+      if (status === "void") {
+        events.push({
+          fromStatus: "sent",
+          toStatus: "void",
+          reason: "Demo void",
+          createdAt: voidedAt ?? now
+        });
+      }
+
+      await db.insert(invoiceStatusEvents).values(
+        events.map((event) => ({
+          organisationId: organisation.id,
+          invoiceId: invoice.id,
+          fromStatus: event.fromStatus,
+          toStatus: event.toStatus,
+          reason: event.reason,
+          actorUserId: owner.id,
+          metadataRedacted: { invoiceNumber },
+          createdAt: event.createdAt
+        }))
+      );
+    }
+
+    await db
+      .insert(invoiceNumberSequences)
+      .values({ organisationId: organisation.id, nextNumber: 25, updatedAt: now })
+      .onConflictDoUpdate({
+        target: invoiceNumberSequences.organisationId,
+        set: {
+          nextNumber: sql`greatest(${invoiceNumberSequences.nextNumber}, 25)`,
+          updatedAt: now
+        }
+      });
+
     console.log("Development seed complete.");
     console.log(`Demo organisation: ${organisationName}`);
     console.log("Demo password for all seeded users: DemoPass123!");
     console.log(`Seeded demo customers: ${demoCustomers.length}`);
+    console.log(`Seeded demo invoices: ${invoiceStatuses.length}`);
     console.log(
       "Dev-only pending invite URLs. Raw tokens are printed here only and are not stored:"
     );

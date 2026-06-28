@@ -161,6 +161,17 @@ Constraints:
 
 - Unique on `organisation_id + invoice_number`.
 - `invoices.public_token` unique.
+- Index organisation-scoped lookups by status, customer, due date, and created date.
+
+### invoice_number_sequences
+
+| Column | Notes |
+| --- | --- |
+| organisation_id | Primary key. References organisations. |
+| next_number | Next invoice sequence number for the organisation. |
+| updated_at | Timestamp. |
+
+The API allocates invoice numbers server-side inside the invoice creation transaction. Numbers are scoped per organisation and formatted as `INV-000001`.
 
 ### invoice_line_items
 
@@ -173,6 +184,7 @@ Constraints:
 | quantity | `numeric(10,2)`. |
 | unit_price_kobo | Integer kobo. |
 | line_total_kobo | Server-calculated. |
+| sort_order | Stable display order for invoice lines. |
 | created_at, updated_at | Timestamps. |
 
 Line item calculation:
@@ -194,6 +206,7 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | to_status | New status. |
 | reason | Machine-readable reason. |
 | actor_user_id | Nullable for system/public events. |
+| metadata_redacted | Optional JSON metadata that excludes sensitive raw provider payloads. |
 | created_at | Timestamp. |
 
 ### payments

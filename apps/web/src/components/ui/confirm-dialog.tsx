@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useId } from "react";
+import React, { useId, type ReactNode } from "react";
 
 type ConfirmDialogProps = {
   cancelLabel?: string;
   confirmLabel: string;
   description: string;
   destructive?: boolean;
+  children?: ReactNode;
   isLoading?: boolean;
   loadingLabel?: string;
   onCancel: () => void;
@@ -17,6 +18,7 @@ type ConfirmDialogProps = {
 
 export function ConfirmDialog({
   cancelLabel = "Cancel",
+  children,
   confirmLabel,
   description,
   destructive = false,
@@ -53,6 +55,7 @@ export function ConfirmDialog({
         <p className="mt-2 text-sm leading-6 text-slate-600" id={descriptionId}>
           {description}
         </p>
+        {children ? <div className="mt-4">{children}</div> : null}
 
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button

@@ -7,6 +7,7 @@ import { HealthController } from "./health.controller";
 import { AuthModule } from "./modules/auth/auth.module";
 import { BusinessProfileModule } from "./modules/business-profile/business-profile.module";
 import { CustomersModule } from "./modules/customers/customers.module";
+import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { TeamModule } from "./modules/team/team.module";
 
 @Module({
@@ -19,6 +20,7 @@ import { TeamModule } from "./modules/team/team.module";
     AuthModule,
     BusinessProfileModule,
     CustomersModule,
+    InvoicesModule,
     TeamModule
   ],
   controllers: [HealthController]

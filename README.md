@@ -139,7 +139,7 @@ pnpm db:seed
 
 ## Demo Login
 
-Run `pnpm db:migrate` and `pnpm db:seed` first. The seed is idempotent and can be run multiple times without duplicating the demo organisation, users, memberships, business profile, seeded invitations, or demo customers.
+Run `pnpm db:migrate` and `pnpm db:seed` first. The seed is idempotent and can be run multiple times without duplicating the demo organisation, users, memberships, business profile, seeded invitations, demo customers, or demo invoices.
 
 | Role       | Email                 | Password       |
 | ---------- | --------------------- | -------------- |
@@ -152,13 +152,15 @@ Seeded Owner/Admin users can access `/settings/team`. Seeded Accountant/Viewer u
 
 The seed also adds 12 realistic demo customers to the demo organisation. Ten are active and two are archived so `/customers` can demonstrate active, archived, and all status filters.
 
+The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. T006 intentionally does not seed paid or partially paid invoices because payment and reconciliation flows start in later tasks.
+
 ## Auth Session Trade-Off
 
 The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps the MVP simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
 
 ## Current Implementation Status
 
-T005 adds customer management on top of the auth, tenant context, RBAC foundation, database foundation, business profile onboarding flow, and team management. It intentionally does not implement invoices, payments, receipts, dashboard metrics, exports, or Paystack logic.
+T006 adds invoice core on top of the auth, tenant context, RBAC foundation, database foundation, business profile onboarding flow, team management, and customer management. It intentionally does not implement public invoice pages, payments, receipts, dashboard metrics, exports, or Paystack logic.
 
 Implemented so far:
 
@@ -175,5 +177,7 @@ Implemented so far:
 - Idempotent development seed data with demo users and invitation records.
 - Customer list, create, detail, edit, and archive API/UI.
 - Idempotent development seed data with active and archived demo customers.
+- Invoice list, create, draft edit, detail, send, cancel, and void API/UI.
+- Server-side invoice numbering, public tokens, totals, status events, and invoice seed data.
 
-Next planned task: T006 invoice core.
+Next planned task: T007 public invoice page.
