@@ -1,10 +1,16 @@
 import { DEFAULT_CURRENCY, formatKoboToNaira } from "@sme-invoicing/shared";
 
-import { AppShell } from "@/components/layout/app-shell";
-
 export default function HomePage() {
   return (
-    <AppShell>
+    <main className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
+          <span className="text-sm font-semibold text-slate-950">SME Invoicing</span>
+          <a className="text-sm font-medium text-teal-700" href="/login">
+            Login
+          </a>
+        </div>
+      </header>
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-5xl flex-col justify-center gap-8 px-6 py-12">
         <div className="max-w-3xl">
           <p className="text-sm font-medium uppercase tracking-wide text-teal-700">T002 setup</p>
@@ -35,6 +41,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-    </AppShell>
+    </main>
   );
 }

@@ -1,10 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { getMe } from "@/features/auth/auth-api";
-import { getStoredSession } from "@/features/auth/session";
+import { AppShell } from "@/components/layout/app-shell";
 import type { MeResponse } from "@/features/auth/types";
 
 import {
@@ -18,7 +16,7 @@ import {
 import type { InviteRole, TeamInvitation, TeamMember } from "./types";
 import { validateInvitationForm } from "./validation";
 
-type LoadState = "loading" | "ready" | "denied" | "error";
+type LoadState = "loading" | "ready" | "error";
 
 const roleLabels: Record<string, string> = {
   owner: "Owner",
@@ -27,9 +25,20 @@ const roleLabels: Record<string, string> = {
   viewer: "Viewer"
 };
 
+const teamRoles = ["owner", "admin"] as const;
+
 export function TeamManagementPage() {
-  const router = useRouter();
-  const [me, setMe] = useState<MeResponse | null>(null);
+  return (
+    <AppShell
+      deniedMessage="Owner or Admin access is required for team settings."
+      requiredRoles={teamRoles}
+    >
+      {({ accessToken, me }) => <TeamManagementContent accessToken={accessToken} me={me} />}
+    </AppShell>
+  );
+}
+
+function TeamManagementContent({ accessToken, me }: { accessToken: string; me: MeResponse }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [state, setState] = useState<LoadState>("loading");
@@ -40,43 +49,18 @@ export function TeamManagementPage() {
   const [role, setRole] = useState<InviteRole | "">("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const accessToken = getStoredSession()?.accessToken;
-  const canUseTeamPage = me?.membership.role === "owner" || me?.membership.role === "admin";
   const inviteRoles = useMemo<InviteRole[]>(() => {
-    if (me?.membership.role === "owner") return ["admin", "accountant", "viewer"];
-    if (me?.membership.role === "admin") return ["accountant", "viewer"];
+    if (me.membership.role === "owner") return ["admin", "accountant", "viewer"];
+    if (me.membership.role === "admin") return ["accountant", "viewer"];
     return [];
-  }, [me?.membership.role]);
+  }, [me.membership.role]);
 
   useEffect(() => {
-    const session = getStoredSession();
-
-    if (!session) {
-      router.replace("/login");
-      return;
-    }
-
-    const sessionAccessToken = session.accessToken;
-
     async function load() {
       try {
-        const currentUser = await getMe(sessionAccessToken);
-
-        if (currentUser.onboardingRequired) {
-          router.replace("/onboarding/business");
-          return;
-        }
-
-        setMe(currentUser);
-
-        if (!["owner", "admin"].includes(currentUser.membership.role)) {
-          setState("denied");
-          return;
-        }
-
         const [membersResponse, invitationsResponse] = await Promise.all([
-          listTeamMembers(sessionAccessToken),
-          listTeamInvitations(sessionAccessToken)
+          listTeamMembers(accessToken),
+          listTeamInvitations(accessToken)
         ]);
 
         setMembers(membersResponse.members);
@@ -89,11 +73,9 @@ export function TeamManagementPage() {
     }
 
     void load();
-  }, [router]);
+  }, [accessToken]);
 
   async function refreshTeamData() {
-    if (!accessToken) return;
-
     const [membersResponse, invitationsResponse] = await Promise.all([
       listTeamMembers(accessToken),
       listTeamInvitations(accessToken)
@@ -110,7 +92,7 @@ export function TeamManagementPage() {
 
     const errors = validateInvitationForm({ email, role });
 
-    if (Object.keys(errors).length > 0 || !role || !accessToken) {
+    if (Object.keys(errors).length > 0 || !role) {
       setError(Object.values(errors)[0] ?? "Sign in again to invite a teammate.");
       return;
     }
@@ -132,7 +114,6 @@ export function TeamManagementPage() {
   }
 
   async function handleRevoke(invitationId: string) {
-    if (!accessToken) return;
     setError(null);
     setSuccess(null);
 
@@ -149,7 +130,6 @@ export function TeamManagementPage() {
     member: TeamMember,
     input: { role?: InviteRole; status?: "active" | "suspended" }
   ) {
-    if (!accessToken) return;
     setError(null);
     setSuccess(null);
 
@@ -163,7 +143,6 @@ export function TeamManagementPage() {
   }
 
   async function handleRemove(member: TeamMember) {
-    if (!accessToken) return;
     setError(null);
     setSuccess(null);
 
@@ -180,16 +159,6 @@ export function TeamManagementPage() {
     return <StatusPanel message="Loading team settings..." />;
   }
 
-  if (state === "denied" || !canUseTeamPage) {
-    return (
-      <StatusPanel
-        message="You do not have access to team settings."
-        tone="warning"
-        detail="Owner or Admin access is required."
-      />
-    );
-  }
-
   if (state === "error") {
     return <StatusPanel message={error ?? "Could not load team settings."} tone="error" />;
   }
@@ -201,12 +170,9 @@ export function TeamManagementPage() {
           <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Settings</p>
           <h1 className="text-3xl font-semibold text-slate-950">Team</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Manage members and development invitation links for {me?.activeOrganisation.name}.
+            Manage members and development invitation links for {me.activeOrganisation.name}.
           </p>
         </div>
-        <a className="text-sm font-medium text-teal-700" href="/dashboard">
-          Back to dashboard
-        </a>
       </div>
 
       {error ? <Alert tone="error" message={error} /> : null}
@@ -261,8 +227,8 @@ export function TeamManagementPage() {
         <Panel title="Members" {...(members.length === 0 ? { empty: "No members found." } : {})}>
           {members.map((member) => (
             <MemberRow
-              actorRole={me!.membership.role}
-              currentUserId={me!.user.id}
+              actorRole={me.membership.role}
+              currentUserId={me.user.id}
               key={member.id}
               member={member}
               onRemove={handleRemove}
