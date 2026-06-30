@@ -8,6 +8,7 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().default("dev-access-secret-change-me"),
   JWT_REFRESH_SECRET: z.string().default("dev-refresh-secret-change-me"),
   PAYSTACK_SECRET_KEY: z.string().optional(),
+  PAYSTACK_BASE_URL: z.string().url().optional(),
   PAYSTACK_WEBHOOK_SECRET: z.string().optional(),
   FRONTEND_APP_URL: z.string().url().optional(),
   CORS_ORIGINS: z.string().default("http://localhost:3000")

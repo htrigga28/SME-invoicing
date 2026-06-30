@@ -73,8 +73,11 @@ const invoiceResponse = {
   ],
   publicUrl: "http://localhost:3000/invoice/public-token",
   paymentSummary: {
-    available: false,
-    message: "Payments will be available after payment processing is implemented."
+    available: true,
+    provider: "paystack",
+    amountKobo: 97500,
+    currency: "NGN",
+    message: "Paystack checkout is enabled on the public invoice page."
   }
 } satisfies InvoiceDetailResponse;
 
@@ -102,5 +105,6 @@ describe("InvoiceDetailContent public URL", () => {
       "http://localhost:3000/invoice/public-token"
     );
     await waitFor(() => expect(screen.getByText("Public URL copied.")).toBeInTheDocument());
+    expect(screen.getByText(/Payment enabled/)).toBeInTheDocument();
   });
 });

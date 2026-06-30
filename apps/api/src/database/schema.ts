@@ -47,6 +47,14 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "void"
 ]);
 
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "pending",
+  "successful",
+  "failed",
+  "abandoned",
+  "refunded"
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -285,6 +293,57 @@ export const invoiceStatusEvents = pgTable(
   })
 );
 
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    providerReference: varchar("provider_reference", { length: 120 }).notNull(),
+    providerAccessCode: text("provider_access_code"),
+    providerAuthorizationUrl: text("provider_authorization_url"),
+    status: paymentStatusEnum("status").notNull().default("pending"),
+    currency: varchar("currency", { length: 3 }).notNull().default("NGN"),
+    amountKobo: integer("amount_kobo").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
+    channel: varchar("channel", { length: 80 }),
+    gatewayResponse: text("gateway_response"),
+    metadataRedacted: jsonb("metadata_redacted").$type<Record<string, unknown>>(),
+    initializedAt: timestamp("initialized_at", { withTimezone: true }).notNull().defaultNow(),
+    ...timestamps
+  },
+  (table) => ({
+    providerReferenceUnique: uniqueIndex("payments_provider_reference_unique").on(
+      table.provider,
+      table.providerReference
+    ),
+    organisationIndex: index("payments_organisation_id_idx").on(table.organisationId),
+    organisationInvoiceIndex: index("payments_org_invoice_id_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    organisationCustomerIndex: index("payments_org_customer_id_idx").on(
+      table.organisationId,
+      table.customerId
+    ),
+    organisationStatusIndex: index("payments_org_status_idx").on(
+      table.organisationId,
+      table.status
+    ),
+    providerReferenceIndex: index("payments_provider_reference_idx").on(table.providerReference)
+  })
+);
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -386,7 +445,8 @@ export const invoicesRelations = relations(invoices, ({ many, one }) => ({
     references: [users.id]
   }),
   lineItems: many(invoiceLineItems),
-  statusEvents: many(invoiceStatusEvents)
+  statusEvents: many(invoiceStatusEvents),
+  payments: many(payments)
 }));
 
 export const invoiceLineItemsRelations = relations(invoiceLineItems, ({ one }) => ({
@@ -412,6 +472,21 @@ export const invoiceStatusEventsRelations = relations(invoiceStatusEvents, ({ on
   actor: one(users, {
     fields: [invoiceStatusEvents.actorUserId],
     references: [users.id]
+  })
+}));
+
+export const paymentsRelations = relations(payments, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [payments.organisationId],
+    references: [organisations.id]
+  }),
+  invoice: one(invoices, {
+    fields: [payments.invoiceId],
+    references: [invoices.id]
+  }),
+  customer: one(customers, {
+    fields: [payments.customerId],
+    references: [customers.id]
   })
 }));
 
@@ -443,5 +518,6 @@ export type Customer = typeof customers.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
+export type Payment = typeof payments.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

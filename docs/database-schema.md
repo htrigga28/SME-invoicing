@@ -219,13 +219,23 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | customer_id | References customers. |
 | provider | `paystack`. |
 | provider_reference | Paystack reference. |
+| provider_access_code | Paystack checkout access code returned at initialization. |
+| provider_authorization_url | Paystack checkout URL returned at initialization. |
 | status | PaymentStatus. |
 | currency | Defaults to `NGN`. |
 | amount_kobo | Integer kobo. |
+| initialized_at | Timestamp for checkout initialization. |
 | paid_at | Nullable. |
+| failed_at | Nullable. |
+| abandoned_at | Nullable. |
+| channel | Nullable provider payment channel. |
+| gateway_response | Nullable safe provider response summary. |
+| metadata_redacted | Safe metadata only; no secrets or raw sensitive payloads. |
 | created_at, updated_at | Timestamps. |
 
 Constraint: unique on `provider + provider_reference`.
+
+T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.
 
 ### payment_events
 
@@ -325,6 +335,7 @@ Constraints:
 - Invoice `subtotal_kobo` is the sum of `invoice_line_items.line_total_kobo`.
 - Invoice `total_kobo` is `subtotal_kobo - discount_kobo + tax_kobo`.
 - Invoice `amount_paid_kobo` and `balance_due_kobo` are recalculated from successful payments.
+- T008 payment initialization does not recalculate invoice money fields; recalculation starts when verified webhook processing is implemented.
 - `paid_at` is set when an invoice first becomes fully paid.
 - If a paid invoice later changes because of refund or future adjustment, treat that as future work for MVP. Refunds are represented as a payment status but are not fully implemented.
 

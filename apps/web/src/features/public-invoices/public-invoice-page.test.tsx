@@ -1,15 +1,20 @@
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "@/lib/api";
 
 import { PublicInvoicePage } from "./public-invoice-page";
-import { getPublicInvoice, markPublicInvoiceViewed } from "./public-invoices-api";
+import {
+  getPublicInvoice,
+  initializePublicInvoicePayment,
+  markPublicInvoiceViewed
+} from "./public-invoices-api";
 import type { PublicInvoiceResponse } from "./types";
 
 vi.mock("./public-invoices-api", () => ({
   getPublicInvoice: vi.fn(),
+  initializePublicInvoicePayment: vi.fn(),
   markPublicInvoiceViewed: vi.fn()
 }));
 
@@ -54,19 +59,31 @@ const publicInvoice = {
     }
   ],
   paymentSummary: {
-    available: false,
-    message: "Online payment will be available in the next milestone."
+    available: true,
+    provider: "paystack",
+    amountKobo: 97500,
+    currency: "NGN",
+    message: "Pay securely online."
   }
 } satisfies PublicInvoiceResponse;
 
+const locationAssign = vi.fn();
+
 beforeEach(() => {
   vi.mocked(getPublicInvoice).mockResolvedValue(publicInvoice);
+  vi.mocked(initializePublicInvoicePayment).mockResolvedValue({
+    authorizationUrl: "https://checkout.paystack.test/pay/reference",
+    accessCode: "access-code",
+    reference: "SME-INV000007-ABC123"
+  });
   vi.mocked(markPublicInvoiceViewed).mockResolvedValue({ success: true });
+  vi.stubGlobal("location", { assign: locationAssign });
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("PublicInvoicePage", () => {
@@ -77,7 +94,7 @@ describe("PublicInvoicePage", () => {
     expect(screen.getByText("INV-000007")).toBeInTheDocument();
     expect(screen.getByText("Lagos Bright Prints")).toBeInTheDocument();
     expect(screen.getByText("Design retainer")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay online coming soon" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Pay .* online/ })).toBeEnabled();
     expect(screen.getByText("Powered by SME Invoicing")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Dashboard/ })).not.toBeInTheDocument();
   });
@@ -97,5 +114,54 @@ describe("PublicInvoicePage", () => {
     expect(await screen.findByText("Invoice unavailable")).toBeInTheDocument();
     expect(screen.getByText(/This invoice link is unavailable/)).toBeInTheDocument();
     expect(markPublicInvoiceViewed).not.toHaveBeenCalled();
+  });
+
+  it("starts a Paystack payment and redirects to the authorization URL", async () => {
+    render(<PublicInvoicePage token="public-token" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Pay .* online/ }));
+
+    expect(await screen.findByRole("button", { name: "Redirecting..." })).toBeDisabled();
+    await waitFor(() =>
+      expect(initializePublicInvoicePayment).toHaveBeenCalledWith("public-token")
+    );
+    expect(locationAssign).toHaveBeenCalledWith("https://checkout.paystack.test/pay/reference");
+  });
+
+  it("shows a safe inline error when payment initialization fails", async () => {
+    vi.mocked(initializePublicInvoicePayment).mockRejectedValueOnce(new Error("provider failed"));
+
+    render(<PublicInvoicePage token="public-token" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Pay .* online/ }));
+
+    expect(
+      await screen.findByText(
+        "Payment could not be started. Please try again or contact the business."
+      )
+    ).toBeInTheDocument();
+    expect(locationAssign).not.toHaveBeenCalled();
+  });
+
+  it("renders a callback notice without confirming payment client-side", async () => {
+    render(<PublicInvoicePage paymentCallback token="public-token" />);
+
+    expect(await screen.findByText("Payment confirmation pending")).toBeInTheDocument();
+    expect(screen.getByText(/after Paystack confirms the transaction/)).toBeInTheDocument();
+  });
+
+  it("keeps the pay button disabled when payment is unavailable", async () => {
+    vi.mocked(getPublicInvoice).mockResolvedValueOnce({
+      ...publicInvoice,
+      paymentSummary: {
+        available: false,
+        message: "Online payment is unavailable for this invoice."
+      }
+    });
+
+    render(<PublicInvoicePage token="public-token" />);
+
+    expect(await screen.findByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
+    expect(initializePublicInvoicePayment).not.toHaveBeenCalled();
   });
 });

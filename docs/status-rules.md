@@ -32,6 +32,7 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Create invoice | Set status to `draft`. |
 | Send/share invoice or generate public link | Move `draft` to `sent`. |
 | Public page opened | Move `sent` to `viewed`; keep stronger payment statuses unchanged. |
+| Paystack payment initialized | Create a pending payment only; do not change invoice payment totals or invoice status. |
 | Successful payment received | Recalculate paid and balance amounts, then apply payment-derived status. |
 | Partial payment | Set `partially_paid` when `amount_paid_kobo > 0` and less than `total_kobo`. |
 | Full payment | Set `paid` when `amount_paid_kobo >= total_kobo`; set `paid_at` when the invoice first becomes fully paid. |
@@ -39,7 +40,7 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Cancel invoice | Set `cancelled` only when invoice is not fully paid. |
 | Void invoice | Set `void` for correction/error cases and retain all records. |
 
-T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. Payment-derived statuses, receipt generation, and Paystack-driven recalculation are reserved for later tasks.
+T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. T008 adds Paystack initialization and pending payment records only. Payment-derived statuses, receipt generation, and Paystack-driven recalculation are reserved for later tasks.
 
 Public view tracking rules:
 
@@ -76,7 +77,8 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - Each successful payment is recorded independently.
 - The invoice remains `partially_paid` until successful payment totals meet or exceed `total_kobo`.
 - A receipt is generated for each successful payment.
-- Public partial payment entry is not exposed in MVP. Public payment initialization charges the current server-calculated `balance_due_kobo`.
+- Public payment initialization charges the current server-calculated `balance_due_kobo`.
+- Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified webhook processing is the source of truth for reconciliation.
 
 ## Cancellation Rules
 

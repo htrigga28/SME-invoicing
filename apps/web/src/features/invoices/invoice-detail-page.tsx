@@ -307,6 +307,13 @@ export function InvoiceDetailContent({
                   Copy public URL
                 </button>
                 {copySuccess ? <p className="mt-2 text-sm text-slate-600">{copySuccess}</p> : null}
+                {response.paymentSummary.available ? (
+                  <p className="mt-3 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm font-medium text-teal-900">
+                    Payment enabled: customers can pay{" "}
+                    {formatMoney(response.paymentSummary.amountKobo)} via Paystack from this public
+                    page.
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="mt-2 text-sm text-slate-600">

@@ -46,9 +46,11 @@ Required categories:
 - Frontend API URL and Paystack public key
 - Database URL
 - JWT secrets
-- Paystack secret and webhook config
+- Paystack secret, optional base URL, and webhook config
 - Frontend/backend URL and CORS origins
 - Later Brevo and Cloudflare R2 credentials
+
+For T008 Paystack initialization, set `PAYSTACK_SECRET_KEY` in the API environment and keep it server-side only. `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing tests or local experiments at a mock provider. Webhook reconciliation still belongs to T009.
 
 ## Local PostgreSQL Setup
 
@@ -160,7 +162,7 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 ## Current Implementation Status
 
-T007 adds the public customer-facing invoice page on top of invoice core. It intentionally does not implement Paystack payment initialization, payment records, receipts, dashboard metrics, exports, email, PDF generation, or reminders.
+T008 adds Paystack test-mode payment initialization on public invoice pages. It intentionally does not implement webhook reconciliation, successful payment balance updates, receipts, dashboard metrics, exports, email, PDF generation, or reminders.
 
 Implemented so far:
 
@@ -181,6 +183,7 @@ Implemented so far:
 - Server-side invoice numbering, public tokens, totals, status events, and invoice seed data.
 - Public invoice API and `/invoice/[token]` page with customer-facing invoice details.
 - Public view tracking that moves sent invoices to viewed without duplicating transitions.
-- Payment placeholder copy for the next Paystack milestone.
+- Paystack payment initialization from payable public invoices.
+- Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
 
-Next planned task: T008 Paystack payment initialization.
+Next planned task: T009 Paystack webhook processing.

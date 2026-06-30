@@ -38,8 +38,22 @@ export type PublicInvoiceResponse = {
     lineTotalKobo: number;
     sortOrder: number;
   }[];
-  paymentSummary: {
-    available: false;
-    message: string;
-  };
+  paymentSummary:
+    | {
+        available: true;
+        provider: "paystack";
+        amountKobo: number;
+        currency: "NGN";
+        message: string;
+      }
+    | {
+        available: false;
+        message: string;
+      };
+};
+
+export type PublicInvoicePaymentInitialization = {
+  authorizationUrl: string;
+  accessCode: string;
+  reference: string;
 };
