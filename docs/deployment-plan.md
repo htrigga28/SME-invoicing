@@ -30,6 +30,14 @@ The deployment should prioritize reliable demo access over complex infrastructur
 
 Secrets must not be committed. Production and preview environments should use separate Paystack and database configuration where practical.
 
+Payment Setup and Paystack subaccount notes:
+
+- `PAYSTACK_SECRET_KEY` remains server-only.
+- `FRONTEND_APP_URL` remains required for callback URLs.
+- Payment Setup bank resolution, account re-resolution, and subaccount creation all require the backend Paystack secret key.
+- Production deployments should use live Paystack keys only after Payment Setup, compliance, and payout-account flows are ready.
+- The platform does not store merchant Paystack secret keys; it uses one platform Paystack integration plus organisation subaccounts.
+
 ## Deployment Risks
 
 | Risk | Mitigation |
@@ -39,6 +47,8 @@ Secrets must not be committed. Production and preview environments should use se
 | Environment variable mismatch | Maintain documented env examples without secrets and verify during deployment. |
 | Database migration order | Run migrations before deploying code that depends on new schema. |
 | Paystack callback/webhook URL mismatch | Use deployed backend URL for webhooks and deployed frontend URL for callbacks. |
+| Payment Setup incomplete in demo or production | Expose clear dashboard/setup guidance and block public payment initialization until an active payment account exists. |
+| Subaccount or bank-resolution failure | Surface safe retry states, keep masked details only, and avoid storing raw account numbers. |
 | Free-tier cold starts | Mention in portfolio docs if first request is slow. Consider platform with acceptable wake time. |
 | Seed data handling | Keep demo seed command explicit and avoid running destructive seeds against production data unintentionally. |
 | Secure cookie/auth behaviour across domains | Configure cookie domain, secure flag, SameSite, HTTPS, and CORS credentials consistently. |
@@ -50,9 +60,10 @@ Secrets must not be committed. Production and preview environments should use se
 3. Deploy backend.
 4. Run migrations.
 5. Configure Paystack test webhook URL.
-6. Deploy frontend with API URL and Paystack public key.
-7. Run seed data only in the intended demo environment.
-8. Smoke test login, dashboard, public invoice, payment initialization, webhook processing, receipt, and export.
+6. Verify Payment Setup bank resolution and subaccount creation flows in the deployed backend.
+7. Deploy frontend with API URL and Paystack public key.
+8. Run seed data only in the intended demo environment.
+9. Smoke test login, dashboard, Payment Setup, public invoice, payment initialization, webhook processing, receipt, and export.
 
 ## Portfolio Documentation
 

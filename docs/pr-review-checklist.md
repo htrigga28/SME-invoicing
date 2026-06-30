@@ -59,11 +59,21 @@ Use this checklist when reviewing every pull request. The goal is to keep task b
 ## Security
 
 - [ ] Secrets are not committed.
+- [ ] Payment setup does not expose Paystack secrets.
+- [ ] Payment setup does not store full account numbers after subaccount creation.
 - [ ] Payment webhooks verify signatures.
 - [ ] Webhook processing is idempotent.
 - [ ] User input is validated before persistence.
 - [ ] Sensitive data is not exposed in public pages, logs, exports, or errors.
 - [ ] Authentication and authorization are enforced server-side.
+
+## Payment Setup Specific Checks
+
+- [ ] Account name confirmation is required before activation.
+- [ ] Backend re-resolves the bank account before subaccount creation.
+- [ ] Payment initialization derives the subaccount server-side.
+- [ ] Masked account details use `account_number_last4` rather than a full account number.
+- [ ] `provider_subaccount_code` handling is documented and preserved for payment traceability.
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 # SME Invoice & Payment Reconciliation Platform
 
-A standalone B2B SaaS portfolio project for Nigerian SMEs, freelancers, agencies, and service providers. The MVP will support invoices, public invoice payment links, Paystack test payments, webhook-based payment reconciliation, receipts, exports, and audit logs.
+A standalone B2B SaaS portfolio project for Nigerian SMEs, freelancers, agencies, and service providers. The MVP will support invoices, organisation Payment Setup, public invoice payment links, Paystack test payments, webhook-based payment reconciliation, receipts, exports, and audit logs.
 
 ## Stack
 
@@ -49,6 +49,13 @@ Required categories:
 - Paystack secret and webhook config
 - Frontend/backend URL and CORS origins
 - Later Brevo and Cloudflare R2 credentials
+
+Payment Setup notes:
+
+- Payment Setup is required before public invoice payment can be initialized.
+- Local/test mode uses Paystack test keys.
+- Never commit real Paystack keys.
+- The platform does not store merchant Paystack secret keys; it uses one platform Paystack integration and organisation subaccounts.
 
 ## Local PostgreSQL Setup
 
@@ -154,13 +161,30 @@ The seed also adds 12 realistic demo customers to the demo organisation. Ten are
 
 The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. It also prints sample public invoice URLs for sent/viewed/overdue invoices. Paid and partially paid invoices are intentionally not seeded yet because payment and reconciliation flows start in later tasks.
 
+## Payment Setup Flow
+
+Before a business can accept online invoice payments:
+
+1. Login as Owner/Admin.
+2. Complete the business profile.
+3. Open Payment Setup.
+4. Select bank.
+5. Resolve account.
+6. Confirm account name.
+7. Create Paystack subaccount.
+8. Public invoice Pay Online becomes available.
+
+For test/demo usage, use Paystack test bank and account details where available. Do not use real production banking data in screenshots or portfolio demos.
+
 ## Auth Session Trade-Off
 
 The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps the MVP simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
 
 ## Current Implementation Status
 
-T007 adds the public customer-facing invoice page on top of invoice core. It intentionally does not implement Paystack payment initialization, payment records, receipts, dashboard metrics, exports, email, PDF generation, or reminders.
+T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement receipts, dashboard metrics, exports, email, PDF generation, or reminders.
+
+Payment Setup and organisation subaccount support are planned MVP work and now gate public payment initialization in the product specification, even though the runtime implementation lands in later tasks.
 
 Implemented so far:
 
@@ -181,6 +205,8 @@ Implemented so far:
 - Server-side invoice numbering, public tokens, totals, status events, and invoice seed data.
 - Public invoice API and `/invoice/[token]` page with customer-facing invoice details.
 - Public view tracking that moves sent invoices to viewed without duplicating transitions.
-- Payment placeholder copy for the next Paystack milestone.
+- Paystack payment initialization from payable public invoices.
+- Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
+- Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
 
-Next planned task: T008 Paystack payment initialization.
+Next planned implementation task: T011 Organisation Payment Setup and Paystack Subaccounts.
