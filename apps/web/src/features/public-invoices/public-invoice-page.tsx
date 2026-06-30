@@ -108,9 +108,11 @@ export function PublicInvoicePage({
     );
   }
 
+  const showPaymentCallbackNotice = paymentCallback && invoice.paymentSummary.available;
+
   return (
     <PublicInvoiceShell>
-      {paymentCallback ? (
+      {showPaymentCallbackNotice ? (
         <div className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Payment confirmation pending</p>
           <p className="mt-1">

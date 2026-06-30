@@ -165,7 +165,7 @@ describe("PublicInvoicePage", () => {
     expect(initializePublicInvoicePayment).not.toHaveBeenCalled();
   });
 
-  it("shows webhook-confirmed paid state with no payment action", async () => {
+  it("hides the callback notice after webhook-confirmed payment makes the invoice non-payable", async () => {
     vi.mocked(getPublicInvoice).mockResolvedValueOnce({
       ...publicInvoice,
       invoice: {
@@ -187,6 +187,6 @@ describe("PublicInvoicePage", () => {
     expect(screen.getByText("This invoice has no outstanding balance.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
     expect(screen.getAllByText("NGN 0.00").length).toBeGreaterThan(0);
-    expect(screen.getByText("Payment confirmation pending")).toBeInTheDocument();
+    expect(screen.queryByText("Payment confirmation pending")).not.toBeInTheDocument();
   });
 });
