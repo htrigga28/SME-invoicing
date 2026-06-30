@@ -192,6 +192,10 @@ export function InvoiceDetailContent({
                   />
                   <DetailItem label="Issue date" value={formatDate(invoice.issueDate)} />
                   <DetailItem label="Due date" value={formatDate(invoice.dueDate)} />
+                  <DetailItem
+                    label="Paid at"
+                    value={invoice.paidAt ? formatDate(invoice.paidAt) : "Not paid yet"}
+                  />
                   <DetailItem label="Notes" value={invoice.notes || "No notes"} />
                 </dl>
               </div>

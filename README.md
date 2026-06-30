@@ -50,7 +50,7 @@ Required categories:
 - Frontend/backend URL and CORS origins
 - Later Brevo and Cloudflare R2 credentials
 
-For T008 Paystack initialization, set `PAYSTACK_SECRET_KEY` in the API environment and keep it server-side only. `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing tests or local experiments at a mock provider. Webhook reconciliation still belongs to T009.
+For Paystack test-mode flows, set `PAYSTACK_SECRET_KEY` in the API environment and keep it server-side only. `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing tests or local experiments at a mock provider. Paystack webhook signature verification also uses `PAYSTACK_SECRET_KEY`.
 
 ## Local PostgreSQL Setup
 
@@ -156,13 +156,23 @@ The seed also adds 12 realistic demo customers to the demo organisation. Ten are
 
 The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. It also prints sample public invoice URLs for sent/viewed/overdue invoices. Paid and partially paid invoices are intentionally not seeded yet because payment and reconciliation flows start in later tasks.
 
+## Local Paystack Webhook Testing
+
+Paystack needs a public webhook URL to call your local API. In local development, use a tunnel such as ngrok and configure the Paystack dashboard webhook URL as:
+
+```text
+https://your-tunnel.example/payments/paystack/webhook
+```
+
+The API verifies `x-paystack-signature` against the exact raw request body with `PAYSTACK_SECRET_KEY`. Do not send handcrafted JSON through tools that change the body when validating signatures. For automated tests, the project signs raw fixture buffers directly and does not call Paystack.
+
 ## Auth Session Trade-Off
 
 The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps the MVP simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
 
 ## Current Implementation Status
 
-T008 adds Paystack test-mode payment initialization on public invoice pages. It intentionally does not implement webhook reconciliation, successful payment balance updates, receipts, dashboard metrics, exports, email, PDF generation, or reminders.
+T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement receipts, dashboard metrics, exports, email, PDF generation, or reminders.
 
 Implemented so far:
 
@@ -185,5 +195,6 @@ Implemented so far:
 - Public view tracking that moves sent invoices to viewed without duplicating transitions.
 - Paystack payment initialization from payable public invoices.
 - Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
+- Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
 
-Next planned task: T009 Paystack webhook processing.
+Next planned task: T010 Payments and reconciliation page.

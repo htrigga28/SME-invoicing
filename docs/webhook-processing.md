@@ -16,7 +16,7 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 - Successful payments must update payment status.
 - Successful payments must recalculate invoice `amount_paid_kobo` and `balance_due_kobo`.
 - Successful payments must update invoice status.
-- Successful payments must generate a receipt.
+- Successful payments must not generate receipts until T011.
 - Failed payments must be recorded without marking invoice paid.
 - Webhook processing should be safe if Paystack retries the same event.
 
@@ -32,9 +32,10 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 8. Update payment status.
 9. Recalculate invoice payment totals.
 10. Update invoice status.
-11. Generate receipt if payment successful.
-12. Write audit log.
-13. Mark event processed.
+11. Write audit log.
+12. Mark event processed.
+
+Receipt generation starts in T011 and is intentionally skipped in T009.
 
 ## Signature Verification
 
@@ -47,7 +48,7 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 
 Use database constraints and transaction boundaries to make processing idempotent.
 
-Idempotency keys should include:
+Idempotency keys include:
 
 - Provider name.
 - Provider event ID where available.
@@ -58,8 +59,9 @@ Rules:
 
 - A duplicate event must not create a second successful payment.
 - A duplicate payment reference must not add to `amount_paid_kobo` twice.
-- A duplicate successful event must not generate a second receipt.
+- A duplicate successful event must not create duplicate invoice status events.
 - Processing should be safe to retry after transient failure.
+- When Paystack does not provide a reliable event ID, `provider + provider_reference + event_type` is the defensive idempotency key.
 
 ## Payment Matching
 
@@ -85,15 +87,13 @@ If the webhook arrives before the frontend callback, the webhook remains the sou
 | Currency mismatch | Mark event for review, do not mark invoice paid. |
 | Invoice already paid | Store event, do not over-credit silently; flag for review if amount is new. |
 | Invoice cancelled/void | Store payment truth, do not move invoice to paid automatically, write audit log. |
-| Partial payment | Update invoice to `partially_paid` and generate receipt for successful payment. |
+| Partial payment | Update invoice to `partially_paid`; receipt generation is T011. |
 | Overpayment | Mark invoice `paid`, balance `0`, and flag overpayment in audit metadata. |
 | Webhook before callback | Process webhook normally if pending payment reference exists. |
 
 ## Receipt Generation
 
-Generate one receipt per successful payment. Enforce a unique receipt on `payment_id` so retries cannot create duplicate receipts.
-
-Receipt generation should happen in the same transaction as successful payment processing where practical.
+Receipt generation is intentionally out of scope for T009. T011 should generate one receipt per successful payment and enforce uniqueness on `payment_id`.
 
 ## Audit Logging
 

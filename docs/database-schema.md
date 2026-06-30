@@ -248,12 +248,19 @@ T008 creates the `payments` table and stores pending Paystack initialization rec
 | provider_event_id | Provider event identifier when available. |
 | provider_reference | Payment reference. |
 | event_type | Paystack event type. |
+| signature_valid | Whether the webhook signature was valid. |
+| processed | Whether processing or safe ignoring is complete. |
+| duplicate_of_event_id | Nullable reference to the event this duplicate maps to. |
 | payload_redacted | Redacted JSON payload. |
 | processed_at | Nullable. |
-| processing_error | Nullable safe error. |
+| error_message | Nullable safe error or review reason. |
 | created_at | Timestamp. |
 
-Constraint: prevent duplicate processing of the same provider event/reference. Use a unique key such as `provider + provider_event_id` when present, plus defensive uniqueness around processed `provider + provider_reference + event_type`.
+Constraints and idempotency:
+
+- Unique `provider + provider_event_id` when `provider_event_id` is present.
+- Index provider, provider_reference, payment_id, organisation_id, event_type, and processed.
+- Processing also checks existing processed `provider + provider_reference + event_type` events to prevent double-counting when Paystack does not provide a reliable event ID.
 
 ### receipts
 
@@ -335,7 +342,8 @@ Constraints:
 - Invoice `subtotal_kobo` is the sum of `invoice_line_items.line_total_kobo`.
 - Invoice `total_kobo` is `subtotal_kobo - discount_kobo + tax_kobo`.
 - Invoice `amount_paid_kobo` and `balance_due_kobo` are recalculated from successful payments.
-- T008 payment initialization does not recalculate invoice money fields; recalculation starts when verified webhook processing is implemented.
+- T008 payment initialization does not recalculate invoice money fields.
+- T009 verified webhook processing recalculates invoice money fields from successful payments.
 - `paid_at` is set when an invoice first becomes fully paid.
 - If a paid invoice later changes because of refund or future adjustment, treat that as future work for MVP. Refunds are represented as a payment status but are not fully implemented.
 

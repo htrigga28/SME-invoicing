@@ -16,6 +16,12 @@ describe("PublicInvoicesController", () => {
         PublicInvoicesController.prototype.markPublicInvoiceViewed
       )
     ).toBeUndefined();
+    expect(
+      Reflect.getMetadata(
+        GUARDS_METADATA,
+        PublicInvoicesController.prototype.initializePublicInvoicePayment
+      )
+    ).toBeUndefined();
   });
 
   it("delegates public invoice requests to the invoice service", () => {
