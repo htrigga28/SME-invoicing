@@ -344,6 +344,41 @@ export const payments = pgTable(
   })
 );
 
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id").references(() => organisations.id, {
+      onDelete: "set null"
+    }),
+    paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "set null" }),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    providerEventId: varchar("provider_event_id", { length: 120 }),
+    providerReference: varchar("provider_reference", { length: 120 }),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    signatureValid: boolean("signature_valid").notNull().default(false),
+    processed: boolean("processed").notNull().default(false),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    duplicateOfEventId: uuid("duplicate_of_event_id"),
+    payloadRedacted: jsonb("payload_redacted").$type<Record<string, unknown>>(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    providerIndex: index("payment_events_provider_idx").on(table.provider),
+    providerReferenceIndex: index("payment_events_provider_reference_idx").on(
+      table.providerReference
+    ),
+    paymentIndex: index("payment_events_payment_id_idx").on(table.paymentId),
+    organisationIndex: index("payment_events_organisation_id_idx").on(table.organisationId),
+    eventTypeIndex: index("payment_events_event_type_idx").on(table.eventType),
+    processedIndex: index("payment_events_processed_idx").on(table.processed),
+    providerEventUnique: uniqueIndex("payment_events_provider_event_unique")
+      .on(table.provider, table.providerEventId)
+      .where(sql`${table.providerEventId} is not null`)
+  })
+);
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -379,6 +414,7 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   invitations: many(organisationInvitations),
   customers: many(customers),
   invoices: many(invoices),
+  paymentEvents: many(paymentEvents),
   invoiceNumberSequence: one(invoiceNumberSequences),
   businessProfile: one(businessProfiles),
   auditLogs: many(auditLogs)
@@ -475,7 +511,7 @@ export const invoiceStatusEventsRelations = relations(invoiceStatusEvents, ({ on
   })
 }));
 
-export const paymentsRelations = relations(payments, ({ one }) => ({
+export const paymentsRelations = relations(payments, ({ many, one }) => ({
   organisation: one(organisations, {
     fields: [payments.organisationId],
     references: [organisations.id]
@@ -487,6 +523,18 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
   customer: one(customers, {
     fields: [payments.customerId],
     references: [customers.id]
+  }),
+  events: many(paymentEvents)
+}));
+
+export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [paymentEvents.organisationId],
+    references: [organisations.id]
+  }),
+  payment: one(payments, {
+    fields: [paymentEvents.paymentId],
+    references: [payments.id]
   })
 }));
 
@@ -519,5 +567,6 @@ export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

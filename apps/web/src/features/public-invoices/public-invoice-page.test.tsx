@@ -164,4 +164,29 @@ describe("PublicInvoicePage", () => {
     expect(await screen.findByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
     expect(initializePublicInvoicePayment).not.toHaveBeenCalled();
   });
+
+  it("shows webhook-confirmed paid state with no payment action", async () => {
+    vi.mocked(getPublicInvoice).mockResolvedValueOnce({
+      ...publicInvoice,
+      invoice: {
+        ...publicInvoice.invoice,
+        status: "paid",
+        amountPaidKobo: 97500,
+        balanceDueKobo: 0,
+        paidAt: "2026-06-30T10:00:00.000Z"
+      },
+      paymentSummary: {
+        available: false,
+        message: "This invoice has no outstanding balance."
+      }
+    });
+
+    render(<PublicInvoicePage paymentCallback token="public-token" />);
+
+    expect(await screen.findByText("Paid")).toBeInTheDocument();
+    expect(screen.getByText("This invoice has no outstanding balance.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
+    expect(screen.getAllByText("NGN 0.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Payment confirmation pending")).toBeInTheDocument();
+  });
 });

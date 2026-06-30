@@ -106,5 +106,30 @@ describe("InvoiceDetailContent public URL", () => {
     );
     await waitFor(() => expect(screen.getByText("Public URL copied.")).toBeInTheDocument());
     expect(screen.getByText(/Payment enabled/)).toBeInTheDocument();
+    expect(screen.getByText("Not paid yet")).toBeInTheDocument();
+  });
+
+  it("shows webhook-confirmed paid amount, balance, and paid date", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      invoice: {
+        ...invoiceResponse.invoice,
+        status: "paid",
+        amountPaidKobo: 97500,
+        balanceDueKobo: 0,
+        paidAt: "2026-06-30T10:00:00.000Z"
+      },
+      paymentSummary: {
+        available: false,
+        message: "Online payment is unavailable for this invoice."
+      }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByText("Paid")).toBeInTheDocument();
+    expect(screen.getAllByText("NGN 975.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("NGN 0.00")).toBeInTheDocument();
+    expect(screen.getByText("30 Jun 2026")).toBeInTheDocument();
   });
 });

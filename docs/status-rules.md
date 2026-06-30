@@ -40,7 +40,7 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Cancel invoice | Set `cancelled` only when invoice is not fully paid. |
 | Void invoice | Set `void` for correction/error cases and retain all records. |
 
-T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. T008 adds Paystack initialization and pending payment records only. Payment-derived statuses, receipt generation, and Paystack-driven recalculation are reserved for later tasks.
+T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. T008 adds Paystack initialization and pending payment records only. T009 adds webhook-driven payment reconciliation. Receipt generation is reserved for T011.
 
 Public view tracking rules:
 
@@ -79,6 +79,11 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - A receipt is generated for each successful payment.
 - Public payment initialization charges the current server-calculated `balance_due_kobo`.
 - Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified webhook processing is the source of truth for reconciliation.
+- A verified `charge.success` webhook can mark a matching payment `successful`.
+- After a successful payment, invoice paid and balance amounts are recalculated from all successful payments for the invoice.
+- Full payment marks the invoice `paid` and sets `paid_at` the first time it becomes fully paid.
+- Partial successful totals mark the invoice `partially_paid`.
+- If a previously overdue invoice is fully paid, it becomes `paid`.
 
 ## Cancellation Rules
 

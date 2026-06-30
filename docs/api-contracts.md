@@ -166,9 +166,20 @@ Rules:
 | `GET /payments` | Required | Owner/Admin/Accountant/Viewer | Query: status, customer, invoice, dates | `{ payments, pagination }` |
 | `GET /payments/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ payment, invoice, customer, events }` |
 
-Webhook endpoint must verify signature with raw request body before trusting payload content.
+Webhook endpoint rules:
 
-Webhook processing, payment reconciliation, receipt generation, and invoice balance updates begin in T009/T011. T008 only creates pending Paystack payment records.
+- Uses Paystack signature authentication, not user JWT auth.
+- Reads `x-paystack-signature` and verifies HMAC SHA512 against the raw request body with `PAYSTACK_SECRET_KEY`.
+- Must not verify against `JSON.stringify(req.body)`.
+- Parses JSON only after signature verification succeeds.
+- Handles `charge.success` in T009.
+- Stores a redacted payment event before or during processing.
+- Matches `data.reference` to an existing Paystack payment reference.
+- Validates amount and `NGN` currency before marking payment successful.
+- Recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status after successful validation.
+- Returns `{ received: true }` for processed, ignored, duplicate, mismatch, or unknown-reference events with valid signatures.
+- Rejects missing or invalid signatures safely.
+- Receipt generation remains T011 and is not performed by the webhook in T009.
 
 ## Receipts
 
