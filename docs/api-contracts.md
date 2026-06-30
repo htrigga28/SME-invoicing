@@ -90,7 +90,7 @@ Rules:
 | --- | --- | --- | --- | --- |
 | `GET /customers` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?=active|archived|all`, `page?`, `limit?` | `{ customers, pagination }` |
 | `POST /customers` | Required | Owner/Admin/Accountant | `{ name, email, phone?, billingAddress? }` | `{ customer }` |
-| `GET /customers/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ customer, invoiceSummary }` |
+| `GET /customers/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ customer, invoiceSummary, invoices }` |
 | `PATCH /customers/:id` | Required | Owner/Admin/Accountant | `{ name?, email?, phone?, billingAddress? }` | `{ customer }` |
 | `POST /customers/:id/archive` | Required | Owner/Admin/Accountant | `{ reason? }` | `{ customer }` |
 
@@ -103,7 +103,7 @@ Customer rules:
 - Emails are normalized to lowercase before persistence.
 - Duplicate active customer emails are blocked within the same organisation.
 - Archived customers are excluded from the default list, remain readable, and cannot be updated in the MVP.
-- `invoiceSummary` is a placeholder until T006 Invoice Core.
+- Customer detail includes a recent invoice history list and summary totals scoped to the current organisation.
 
 ## Invoices
 
