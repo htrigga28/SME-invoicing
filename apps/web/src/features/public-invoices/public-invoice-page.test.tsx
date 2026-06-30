@@ -150,6 +150,39 @@ describe("PublicInvoicePage", () => {
     expect(screen.getByText(/after Paystack confirms the transaction/)).toBeInTheDocument();
   });
 
+  it("polls for webhook-confirmed payment updates after returning from the callback", async () => {
+    vi.useFakeTimers();
+    vi.mocked(getPublicInvoice)
+      .mockResolvedValueOnce(publicInvoice)
+      .mockResolvedValueOnce({
+        ...publicInvoice,
+        invoice: {
+          ...publicInvoice.invoice,
+          status: "paid",
+          amountPaidKobo: 97500,
+          balanceDueKobo: 0,
+          paidAt: "2026-06-30T10:00:00.000Z"
+        },
+        paymentSummary: {
+          available: false,
+          message: "This invoice has no outstanding balance."
+        }
+      });
+
+    render(<PublicInvoicePage paymentCallback token="public-token" />);
+
+    expect(await screen.findByText("Payment confirmation pending")).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await screen.findByText("This invoice has no outstanding balance.");
+    expect(screen.queryByText("Payment confirmation pending")).not.toBeInTheDocument();
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
+
+    vi.useRealTimers();
+  });
+
   it("keeps the pay button disabled when payment is unavailable", async () => {
     vi.mocked(getPublicInvoice).mockResolvedValueOnce({
       ...publicInvoice,

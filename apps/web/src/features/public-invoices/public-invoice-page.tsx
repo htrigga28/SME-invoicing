@@ -18,6 +18,9 @@ import type { PublicInvoiceResponse } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
 
+const PAYMENT_CALLBACK_POLL_INTERVAL_MS = 3000;
+const PAYMENT_CALLBACK_POLL_LIMIT = 10;
+
 const statusStyles: Record<InvoiceStatus, string> = {
   draft: "border-slate-200 bg-slate-100 text-slate-700",
   sent: "border-blue-200 bg-blue-50 text-blue-700",
@@ -65,6 +68,43 @@ export function PublicInvoicePage({
 
     void loadInvoice();
   }, [token]);
+
+  useEffect(() => {
+    if (!paymentCallback || state !== "ready" || !invoice?.paymentSummary.available) {
+      return;
+    }
+
+    let pollCount = 0;
+    let cancelled = false;
+
+    const intervalId = window.setInterval(() => {
+      pollCount += 1;
+
+      if (pollCount > PAYMENT_CALLBACK_POLL_LIMIT) {
+        window.clearInterval(intervalId);
+        return;
+      }
+
+      void getPublicInvoice(token)
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+
+          setInvoice(response);
+
+          if (!response.paymentSummary.available) {
+            window.clearInterval(intervalId);
+          }
+        })
+        .catch(() => undefined);
+    }, PAYMENT_CALLBACK_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [invoice?.paymentSummary.available, paymentCallback, state, token]);
 
   useEffect(() => {
     if (state !== "ready" || viewTrackedRef.current) {
