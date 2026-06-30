@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
+import { formatMoney, InvoiceStatusBadge } from "@/features/invoices/invoice-ui";
 import { isApiRequestError } from "@/lib/api";
 
 import { archiveCustomer, getCustomer } from "./customers-api";
@@ -144,14 +145,14 @@ export function CustomerDetailContent({
             Back to customers
           </Link>
         }
-        description="Customer billing profile and invoice history placeholder."
+        description="Customer billing profile and invoice history."
         title={customer.name}
       />
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <div className="rounded-lg border border-slate-200 bg-white p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -190,15 +191,7 @@ export function CustomerDetailContent({
           </dl>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Invoice history</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Invoice history will be available after T006 Invoice Core.
-          </p>
-          <p className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-600">
-            {response.invoiceSummary.message}
-          </p>
-        </div>
+        <InvoiceHistoryPanel response={response} />
       </div>
 
       {canManage && customer.status === "archived" ? (
@@ -228,6 +221,103 @@ export function CustomerDetailContent({
         title="Archive customer?"
       />
     </section>
+  );
+}
+
+function InvoiceHistoryPanel({ response }: { response: CustomerDetailResponse }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">Invoice history</h2>
+          <p className="mt-1 text-sm text-slate-600">{response.invoiceSummary.message}</p>
+        </div>
+        <Link
+          className="text-sm font-semibold text-teal-700 hover:text-teal-800"
+          href="/invoices"
+        >
+          View all invoices
+        </Link>
+      </div>
+
+      <dl className="mt-5 grid gap-4 border-y border-slate-100 py-4 sm:grid-cols-4">
+        <InvoiceSummaryMetric
+          label="Invoices"
+          value={String(response.invoiceSummary.totalInvoices)}
+        />
+        <InvoiceSummaryMetric
+          label="Invoiced"
+          value={formatMoney(response.invoiceSummary.totalInvoicedKobo)}
+        />
+        <InvoiceSummaryMetric
+          label="Paid"
+          value={formatMoney(response.invoiceSummary.totalPaidKobo)}
+        />
+        <InvoiceSummaryMetric
+          label="Balance due"
+          value={formatMoney(response.invoiceSummary.totalBalanceDueKobo)}
+        />
+      </dl>
+
+      {response.invoices.length === 0 ? (
+        <div className="mt-5 rounded-md border border-dashed border-slate-300 p-5 text-sm text-slate-600">
+          Create an invoice for this customer and it will appear here.
+        </div>
+      ) : (
+        <div className="mt-5 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead>
+              <tr className="text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                <th className="px-3 py-2">Invoice</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Issued</th>
+                <th className="px-3 py-2">Due</th>
+                <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2 text-right">Paid</th>
+                <th className="px-3 py-2 text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {response.invoices.map((invoice) => (
+                <tr key={invoice.id}>
+                  <td className="px-3 py-3 font-medium text-slate-950">
+                    <Link
+                      className="text-teal-700 hover:text-teal-800"
+                      href={`/invoices/${invoice.id}`}
+                    >
+                      {invoice.invoiceNumber}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-3">
+                    <InvoiceStatusBadge status={invoice.status} />
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">{formatDate(invoice.issueDate)}</td>
+                  <td className="px-3 py-3 text-slate-600">{formatDate(invoice.dueDate)}</td>
+                  <td className="px-3 py-3 text-right text-slate-700">
+                    {formatMoney(invoice.totalKobo)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-slate-700">
+                    {formatMoney(invoice.amountPaidKobo)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-medium text-slate-950">
+                    {formatMoney(invoice.balanceDueKobo)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvoiceSummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold text-slate-950">{value}</dd>
+    </div>
   );
 }
 
