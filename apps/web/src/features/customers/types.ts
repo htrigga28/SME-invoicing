@@ -1,3 +1,5 @@
+import type { InvoiceStatus } from "@sme-invoicing/shared";
+
 import type { Membership } from "@/features/auth/types";
 
 export type CustomerStatus = "active" | "archived";
@@ -30,12 +32,34 @@ export type CustomerFormInput = {
   billingAddress?: string | null;
 };
 
+export type CustomerInvoiceHistoryItem = {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  totalKobo: number;
+  amountPaidKobo: number;
+  balanceDueKobo: number;
+  publicAccessEnabled: boolean;
+  sentAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CustomerDetailResponse = {
   customer: Customer;
   invoiceSummary: {
-    available: false;
+    available: true;
+    totalInvoices: number;
+    totalInvoicedKobo: number;
+    totalPaidKobo: number;
+    totalBalanceDueKobo: number;
     message: string;
   };
+  invoices: CustomerInvoiceHistoryItem[];
 };
 
 export const customerManagerRoles = [
