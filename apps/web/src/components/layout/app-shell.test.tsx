@@ -56,7 +56,15 @@ describe("app shell navigation components", () => {
   it("shows Settings / Team to owners with an active sidebar state", () => {
     render(<Sidebar activePath="/settings/team" role="owner" />);
 
-    expect(screen.getByRole("link", { name: /Settings \/ Team/ })).toHaveAttribute(
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("shows Payment Setup to viewers with an active sidebar state", () => {
+    render(<Sidebar activePath="/settings/payment-setup" role="viewer" />);
+
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Payment Setup" })).toHaveAttribute(
       "aria-current",
       "page"
     );
@@ -65,6 +73,14 @@ describe("app shell navigation components", () => {
   it("hides Settings / Team from viewers", () => {
     render(<Sidebar activePath="/dashboard" role="viewer" />);
 
-    expect(screen.queryByRole("link", { name: /Settings \/ Team/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Team" })).not.toBeInTheDocument();
+  });
+
+  it("does not render Payment Setup as a main navigation link", () => {
+    render(<Sidebar activePath="/dashboard" role="owner" />);
+
+    const mainSection = screen.getByText("Main").closest("div");
+
+    expect(mainSection).not.toHaveTextContent("Payment Setup");
   });
 });

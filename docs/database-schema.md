@@ -133,6 +133,20 @@ Rules:
 - Disabled accounts remain for audit/history.
 - Changing payout account should create or activate a new record and disable the prior active record, depending on the implementation path.
 
+Indexes and constraints:
+
+- Index on `organisation_id`.
+- Index on `organisation_id + provider`.
+- Index on `organisation_id + status`.
+- Partial unique index on `provider_subaccount_code` where `provider_subaccount_code is not null`.
+- Partial unique index on `organisation_id + provider` where `status = active`.
+
+Storage and redaction:
+
+- Full account numbers are request-time values only and must not be stored.
+- Frontend responses expose only `account_number_last4`.
+- Provider metadata is stored only as redacted JSONB and must not contain raw Paystack responses or account numbers.
+
 ### customers
 
 | Column | Notes |

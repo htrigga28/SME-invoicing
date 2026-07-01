@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiRequestError, apiRequest, getApiBaseUrl } from "./api";
+import { ApiRequestError, apiRequest, extractApiErrorMessage, getApiBaseUrl } from "./api";
 
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
 
@@ -33,7 +33,8 @@ describe("getApiBaseUrl", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
-        status: 401
+        status: 401,
+        text: vi.fn().mockResolvedValue("")
       })
     );
 
@@ -41,5 +42,32 @@ describe("getApiBaseUrl", () => {
       name: "ApiRequestError",
       status: 401
     } satisfies Partial<ApiRequestError>);
+  });
+
+  it("uses the backend message when available", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify({
+            message: "Unable to load Paystack banks. Check Paystack configuration."
+          })
+        )
+      })
+    );
+
+    await expect(apiRequest("/payment-setup/banks")).rejects.toMatchObject({
+      message: "Unable to load Paystack banks. Check Paystack configuration.",
+      status: 503
+    } satisfies Partial<ApiRequestError>);
+  });
+
+  it("falls back to friendly status messages when the backend payload is not useful", async () => {
+    expect(extractApiErrorMessage(503, { error: "Service Unavailable" })).toBe(
+      "The payment provider is currently unavailable. Please try again later."
+    );
+    expect(extractApiErrorMessage(404)).toBe("The requested record could not be found.");
   });
 });

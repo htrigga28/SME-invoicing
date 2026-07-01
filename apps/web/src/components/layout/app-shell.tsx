@@ -6,7 +6,7 @@ import React, { useEffect, useState } from "react";
 import { getMe, logout } from "@/features/auth/auth-api";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
 import type { MeResponse, Membership } from "@/features/auth/types";
-import { isApiRequestError } from "@/lib/api";
+import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
 
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -67,7 +67,7 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
           return;
         }
 
-        setError(loadError instanceof Error ? loadError.message : "Could not load workspace.");
+        setError(getApiErrorMessage(loadError, "Could not load workspace."));
         setState("error");
       });
   }, [requiredRoles, router]);
