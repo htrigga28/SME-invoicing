@@ -42,6 +42,7 @@ Status values:
 - T004 was patched before T005 to add a reusable authenticated app shell, sidebar navigation, and coming-soon placeholders for future modules.
 - T005 was patched before merge to replace native browser prompts with app-level confirmation UI for customer archive actions.
 - T011 was patched before merge to add app-wide friendly API error display, Sonner toast notifications, Settings-group Payment Setup navigation, and a post-business-profile entry into Payment Setup.
+- Added payment account reactivation to the T012 subaccount-aware payment initialization PR.
 - Payment Setup is now MVP-critical and must land before subaccount-aware payment initialization and reconciliation UI.
 - T013 Payments/Reconciliation must happen after T011 and T012 so reconciliation reflects subaccount-aware payment records.
 - Receipt generation remains sequenced after reconciliation.

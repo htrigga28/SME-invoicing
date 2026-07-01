@@ -65,6 +65,7 @@ Rules:
 | `POST /payment-setup/resolve-account` | Required | Owner/Admin | `{ bankCode, accountNumber }` | `{ bankCode, bankName, accountNumberLast4, accountName }` |
 | `POST /payment-setup/subaccount` | Required | Owner/Admin | `{ bankCode, accountNumber, confirmedAccountName }` | `{ paymentAccount }` |
 | `POST /payment-setup/account/disable` | Required | Owner/Admin | `{ reason? }` | `{ paymentAccount }` |
+| `POST /payment-setup/accounts/:id/reactivate` | Required | Owner/Admin | `{ reason? }` | `{ paymentAccount }` |
 
 `GET /payment-setup/account` response when no account exists:
 
@@ -143,6 +144,15 @@ Frontend responses must not expose `organisation_id`, full account numbers, raw 
   }
 }
 ```
+
+`POST /payment-setup/accounts/:id/reactivate` rules:
+
+- Backend scopes the account lookup to the authenticated user's active organisation.
+- Only disabled Paystack accounts with an existing stored `provider_subaccount_code` can be reactivated.
+- Reactivation uses the existing stored Paystack subaccount; it does not re-resolve bank details and does not create a new Paystack subaccount.
+- Reactivation clears `disabled_at`, sets status to `active`, and disables any other active Paystack account for the organisation/provider.
+- Changing the payout bank account still requires the full setup flow again because the app does not store full account numbers.
+- Frontend responses must not expose `provider_subaccount_code`.
 
 Payment Setup RBAC rules:
 

@@ -465,6 +465,39 @@ describe("InvoicesService public payment initialization", () => {
     expect(paystackService.initializeTransaction).not.toHaveBeenCalled();
   });
 
+  it("uses a reactivated payment account subaccount for Paystack initialization", async () => {
+    const reactivatedAccount = {
+      ...activePaymentAccount,
+      id: "reactivated-payment-account",
+      providerSubaccountCode: "ACCT_reactivated"
+    };
+    const db = createPaymentDb(createPayment({ providerSubaccountCode: "ACCT_reactivated" }));
+    const paystackService = {
+      initializeTransaction: jest.fn().mockResolvedValue({
+        authorizationUrl: "https://checkout.paystack.test/pay/reference",
+        accessCode: "access-code",
+        reference: "SME-INV000001-ABC123"
+      })
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.requireActivePaymentAccount = jest.fn().mockResolvedValue(reactivatedAccount);
+
+    await (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token");
+
+    expect(db.paymentInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSubaccountCode: "ACCT_reactivated"
+      })
+    );
+    expect(paystackService.initializeTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subaccount: "ACCT_reactivated",
+        bearer: "subaccount"
+      })
+    );
+  });
+
   it.each([
     "This business has not activated online payments yet.",
     "Online payments are not active for this business yet. Please try again later.",

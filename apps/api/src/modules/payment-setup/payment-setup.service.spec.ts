@@ -88,8 +88,14 @@ function createService() {
     disablePaymentAccount: jest.fn(async () =>
       createPaymentAccount({ status: "disabled", disabledAt: now })
     ),
+    findAccountById: jest
+      .fn()
+      .mockResolvedValue(createPaymentAccount({ status: "disabled", disabledAt: now })),
     findCurrentAccount: jest.fn().mockResolvedValue(null),
-    findManageableAccount: jest.fn().mockResolvedValue(createPaymentAccount())
+    findManageableAccount: jest.fn().mockResolvedValue(createPaymentAccount()),
+    reactivatePaymentAccount: jest.fn(async () =>
+      createPaymentAccount({ status: "active", disabledAt: null })
+    )
   } satisfies Partial<Record<keyof PaymentSetupRepository, jest.Mock>>;
   const paystackClient = {
     createSubaccount: jest.fn().mockResolvedValue({
@@ -386,5 +392,97 @@ describe("PaymentSetupService", () => {
     expect(JSON.stringify(repository.disablePaymentAccount.mock.calls)).not.toContain(
       fullAccountNumber
     );
+  });
+
+  it("reactivates a disabled account with an existing Paystack subaccount without calling Paystack", async () => {
+    const { paystackClient, repository, service } = createService();
+
+    const result = await service.reactivateAccount(createContext(), "payment-account-1", {
+      reason: "Resume online payments"
+    });
+
+    expect(result.paymentAccount).toEqual(
+      expect.objectContaining({
+        id: "payment-account-1",
+        provider: "paystack",
+        bankName: "Access Bank",
+        accountName: "Demo Business Ltd",
+        accountNumberLast4: "7890",
+        status: "active",
+        disabledAt: null
+      })
+    );
+    expect(result.paymentAccount).not.toHaveProperty("providerSubaccountCode");
+    expect(repository.findAccountById).toHaveBeenCalledWith({
+      organisationId: "org-1",
+      accountId: "payment-account-1"
+    });
+    expect(repository.reactivatePaymentAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "payment-account-1",
+        organisationId: "org-1",
+        metadataRedacted: expect.objectContaining({
+          paymentAccountId: "payment-account-1",
+          provider: "paystack",
+          bankCode: "044",
+          bankName: "Access Bank",
+          accountNumberLast4: "7890",
+          status: "active",
+          reason: "Resume online payments"
+        })
+      })
+    );
+    expect(paystackClient.resolveAccountNumber).not.toHaveBeenCalled();
+    expect(paystackClient.createSubaccount).not.toHaveBeenCalled();
+    expect(JSON.stringify(repository.reactivatePaymentAccount.mock.calls)).not.toContain(
+      fullAccountNumber
+    );
+  });
+
+  it.each([
+    {
+      account: createPaymentAccount({ status: "active", disabledAt: null }),
+      message: "This payout account is already active."
+    },
+    {
+      account: createPaymentAccount({ status: "verification_delayed", disabledAt: null }),
+      message: "This payout account is still pending verification and cannot be reactivated."
+    },
+    {
+      account: createPaymentAccount({
+        status: "disabled",
+        disabledAt: now,
+        providerSubaccountCode: null
+      }),
+      message: "This payout account cannot be reactivated because it has no Paystack subaccount."
+    }
+  ])("rejects invalid reactivation state: $message", async ({ account, message }) => {
+    const { repository, service } = createService();
+    repository.findAccountById.mockResolvedValueOnce(account);
+
+    await expect(
+      service.reactivateAccount(createContext(), "payment-account-1", {})
+    ).rejects.toMatchObject({
+      message
+    });
+
+    expect(repository.reactivatePaymentAccount).not.toHaveBeenCalled();
+  });
+
+  it("enforces organisation scope when reactivating accounts", async () => {
+    const { repository, service } = createService();
+    repository.findAccountById.mockResolvedValueOnce(null);
+
+    await expect(
+      service.reactivateAccount(createContext(), "other-org-account", {})
+    ).rejects.toMatchObject({
+      message: "Payment account was not found."
+    });
+
+    expect(repository.findAccountById).toHaveBeenCalledWith({
+      organisationId: "org-1",
+      accountId: "other-org-account"
+    });
+    expect(repository.reactivatePaymentAccount).not.toHaveBeenCalled();
   });
 });

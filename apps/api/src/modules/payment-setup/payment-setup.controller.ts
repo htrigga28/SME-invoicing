@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
@@ -8,6 +8,7 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { CreatePaymentSubaccountDto } from "./dto/create-payment-subaccount.dto";
 import { DisablePaymentAccountDto } from "./dto/disable-payment-account.dto";
+import { ReactivatePaymentAccountDto } from "./dto/reactivate-payment-account.dto";
 import { ResolvePaymentAccountDto } from "./dto/resolve-payment-account.dto";
 import { PaymentSetupService } from "./payment-setup.service";
 
@@ -62,5 +63,16 @@ export class PaymentSetupController {
     @Body() body: DisablePaymentAccountDto
   ) {
     return this.paymentSetupService.disableAccount(context, body);
+  }
+
+  @Post("accounts/:id/reactivate")
+  @Roles("owner", "admin")
+  @ApiOperation({ summary: "Reactivate a disabled Paystack payment account" })
+  reactivateAccount(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") accountId: string,
+    @Body() body: ReactivatePaymentAccountDto
+  ) {
+    return this.paymentSetupService.reactivateAccount(context, accountId, body);
   }
 }

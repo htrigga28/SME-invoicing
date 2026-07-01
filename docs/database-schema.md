@@ -131,6 +131,8 @@ Rules:
 - `provider_subaccount_code` must be unique where present.
 - Payment setup records are organisation-scoped.
 - Disabled accounts remain for audit/history.
+- Disabled accounts can be reactivated when they still have a stored `provider_subaccount_code`.
+- Reactivation clears `disabled_at` and keeps the one-active-account-per-organisation/provider rule.
 - Changing payout account should create or activate a new record and disable the prior active record, depending on the implementation path.
 
 Indexes and constraints:

@@ -44,3 +44,18 @@ export function disablePaymentSetupAccount(accessToken: string, input: { reason?
     body: input
   });
 }
+
+export function reactivatePaymentSetupAccount(
+  accessToken: string,
+  id: string,
+  input: { reason?: string } = {}
+) {
+  return apiRequest<{ paymentAccount: PaymentSetupAccount }>(
+    `/payment-setup/accounts/${encodeURIComponent(id)}/reactivate`,
+    {
+      method: "POST",
+      accessToken,
+      body: input
+    }
+  );
+}
