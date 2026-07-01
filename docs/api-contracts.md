@@ -186,7 +186,7 @@ Rules:
 | --- | --- | --- | --- | --- |
 | `GET /customers` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?=active|archived|all`, `page?`, `limit?` | `{ customers, pagination }` |
 | `POST /customers` | Required | Owner/Admin/Accountant | `{ name, email, phone?, billingAddress? }` | `{ customer }` |
-| `GET /customers/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ customer, invoiceSummary }` |
+| `GET /customers/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ customer, invoiceSummary, invoices }` |
 | `PATCH /customers/:id` | Required | Owner/Admin/Accountant | `{ name?, email?, phone?, billingAddress? }` | `{ customer }` |
 | `POST /customers/:id/archive` | Required | Owner/Admin/Accountant | `{ reason? }` | `{ customer }` |
 
@@ -199,7 +199,7 @@ Customer rules:
 - Emails are normalized to lowercase before persistence.
 - Duplicate active customer emails are blocked within the same organisation.
 - Archived customers are excluded from the default list, remain readable, and cannot be updated in the MVP.
-- `invoiceSummary` is a placeholder until T006 Invoice Core.
+- Customer detail includes a recent invoice history list and summary totals scoped to the current organisation.
 
 ## Invoices
 
@@ -207,7 +207,7 @@ Customer rules:
 | --- | --- | --- | --- | --- |
 | `GET /invoices` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?`, `customerId?`, `fromDate?`, `toDate?`, `page?`, `limit?` | `{ invoices, pagination }` |
 | `POST /invoices` | Required | Owner/Admin/Accountant | `{ customerId, issueDate, dueDate, lineItems, discount?, tax?, notes? }` | `{ invoice }` |
-| `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, payments, statusEvents }` |
+| `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary }` |
 | `PATCH /invoices/:id` | Required | Owner/Admin/Accountant | Draft-only editable invoice fields | `{ invoice }` |
 | `POST /invoices/:id/send` | Required | Owner/Admin/Accountant | None | `{ invoice, publicUrl }` |
 | `POST /invoices/:id/cancel` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
@@ -239,7 +239,6 @@ Rules:
 
 - No authentication required.
 - Token must be unguessable.
-- T007 implements public invoice lookup and view tracking only.
 - Public invoice lookup requires a valid `public_token`, `public_access_enabled = true`, and an invoice that is not `draft`, `cancelled`, or `void`.
 - Invalid, disabled, cancelled, void, or otherwise unavailable invoice links return the same safe not-found response.
 - Public response exposes only customer-facing invoice data: invoice display fields, business contact fields, customer billing fields, line items, and a safe payment summary.
@@ -257,7 +256,9 @@ Rules:
 - If no active payment account exists, return a safe unavailable message such as `This business has not activated online payments yet.`
 - Public partial payment entry is not exposed in MVP.
 - Payment initialization is blocked for paid, cancelled, void, or public-access-disabled invoices.
-- Runtime enforcement of active payment-account lookup and `subaccount` initialization is T012, not T011.
+- Payment initialization is available for payable `sent`, `viewed`, `overdue`, and `partially_paid` public invoices with an outstanding balance.
+- Payment initialization does not mark the invoice paid, does not update `amount_paid_kobo`, and does not update `balance_due_kobo`.
+- Paystack secret keys are backend-only. The public frontend only receives the Paystack authorization URL returned by the API.
 
 Preferred MVP initialization payload sent from backend to Paystack:
 
@@ -303,7 +304,20 @@ Public invoice `paymentSummary` examples:
 | `GET /payments` | Required | Owner/Admin/Accountant/Viewer | Query: status, customer, invoice, dates | `{ payments, pagination }` |
 | `GET /payments/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ payment, invoice, customer, events }` |
 
-Webhook endpoint must verify signature with raw request body before trusting payload content.
+Webhook endpoint rules:
+
+- Verify signature with raw request body before trusting payload content.
+- Uses Paystack signature authentication, not user JWT auth.
+- Reads `x-paystack-signature` and verifies HMAC SHA512 against the raw request body with `PAYSTACK_SECRET_KEY`.
+- Must not verify against `JSON.stringify(req.body)`.
+- Parses JSON only after signature verification succeeds.
+- Handles `charge.success` in T009.
+- Stores a redacted payment event before or during processing.
+- Matches `data.reference` to an existing Paystack payment reference.
+- Validates amount and `NGN` currency before marking payment successful.
+- Recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status after successful validation.
+- Returns `{ received: true }` for processed, ignored, duplicate, mismatch, or unknown-reference events with valid signatures.
+- Rejects missing or invalid signatures safely.
 - Receipt generation remains T014 and is not performed by the webhook in T009.
 
 ## Receipts

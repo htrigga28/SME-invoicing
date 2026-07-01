@@ -19,4 +19,10 @@ export class PublicInvoicesController {
   markPublicInvoiceViewed(@Param("token") token: string) {
     return this.invoicesService.markPublicInvoiceViewed(token);
   }
+
+  @Post(":token/pay")
+  @ApiOperation({ summary: "Initialize Paystack payment for a public invoice" })
+  initializePublicInvoicePayment(@Param("token") token: string) {
+    return this.invoicesService.initializePublicInvoicePayment(token);
+  }
 }

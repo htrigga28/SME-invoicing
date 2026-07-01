@@ -88,6 +88,12 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - Public partial payment entry is not exposed in MVP.
 - Public payment initialization charges the current server-calculated `balance_due_kobo`.
 - Public payment initialization must use the active organisation `provider_subaccount_code`.
+- Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified webhook processing is the source of truth for reconciliation.
+- A verified `charge.success` webhook can mark a matching payment `successful`.
+- After a successful payment, invoice paid and balance amounts are recalculated from all successful payments for the invoice.
+- Full payment marks the invoice `paid` and sets `paid_at` the first time it becomes fully paid.
+- Partial successful totals mark the invoice `partially_paid`.
+- If a previously overdue invoice is fully paid, it becomes `paid`.
 
 ## Cancellation Rules
 

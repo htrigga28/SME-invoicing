@@ -53,10 +53,18 @@ export type InvoiceDetailResponse = {
   lineItems: InvoiceLineItem[];
   statusEvents: InvoiceStatusEvent[];
   publicUrl: string | null;
-  paymentSummary: {
-    available: false;
-    message: string;
-  };
+  paymentSummary:
+    | {
+        available: true;
+        provider: "paystack";
+        amountKobo: number;
+        currency: "NGN";
+        message: string;
+      }
+    | {
+        available: false;
+        message: string;
+      };
 };
 
 export type InvoiceListResponse = {

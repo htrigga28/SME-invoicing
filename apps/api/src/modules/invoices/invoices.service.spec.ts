@@ -1,6 +1,14 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 
-import type { BusinessProfile, Customer, Invoice, InvoiceLineItem } from "../../database/schema";
+import {
+  auditLogs,
+  payments,
+  type BusinessProfile,
+  type Customer,
+  type Invoice,
+  type InvoiceLineItem,
+  type Payment
+} from "../../database/schema";
 import { InvoicesService } from "./invoices.service";
 
 type ServiceInternals = {
@@ -105,6 +113,32 @@ function createLineItem(overrides: Partial<InvoiceLineItem> = {}): InvoiceLineIt
   };
 }
 
+function createPayment(overrides: Partial<Payment> = {}): Payment {
+  return {
+    id: "payment-1",
+    organisationId: "org-1",
+    invoiceId: "invoice-1",
+    customerId: "customer-1",
+    provider: "paystack",
+    providerReference: "SME-INV000001-ABC123",
+    providerAccessCode: null,
+    providerAuthorizationUrl: null,
+    status: "pending",
+    currency: "NGN",
+    amountKobo: 97500,
+    paidAt: null,
+    failedAt: null,
+    abandonedAt: null,
+    channel: null,
+    gatewayResponse: null,
+    metadataRedacted: null,
+    initializedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
 function createPublicInvoiceRow(invoice: Invoice = createInvoice()) {
   return {
     invoice,
@@ -114,8 +148,21 @@ function createPublicInvoiceRow(invoice: Invoice = createInvoice()) {
   };
 }
 
-function setup(databaseService: { db?: unknown } = {}) {
-  const service = new InvoicesService(databaseService as never, {} as never, {} as never);
+function setup(
+  databaseService: { db?: unknown } = {},
+  paystackService: unknown = {},
+  configService: unknown = {
+    get: jest.fn((key: string) =>
+      key === "FRONTEND_APP_URL" ? "http://localhost:3000" : undefined
+    )
+  }
+) {
+  const service = new InvoicesService(
+    databaseService as never,
+    {} as never,
+    configService as never,
+    paystackService as never
+  );
   return service as unknown as ServiceInternals;
 }
 
@@ -186,6 +233,12 @@ describe("InvoicesService public invoice access", () => {
     });
     expect(response.business).toMatchObject({ businessName: "Akin & Co Creative Services" });
     expect(response.customer).toMatchObject({ name: "Lagos Bright Prints" });
+    expect(response.paymentSummary).toMatchObject({
+      available: true,
+      provider: "paystack",
+      amountKobo: 97500,
+      currency: "NGN"
+    });
     expect(response.lineItems).toEqual([
       {
         description: "Design retainer",
@@ -221,6 +274,159 @@ describe("InvoicesService public invoice access", () => {
     await expect(
       (service as unknown as InvoicesService).getPublicInvoice("missing-token")
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("InvoicesService public payment initialization", () => {
+  function createPaymentDb(payment: Payment = createPayment()) {
+    const paymentInsertReturning = jest.fn().mockResolvedValue([payment]);
+    const paymentInsertValues = jest.fn(() => ({
+      returning: paymentInsertReturning
+    }));
+    const auditInsertValues = jest.fn().mockResolvedValue(undefined);
+    const updateReturning = jest.fn().mockResolvedValue([
+      createPayment({
+        ...payment,
+        providerAccessCode: "access-code",
+        providerAuthorizationUrl: "https://checkout.paystack.test/pay/reference"
+      })
+    ]);
+    const updateWhere = jest.fn(() => ({
+      returning: updateReturning
+    }));
+    const updateSet = jest.fn(() => ({
+      where: updateWhere
+    }));
+    const insert = jest.fn((table) => ({
+      values:
+        table === payments
+          ? paymentInsertValues
+          : table === auditLogs
+            ? auditInsertValues
+            : auditInsertValues
+    }));
+    const update = jest.fn(() => ({
+      set: updateSet
+    }));
+
+    return {
+      db: { insert, update },
+      auditInsertValues,
+      insert,
+      paymentInsertValues,
+      update,
+      updateSet
+    };
+  }
+
+  it.each(["sent", "viewed", "overdue"] as const)(
+    "initializes Paystack payment for %s invoices using the server balance",
+    async (status) => {
+      const db = createPaymentDb();
+      const paystackService = {
+        initializeTransaction: jest.fn().mockResolvedValue({
+          authorizationUrl: "https://checkout.paystack.test/pay/reference",
+          accessCode: "access-code",
+          reference: "SME-INV000001-ABC123"
+        })
+      };
+      const service = setup({ db: db.db }, paystackService);
+      service.findPublicInvoice = jest.fn().mockResolvedValue(
+        createPublicInvoiceRow(
+          createInvoice({
+            balanceDueKobo: 42500,
+            dueDate: status === "overdue" ? "2026-01-01" : "2026-07-01",
+            status: status === "overdue" ? "sent" : status
+          })
+        )
+      );
+
+      await expect(
+        (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
+      ).resolves.toEqual({
+        authorizationUrl: "https://checkout.paystack.test/pay/reference",
+        accessCode: "access-code",
+        reference: expect.stringMatching(/^SME-INV000001-[A-F0-9]{8}$/)
+      });
+
+      expect(db.paymentInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amountKobo: 42500,
+          currency: "NGN",
+          invoiceId: "invoice-1",
+          organisationId: "org-1",
+          provider: "paystack",
+          status: "pending"
+        })
+      );
+      expect(paystackService.initializeTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amountKobo: 42500,
+          callbackUrl: expect.stringContaining("/invoice/public-token?payment=callback&reference="),
+          currency: "NGN",
+          email: "accounts@lagosbrightprints.test",
+          reference: expect.stringMatching(/^SME-INV000001-[A-F0-9]{8}$/)
+        })
+      );
+      expect(db.update).toHaveBeenCalledWith(payments);
+      expect(db.updateSet).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          amountPaidKobo: expect.any(Number),
+          balanceDueKobo: expect.any(Number),
+          status: "paid"
+        })
+      );
+      expect(db.auditInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "payment_initialized",
+          actorUserId: null,
+          entityType: "payment"
+        })
+      );
+    }
+  );
+
+  it("rejects invoices that are not payable before creating a payment", async () => {
+    const db = createPaymentDb();
+    const paystackService = {
+      initializeTransaction: jest.fn()
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest
+      .fn()
+      .mockResolvedValue(
+        createPublicInvoiceRow(createInvoice({ status: "paid", balanceDueKobo: 0 }))
+      );
+
+    await expect(
+      (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(paystackService.initializeTransaction).not.toHaveBeenCalled();
+  });
+
+  it("marks the pending payment failed and returns a safe error when Paystack fails", async () => {
+    const db = createPaymentDb();
+    const paystackService = {
+      initializeTransaction: jest.fn().mockRejectedValue(new Error("secret provider detail"))
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+
+    await expect(
+      (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
+    ).rejects.toThrow("Payment initialization failed. Please try again later.");
+
+    expect(db.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        gatewayResponse: "Payment initialization failed."
+      })
+    );
+    expect(db.auditInsertValues).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "payment_initialized" })
+    );
   });
 });
 

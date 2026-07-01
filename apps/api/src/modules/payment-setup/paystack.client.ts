@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
-const PAYSTACK_BASE_URL = "https://api.paystack.co";
+const DEFAULT_PAYSTACK_BASE_URL = "https://api.paystack.co";
 
 export type PaystackBank = {
   active: boolean;
@@ -191,7 +191,9 @@ export class PaystackClient {
     let response: Response;
 
     try {
-      response = await fetch(new URL(path, PAYSTACK_BASE_URL), {
+      const baseUrl =
+        this.configService.get<string>("PAYSTACK_BASE_URL") ?? DEFAULT_PAYSTACK_BASE_URL;
+      response = await fetch(new URL(path, baseUrl), {
         ...requestInit,
         headers
       });

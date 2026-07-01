@@ -9,10 +9,17 @@ import {
 
 import { isApiRequestError } from "@/lib/api";
 
-import { getPublicInvoice, markPublicInvoiceViewed } from "./public-invoices-api";
+import {
+  getPublicInvoice,
+  initializePublicInvoicePayment,
+  markPublicInvoiceViewed
+} from "./public-invoices-api";
 import type { PublicInvoiceResponse } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
+
+const PAYMENT_CALLBACK_POLL_INTERVAL_MS = 3000;
+const PAYMENT_CALLBACK_POLL_LIMIT = 10;
 
 const statusStyles: Record<InvoiceStatus, string> = {
   draft: "border-slate-200 bg-slate-100 text-slate-700",
@@ -25,10 +32,18 @@ const statusStyles: Record<InvoiceStatus, string> = {
   void: "border-zinc-200 bg-zinc-100 text-zinc-700"
 };
 
-export function PublicInvoicePage({ token }: { token: string }) {
+export function PublicInvoicePage({
+  paymentCallback = false,
+  token
+}: {
+  paymentCallback?: boolean;
+  token: string;
+}) {
   const [invoice, setInvoice] = useState<PublicInvoiceResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isInitializingPayment, setIsInitializingPayment] = useState(false);
   const viewTrackedRef = useRef(false);
 
   useEffect(() => {
@@ -55,6 +70,43 @@ export function PublicInvoicePage({ token }: { token: string }) {
   }, [token]);
 
   useEffect(() => {
+    if (!paymentCallback || state !== "ready" || !invoice?.paymentSummary.available) {
+      return;
+    }
+
+    let pollCount = 0;
+    let cancelled = false;
+
+    const intervalId = window.setInterval(() => {
+      pollCount += 1;
+
+      if (pollCount > PAYMENT_CALLBACK_POLL_LIMIT) {
+        window.clearInterval(intervalId);
+        return;
+      }
+
+      void getPublicInvoice(token)
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+
+          setInvoice(response);
+
+          if (!response.paymentSummary.available) {
+            window.clearInterval(intervalId);
+          }
+        })
+        .catch(() => undefined);
+    }, PAYMENT_CALLBACK_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [invoice?.paymentSummary.available, paymentCallback, state, token]);
+
+  useEffect(() => {
     if (state !== "ready" || viewTrackedRef.current) {
       return;
     }
@@ -62,6 +114,19 @@ export function PublicInvoicePage({ token }: { token: string }) {
     viewTrackedRef.current = true;
     void markPublicInvoiceViewed(token).catch(() => undefined);
   }, [state, token]);
+
+  async function handlePayOnline() {
+    setPaymentError(null);
+    setIsInitializingPayment(true);
+
+    try {
+      const payment = await initializePublicInvoicePayment(token);
+      window.location.assign(payment.authorizationUrl);
+    } catch {
+      setPaymentError("Payment could not be started. Please try again or contact the business.");
+      setIsInitializingPayment(false);
+    }
+  }
 
   if (state === "loading") {
     return (
@@ -83,8 +148,19 @@ export function PublicInvoicePage({ token }: { token: string }) {
     );
   }
 
+  const showPaymentCallbackNotice = paymentCallback && invoice.paymentSummary.available;
+
   return (
     <PublicInvoiceShell>
+      {showPaymentCallbackNotice ? (
+        <div className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Payment confirmation pending</p>
+          <p className="mt-1">
+            If you completed payment, this invoice will update after Paystack confirms the
+            transaction.
+          </p>
+        </div>
+      ) : null}
       <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-200 bg-slate-950 px-5 py-6 text-white sm:px-8">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -205,14 +281,33 @@ export function PublicInvoicePage({ token }: { token: string }) {
 
             <div className="rounded-lg border border-teal-200 bg-teal-50 p-4">
               <h2 className="text-lg font-semibold text-slate-950">Payment</h2>
-              <button
-                className="mt-4 w-full cursor-not-allowed rounded-md bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-                disabled
-                type="button"
-              >
-                Pay online coming soon
-              </button>
+              {invoice.paymentSummary.available ? (
+                <button
+                  className="mt-4 w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-700"
+                  disabled={isInitializingPayment}
+                  onClick={() => void handlePayOnline()}
+                  type="button"
+                >
+                  {isInitializingPayment
+                    ? "Redirecting..."
+                    : `Pay ${formatKoboToNaira(invoice.paymentSummary.amountKobo)} online`}
+                </button>
+              ) : (
+                <button
+                  className="mt-4 w-full cursor-not-allowed rounded-md bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                  disabled
+                  type="button"
+                >
+                  Pay online unavailable
+                </button>
+              )}
               <p className="mt-3 text-sm text-slate-700">{invoice.paymentSummary.message}</p>
+              {invoice.paymentSummary.available ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  You will be redirected to Paystack to complete payment.
+                </p>
+              ) : null}
+              {paymentError ? <p className="mt-3 text-sm text-red-700">{paymentError}</p> : null}
             </div>
 
             <p className="rounded-lg border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500">

@@ -50,7 +50,7 @@ Receipt generation starts in T014 and is intentionally skipped in T009.
 
 Use database constraints and transaction boundaries to make processing idempotent.
 
-Idempotency keys should include:
+Idempotency keys include:
 
 - Provider name.
 - Provider event ID where available.
@@ -61,8 +61,10 @@ Rules:
 
 - A duplicate event must not create a second successful payment.
 - A duplicate payment reference must not add to `amount_paid_kobo` twice.
+- A duplicate successful event must not create duplicate invoice status events.
 - A duplicate successful event must not create duplicate receipt work in later tasks.
 - Processing should be safe to retry after transient failure.
+- When Paystack does not provide a reliable event ID, `provider + provider_reference + event_type` is the defensive idempotency key.
 
 ## Payment Matching
 

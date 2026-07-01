@@ -7,13 +7,14 @@ import { DatabaseModule } from "../../database/database.module";
 import { AuditLogModule } from "../audit-log/audit-log.module";
 import { AuthRepository } from "../auth/auth.repository";
 import { TokenService } from "../auth/token.service";
+import { PaystackModule } from "../paystack/paystack.module";
 import { TenantContextService } from "../tenant/tenant-context.service";
 import { InvoicesController } from "./invoices.controller";
 import { InvoicesService } from "./invoices.service";
 import { PublicInvoicesController } from "./public-invoices.controller";
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, AuditLogModule],
+  imports: [ConfigModule, DatabaseModule, AuditLogModule, PaystackModule],
   controllers: [InvoicesController, PublicInvoicesController],
   providers: [
     AuthRepository,
