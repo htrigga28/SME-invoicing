@@ -826,6 +826,7 @@ export class InvoicesService {
           isNull(organisationPaymentAccounts.disabledAt)
         )
       )
+      .orderBy(desc(organisationPaymentAccounts.updatedAt))
       .limit(1);
 
     if (activeAccount?.providerSubaccountCode) {
