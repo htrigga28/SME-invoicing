@@ -131,16 +131,14 @@ describe("PublicInvoicePage", () => {
 
   it("shows a safe inline error when payment initialization fails", async () => {
     vi.mocked(initializePublicInvoicePayment).mockRejectedValueOnce(
-      new ApiRequestError("This business has not activated online payments yet.", 409)
+      new ApiRequestError("Invalid Email Address Passed", 422)
     );
 
     render(<PublicInvoicePage token="public-token" />);
 
     fireEvent.click(await screen.findByRole("button", { name: /Pay .* online/ }));
 
-    expect(
-      await screen.findByText("This business has not activated online payments yet.")
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Invalid Email Address Passed")).toBeInTheDocument();
     expect(locationAssign).not.toHaveBeenCalled();
   });
 

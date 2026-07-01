@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  NotFoundException,
+  UnprocessableEntityException
+} from "@nestjs/common";
 
 import {
   auditLogs,
@@ -540,6 +544,29 @@ describe("InvoicesService public payment initialization", () => {
     );
     expect(db.auditInsertValues).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "payment_initialized" })
+    );
+  });
+
+  it("propagates safe Paystack validation messages to the public client", async () => {
+    const db = createPaymentDb();
+    const paystackService = {
+      initializeTransaction: jest
+        .fn()
+        .mockRejectedValue(new UnprocessableEntityException("Invalid Email Address Passed"))
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.requireActivePaymentAccount = jest.fn().mockResolvedValue(activePaymentAccount);
+
+    await expect(
+      (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
+    ).rejects.toThrow("Invalid Email Address Passed");
+
+    expect(db.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        gatewayResponse: "Invalid Email Address Passed"
+      })
     );
   });
 });

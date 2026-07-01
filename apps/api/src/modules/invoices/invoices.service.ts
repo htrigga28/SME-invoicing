@@ -3,6 +3,7 @@ import {
   BadRequestException,
   BadGatewayException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -655,6 +656,9 @@ export class InvoicesService {
       };
     } catch (error) {
       await this.markPaymentInitializationFailed(payment, error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new BadGatewayException("Payment initialization failed. Please try again later.");
     }
   }
@@ -889,16 +893,28 @@ export class InvoicesService {
     }
   }
 
-  private async markPaymentInitializationFailed(payment: Payment, _error: unknown) {
+  private async markPaymentInitializationFailed(payment: Payment, error: unknown) {
     await this.databaseService.db
       .update(payments)
       .set({
         status: "failed",
         failedAt: new Date(),
-        gatewayResponse: "Payment initialization failed.",
+        gatewayResponse: this.safePaymentInitializationFailure(error),
         updatedAt: new Date()
       })
       .where(eq(payments.id, payment.id));
+  }
+
+  private safePaymentInitializationFailure(error: unknown) {
+    if (error instanceof HttpException) {
+      const message = error.message.trim();
+
+      if (message && message.length <= 240 && !/[{}[\]<>]/.test(message)) {
+        return message;
+      }
+    }
+
+    return "Payment initialization failed.";
   }
 
   private async findLineItems(organisationId: string, invoiceId: string) {

@@ -1,4 +1,4 @@
-import { BadGatewayException, ServiceUnavailableException } from "@nestjs/common";
+import { ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 
 import { PaystackService } from "./paystack.service";
 
@@ -81,9 +81,42 @@ describe("PaystackService", () => {
     });
   });
 
-  it("maps failed provider responses to a safe gateway error", async () => {
+  it("preserves safe Paystack validation messages for initialization errors", async () => {
     jest.spyOn(global, "fetch").mockResolvedValue({
       ok: false,
+      status: 400,
+      json: jest.fn().mockResolvedValue({
+        status: false,
+        message: "Invalid Email Address Passed"
+      })
+    } as never);
+    const service = new PaystackService({
+      get: jest.fn((key: string) =>
+        key === "PAYSTACK_SECRET_KEY" ? "sk_test_secret" : "https://api.paystack.co"
+      )
+    } as never);
+
+    const initialize = service.initializeTransaction({
+      email: "accounts@example.com",
+      amountKobo: 50000,
+      bearer: "subaccount",
+      currency: "NGN",
+      reference: "SME-INV000001-ABC123",
+      subaccount: "ACCT_test_subaccount",
+      callbackUrl: "http://localhost:3000/invoice/token",
+      metadata: {}
+    });
+
+    await expect(initialize).rejects.toMatchObject({
+      message: "Invalid Email Address Passed"
+    } satisfies Partial<UnprocessableEntityException>);
+    await expect(initialize).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it("does not expose Paystack authentication failure details", async () => {
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: false,
+      status: 401,
       json: jest.fn().mockResolvedValue({
         status: false,
         message: "Invalid key"
@@ -106,6 +139,6 @@ describe("PaystackService", () => {
         callbackUrl: "http://localhost:3000/invoice/token",
         metadata: {}
       })
-    ).rejects.toBeInstanceOf(BadGatewayException);
+    ).rejects.toThrow("Payment provider authentication failed. Please contact the business.");
   });
 });
