@@ -47,6 +47,14 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "void"
 ]);
 
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "pending",
+  "successful",
+  "failed",
+  "abandoned",
+  "refunded"
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -285,6 +293,92 @@ export const invoiceStatusEvents = pgTable(
   })
 );
 
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    providerReference: varchar("provider_reference", { length: 120 }).notNull(),
+    providerAccessCode: text("provider_access_code"),
+    providerAuthorizationUrl: text("provider_authorization_url"),
+    status: paymentStatusEnum("status").notNull().default("pending"),
+    currency: varchar("currency", { length: 3 }).notNull().default("NGN"),
+    amountKobo: integer("amount_kobo").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
+    channel: varchar("channel", { length: 80 }),
+    gatewayResponse: text("gateway_response"),
+    metadataRedacted: jsonb("metadata_redacted").$type<Record<string, unknown>>(),
+    initializedAt: timestamp("initialized_at", { withTimezone: true }).notNull().defaultNow(),
+    ...timestamps
+  },
+  (table) => ({
+    providerReferenceUnique: uniqueIndex("payments_provider_reference_unique").on(
+      table.provider,
+      table.providerReference
+    ),
+    organisationIndex: index("payments_organisation_id_idx").on(table.organisationId),
+    organisationInvoiceIndex: index("payments_org_invoice_id_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    organisationCustomerIndex: index("payments_org_customer_id_idx").on(
+      table.organisationId,
+      table.customerId
+    ),
+    organisationStatusIndex: index("payments_org_status_idx").on(
+      table.organisationId,
+      table.status
+    ),
+    providerReferenceIndex: index("payments_provider_reference_idx").on(table.providerReference)
+  })
+);
+
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id").references(() => organisations.id, {
+      onDelete: "set null"
+    }),
+    paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "set null" }),
+    provider: varchar("provider", { length: 40 }).notNull(),
+    providerEventId: varchar("provider_event_id", { length: 120 }),
+    providerReference: varchar("provider_reference", { length: 120 }),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    signatureValid: boolean("signature_valid").notNull().default(false),
+    processed: boolean("processed").notNull().default(false),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    duplicateOfEventId: uuid("duplicate_of_event_id"),
+    payloadRedacted: jsonb("payload_redacted").$type<Record<string, unknown>>(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    providerIndex: index("payment_events_provider_idx").on(table.provider),
+    providerReferenceIndex: index("payment_events_provider_reference_idx").on(
+      table.providerReference
+    ),
+    paymentIndex: index("payment_events_payment_id_idx").on(table.paymentId),
+    organisationIndex: index("payment_events_organisation_id_idx").on(table.organisationId),
+    eventTypeIndex: index("payment_events_event_type_idx").on(table.eventType),
+    processedIndex: index("payment_events_processed_idx").on(table.processed),
+    providerEventUnique: uniqueIndex("payment_events_provider_event_unique")
+      .on(table.provider, table.providerEventId)
+      .where(sql`${table.providerEventId} is not null`)
+  })
+);
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -320,6 +414,7 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   invitations: many(organisationInvitations),
   customers: many(customers),
   invoices: many(invoices),
+  paymentEvents: many(paymentEvents),
   invoiceNumberSequence: one(invoiceNumberSequences),
   businessProfile: one(businessProfiles),
   auditLogs: many(auditLogs)
@@ -386,7 +481,8 @@ export const invoicesRelations = relations(invoices, ({ many, one }) => ({
     references: [users.id]
   }),
   lineItems: many(invoiceLineItems),
-  statusEvents: many(invoiceStatusEvents)
+  statusEvents: many(invoiceStatusEvents),
+  payments: many(payments)
 }));
 
 export const invoiceLineItemsRelations = relations(invoiceLineItems, ({ one }) => ({
@@ -412,6 +508,33 @@ export const invoiceStatusEventsRelations = relations(invoiceStatusEvents, ({ on
   actor: one(users, {
     fields: [invoiceStatusEvents.actorUserId],
     references: [users.id]
+  })
+}));
+
+export const paymentsRelations = relations(payments, ({ many, one }) => ({
+  organisation: one(organisations, {
+    fields: [payments.organisationId],
+    references: [organisations.id]
+  }),
+  invoice: one(invoices, {
+    fields: [payments.invoiceId],
+    references: [invoices.id]
+  }),
+  customer: one(customers, {
+    fields: [payments.customerId],
+    references: [customers.id]
+  }),
+  events: many(paymentEvents)
+}));
+
+export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [paymentEvents.organisationId],
+    references: [organisations.id]
+  }),
+  payment: one(payments, {
+    fields: [paymentEvents.paymentId],
+    references: [payments.id]
   })
 }));
 
@@ -443,5 +566,7 @@ export type Customer = typeof customers.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
+export type Payment = typeof payments.$inferSelect;
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

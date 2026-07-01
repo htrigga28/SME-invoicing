@@ -10,7 +10,7 @@ import { and, count, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from "dri
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { DatabaseService } from "../../database/database.service";
-import { customers, type Customer } from "../../database/schema";
+import { customers, invoices, type Customer, type Invoice } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import type { ArchiveCustomerDto } from "./dto/archive-customer.dto";
 import type { CreateCustomerDto } from "./dto/create-customer.dto";
@@ -23,6 +23,29 @@ type PaginationInput = {
 };
 
 type CustomerStatus = "active" | "archived";
+type InvoiceStatusValue = Invoice["status"];
+
+function shouldDisplayAsOverdue(input: {
+  balanceDueKobo: number;
+  dueDate: string;
+  status: InvoiceStatusValue;
+}) {
+  if (["draft", "paid", "cancelled", "void"].includes(input.status)) {
+    return false;
+  }
+
+  if (input.balanceDueKobo <= 0) {
+    return false;
+  }
+
+  const today = new Date();
+  const dueDate = new Date(`${input.dueDate}T00:00:00.000Z`);
+  const todayStart = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+  );
+
+  return dueDate < todayStart;
+}
 
 @Injectable()
 export class CustomersService {
@@ -120,12 +143,16 @@ export class CustomersService {
       throw new NotFoundException("Customer was not found.");
     }
 
+    const customerInvoices = await this.findInvoicesForCustomer(
+      context.activeOrganisation.id,
+      customer.id
+    );
+    const invoiceSummary = this.toInvoiceSummary(customerInvoices);
+
     return {
       customer: this.toSafeCustomer(customer),
-      invoiceSummary: {
-        available: false,
-        message: "Invoice history will be available after the invoice module is implemented."
-      }
+      invoiceSummary,
+      invoices: customerInvoices.map((invoice) => this.toCustomerInvoiceHistoryItem(invoice))
     };
   }
 
@@ -243,6 +270,16 @@ export class CustomersService {
     return customer;
   }
 
+  private async findInvoicesForCustomer(organisationId: string, customerId: string) {
+    return this.databaseService.db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.organisationId, organisationId), eq(invoices.customerId, customerId)))
+      .orderBy(desc(invoices.createdAt))
+      .limit(10)
+      .offset(0);
+  }
+
   private async assertNoDuplicateActiveEmail(input: {
     organisationId: string;
     email: string;
@@ -355,6 +392,61 @@ export class CustomersService {
       archivedAt: customer.archivedAt,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt
+    };
+  }
+
+  private displayInvoiceStatus(invoice: Invoice): InvoiceStatusValue {
+    return shouldDisplayAsOverdue({
+      balanceDueKobo: invoice.balanceDueKobo,
+      dueDate: invoice.dueDate,
+      status: invoice.status
+    })
+      ? "overdue"
+      : invoice.status;
+  }
+
+  private toInvoiceSummary(customerInvoices: Invoice[]) {
+    const totals = customerInvoices.reduce(
+      (summary, invoice) => ({
+        totalBalanceDueKobo: summary.totalBalanceDueKobo + invoice.balanceDueKobo,
+        totalInvoices: summary.totalInvoices + 1,
+        totalInvoicedKobo: summary.totalInvoicedKobo + invoice.totalKobo,
+        totalPaidKobo: summary.totalPaidKobo + invoice.amountPaidKobo
+      }),
+      {
+        totalBalanceDueKobo: 0,
+        totalInvoices: 0,
+        totalInvoicedKobo: 0,
+        totalPaidKobo: 0
+      }
+    );
+
+    return {
+      available: true,
+      ...totals,
+      message:
+        totals.totalInvoices === 0
+          ? "No invoices have been created for this customer yet."
+          : `${totals.totalInvoices} invoice${totals.totalInvoices === 1 ? "" : "s"} found for this customer.`
+    };
+  }
+
+  private toCustomerInvoiceHistoryItem(invoice: Invoice) {
+    return {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      status: this.displayInvoiceStatus(invoice),
+      currency: invoice.currency,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      totalKobo: invoice.totalKobo,
+      amountPaidKobo: invoice.amountPaidKobo,
+      balanceDueKobo: invoice.balanceDueKobo,
+      publicAccessEnabled: invoice.publicAccessEnabled,
+      sentAt: invoice.sentAt,
+      paidAt: invoice.paidAt,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.updatedAt
     };
   }
 }

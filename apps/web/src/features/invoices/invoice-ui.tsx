@@ -82,11 +82,13 @@ export function StatusPanel({
 }
 
 export function formatDate(value: string) {
+  const date = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00.000Z`);
+
   return new Intl.DateTimeFormat("en-NG", {
     day: "2-digit",
     month: "short",
     year: "numeric"
-  }).format(new Date(`${value}T00:00:00.000Z`));
+  }).format(date);
 }
 
 export function formatMoney(kobo: number) {

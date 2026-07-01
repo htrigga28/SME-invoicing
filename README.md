@@ -46,7 +46,7 @@ Required categories:
 - Frontend API URL and Paystack public key
 - Database URL
 - JWT secrets
-- Paystack secret and webhook config
+- Paystack secret, optional base URL, and webhook config
 - Frontend/backend URL and CORS origins
 - Later Brevo and Cloudflare R2 credentials
 
@@ -54,6 +54,8 @@ Payment Setup notes:
 
 - Payment Setup is required before public invoice payment can be initialized.
 - Local/test mode uses Paystack test keys.
+- `PAYSTACK_SECRET_KEY` must be configured on the backend for bank listing, account resolution, subaccount creation, payment initialization, and webhook verification.
+- `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing local tests at a mock provider.
 - Never commit real Paystack keys.
 - The platform does not store merchant Paystack secret keys; it uses one platform Paystack integration and organisation subaccounts.
 
@@ -175,6 +177,16 @@ Before a business can accept online invoice payments:
 8. Public invoice Pay Online becomes available.
 
 For test/demo usage, use Paystack test bank and account details where available. Do not use real production banking data in screenshots or portfolio demos.
+
+## Local Paystack Webhook Testing
+
+Paystack needs a public webhook URL to call your local API. In local development, use a tunnel such as ngrok and configure the Paystack dashboard webhook URL as:
+
+```text
+https://your-tunnel.example/payments/paystack/webhook
+```
+
+The API verifies `x-paystack-signature` against the exact raw request body with `PAYSTACK_SECRET_KEY`. Do not send handcrafted JSON through tools that change the body when validating signatures. For automated tests, the project signs raw fixture buffers directly and does not call Paystack.
 
 ## Auth Session Trade-Off
 

@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
-import type { Customer } from "../../database/schema";
+import type { Customer, Invoice } from "../../database/schema";
 import { CustomersService } from "./customers.service";
 
 const now = new Date("2026-01-01T00:00:00.000Z");
@@ -69,19 +69,55 @@ function createCustomer(overrides: Partial<Customer> = {}): Customer {
   };
 }
 
+function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
+  return {
+    id: "invoice-1",
+    organisationId: "org-1",
+    customerId: "customer-1",
+    invoiceNumber: "INV-000007",
+    publicToken: "public-token",
+    publicAccessEnabled: true,
+    status: "sent",
+    currency: "NGN",
+    issueDate: "2026-06-01",
+    dueDate: "2026-06-15",
+    notes: "Payment due in 14 days.",
+    subtotalKobo: 100000,
+    discountKobo: 10000,
+    taxKobo: 7500,
+    totalKobo: 97500,
+    amountPaidKobo: 25000,
+    balanceDueKobo: 72500,
+    sentAt: new Date("2026-06-01T10:00:00.000Z"),
+    viewedAt: null,
+    paidAt: null,
+    cancelledAt: null,
+    voidedAt: null,
+    createdByUserId: "user-1",
+    createdAt: new Date("2026-06-01T10:00:00.000Z"),
+    updatedAt: new Date("2026-06-01T10:00:00.000Z"),
+    ...overrides
+  };
+}
+
 function createService(
   options: {
     duplicate?: boolean;
     existing?: Customer;
+    invoices?: Invoice[];
     inserted?: Customer;
     updated?: Customer;
   } = {}
 ) {
   const duplicateRows = options.duplicate ? [{ id: "duplicate-customer" }] : [];
   const existingRows = options.existing ? [options.existing] : [];
-  const selectResults = options.existing
-    ? [existingRows, duplicateRows]
-    : [duplicateRows, existingRows];
+  const invoiceRows = options.invoices ?? [];
+  const selectResults =
+    options.invoices !== undefined
+      ? [existingRows, invoiceRows, duplicateRows]
+      : options.existing
+        ? [existingRows, duplicateRows]
+        : [duplicateRows, existingRows];
   const db = {
     select: jest.fn(() => ({
       from: jest.fn(() => ({
@@ -89,7 +125,7 @@ function createService(
           limit: jest.fn(() => Promise.resolve(selectResults.shift() ?? [])),
           orderBy: jest.fn(() => ({
             limit: jest.fn(() => ({
-              offset: jest.fn(() => Promise.resolve([]))
+              offset: jest.fn(() => Promise.resolve(selectResults.shift() ?? []))
             }))
           }))
         }))
@@ -165,6 +201,52 @@ describe("CustomersService", () => {
     await expect(
       service.updateCustomer(createContext("admin"), "customer-1", {})
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("returns customer invoice history and summary totals", async () => {
+    const { service } = createService({
+      existing: createCustomer(),
+      invoices: [
+        createInvoice(),
+        createInvoice({
+          id: "invoice-2",
+          invoiceNumber: "INV-000008",
+          status: "paid",
+          totalKobo: 50000,
+          amountPaidKobo: 50000,
+          balanceDueKobo: 0,
+          paidAt: new Date("2026-06-05T10:00:00.000Z")
+        })
+      ]
+    });
+
+    const result = await service.getCustomer(createContext("viewer"), "customer-1");
+
+    expect(result.invoiceSummary).toEqual({
+      available: true,
+      message: "2 invoices found for this customer.",
+      totalBalanceDueKobo: 72500,
+      totalInvoices: 2,
+      totalInvoicedKobo: 147500,
+      totalPaidKobo: 75000
+    });
+    expect(result.invoices).toEqual([
+      expect.objectContaining({
+        balanceDueKobo: 72500,
+        id: "invoice-1",
+        invoiceNumber: "INV-000007",
+        status: "overdue",
+        totalKobo: 97500
+      }),
+      expect.objectContaining({
+        balanceDueKobo: 0,
+        id: "invoice-2",
+        invoiceNumber: "INV-000008",
+        status: "paid",
+        totalKobo: 50000
+      })
+    ]);
+    expect(result.customer).not.toHaveProperty("organisationId");
   });
 
   it("returns conflict when archiving an already archived customer", async () => {
