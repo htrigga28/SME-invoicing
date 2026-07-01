@@ -32,7 +32,7 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Create invoice | Set status to `draft`. |
 | Send/share invoice or generate public link | Move `draft` to `sent`. |
 | Public page opened | Move `sent` to `viewed`; keep stronger payment statuses unchanged. |
-| Paystack payment initialized | Create a pending payment only; do not change invoice payment totals or invoice status. |
+| Paystack payment initialized | Require an active organisation payment account, create a pending payment with subaccount context only, and do not change invoice payment totals or invoice status. |
 | Successful payment received | Recalculate paid and balance amounts, then apply payment-derived status. |
 | Partial payment | Set `partially_paid` when `amount_paid_kobo > 0` and less than `total_kobo`. |
 | Full payment | Set `paid` when `amount_paid_kobo >= total_kobo`; set `paid_at` when the invoice first becomes fully paid. |
@@ -40,7 +40,15 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Cancel invoice | Set `cancelled` only when invoice is not fully paid. |
 | Void invoice | Set `void` for correction/error cases and retain all records. |
 
-T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. T008 adds Paystack initialization and pending payment records only. T009 adds webhook-driven payment reconciliation. Receipt generation is reserved for T011.
+T006 implements create, send, draft edit, cancel, and void transitions only. T007 adds public view tracking. T008 adds Paystack initialization and pending payment records only. T009 adds webhook-driven payment reconciliation. Receipt generation is reserved for T014.
+
+Payment Setup gating rules:
+
+- Payment Setup is not required to create customers or invoices.
+- Payment Setup is not required to send or share an invoice.
+- Public invoice viewing remains available without Payment Setup.
+- Public payment initialization must be blocked when no active organisation payment account exists.
+- When payment setup is incomplete, public invoice `paymentSummary.available` must be `false` with a safe setup-incomplete message.
 
 Public view tracking rules:
 
@@ -77,7 +85,9 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - Each successful payment is recorded independently.
 - The invoice remains `partially_paid` until successful payment totals meet or exceed `total_kobo`.
 - A receipt is generated for each successful payment.
+- Public partial payment entry is not exposed in MVP.
 - Public payment initialization charges the current server-calculated `balance_due_kobo`.
+- Public payment initialization must use the active organisation `provider_subaccount_code`.
 - Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified webhook processing is the source of truth for reconciliation.
 - A verified `charge.success` webhook can mark a matching payment `successful`.
 - After a successful payment, invoice paid and balance amounts are recalculated from all successful payments for the invoice.

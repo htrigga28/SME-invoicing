@@ -1,6 +1,6 @@
 # SME Invoice & Payment Reconciliation Platform
 
-A standalone B2B SaaS portfolio project for Nigerian SMEs, freelancers, agencies, and service providers. The MVP will support invoices, public invoice payment links, Paystack test payments, webhook-based payment reconciliation, receipts, exports, and audit logs.
+A standalone B2B SaaS portfolio project for Nigerian SMEs, freelancers, agencies, and service providers. The MVP will support invoices, organisation Payment Setup, public invoice payment links, Paystack test payments, webhook-based payment reconciliation, receipts, exports, and audit logs.
 
 ## Stack
 
@@ -50,7 +50,14 @@ Required categories:
 - Frontend/backend URL and CORS origins
 - Later Brevo and Cloudflare R2 credentials
 
-For Paystack test-mode flows, set `PAYSTACK_SECRET_KEY` in the API environment and keep it server-side only. `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing tests or local experiments at a mock provider. Paystack webhook signature verification also uses `PAYSTACK_SECRET_KEY`.
+Payment Setup notes:
+
+- Payment Setup is required before public invoice payment can be initialized.
+- Local/test mode uses Paystack test keys.
+- `PAYSTACK_SECRET_KEY` must be configured on the backend for bank listing, account resolution, subaccount creation, payment initialization, and webhook verification.
+- `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing local tests at a mock provider.
+- Never commit real Paystack keys.
+- The platform does not store merchant Paystack secret keys; it uses one platform Paystack integration and organisation subaccounts.
 
 ## Local PostgreSQL Setup
 
@@ -156,6 +163,21 @@ The seed also adds 12 realistic demo customers to the demo organisation. Ten are
 
 The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. It also prints sample public invoice URLs for sent/viewed/overdue invoices. Paid and partially paid invoices are intentionally not seeded yet because payment and reconciliation flows start in later tasks.
 
+## Payment Setup Flow
+
+Before a business can accept online invoice payments:
+
+1. Login as Owner/Admin.
+2. Complete the business profile.
+3. Open Payment Setup.
+4. Select bank.
+5. Resolve account.
+6. Confirm account name.
+7. Create Paystack subaccount.
+8. Public invoice Pay Online becomes available.
+
+For test/demo usage, use Paystack test bank and account details where available. Do not use real production banking data in screenshots or portfolio demos.
+
 ## Local Paystack Webhook Testing
 
 Paystack needs a public webhook URL to call your local API. In local development, use a tunnel such as ngrok and configure the Paystack dashboard webhook URL as:
@@ -173,6 +195,8 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 ## Current Implementation Status
 
 T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement receipts, dashboard metrics, exports, email, PDF generation, or reminders.
+
+Payment Setup and organisation subaccount support are planned MVP work and now gate public payment initialization in the product specification, even though the runtime implementation lands in later tasks.
 
 Implemented so far:
 
@@ -197,4 +221,4 @@ Implemented so far:
 - Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
 - Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
 
-Next planned task: T010 Payments and reconciliation page.
+Next planned implementation task: T011 Organisation Payment Setup and Paystack Subaccounts.

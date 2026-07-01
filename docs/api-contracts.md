@@ -56,6 +56,69 @@ Rules:
 - Completing business profile sets `setup_completed_at` and organisation `onboarding_completed_at`.
 - Dashboard access is blocked until business profile setup is complete.
 
+## Payment Setup
+
+| Endpoint | Auth | Role | Request | Response |
+| --- | --- | --- | --- | --- |
+| `GET /payment-setup/banks` | Required | Owner/Admin/Accountant/Viewer | None | `{ banks }` |
+| `POST /payment-setup/resolve-account` | Required | Owner/Admin | `{ bankCode, accountNumber }` | `{ bankCode, bankName, accountNumberLast4, accountName }` |
+| `POST /payment-setup/subaccount` | Required | Owner/Admin | `{ bankCode, accountNumber, confirmedAccountName }` | `{ paymentAccount }` |
+| `GET /payment-setup/account` | Required | Owner/Admin/Accountant/Viewer | None | `{ paymentAccount }` |
+| `POST /payment-setup/account/disable` | Required | Owner/Admin | None | `{ paymentAccount }` |
+
+`GET /payment-setup/banks` response shape:
+
+```json
+{
+  "banks": [
+    {
+      "name": "Access Bank",
+      "code": "044",
+      "country": "Nigeria",
+      "currency": "NGN",
+      "active": true
+    }
+  ]
+}
+```
+
+`POST /payment-setup/resolve-account` rules:
+
+- Backend calls Paystack Resolve Account Number using the selected Nigerian bank.
+- Response returns only safe details.
+- Full account number must not be persisted as part of the resolved response.
+
+`POST /payment-setup/subaccount` rules:
+
+- Backend re-resolves the account before creating the subaccount.
+- Backend compares the provider-resolved account name to `confirmedAccountName`.
+- Backend creates the Paystack subaccount through the platform integration.
+- Backend stores `provider_subaccount_code` and masked account details only.
+- Backend does not persist the full account number after subaccount creation.
+
+`POST /payment-setup/subaccount` response shape:
+
+```json
+{
+  "paymentAccount": {
+    "id": "payment-account-id",
+    "provider": "paystack",
+    "bankName": "Access Bank",
+    "accountName": "Acme Studio Ltd",
+    "accountNumberLast4": "1234",
+    "status": "active",
+    "verifiedAt": "2026-07-01T12:00:00.000Z"
+  }
+}
+```
+
+Payment Setup RBAC rules:
+
+- Owner/Admin can manage Payment Setup.
+- Accountant/Viewer can view Payment Setup status if the product exposes it.
+- Only Owner/Admin can create or disable a payment account.
+- Backend remains the source of truth for payment account status and activation.
+
 ## Team Invitations and Members
 
 | Endpoint | Auth | Role | Request | Response | Important errors |
@@ -150,13 +213,55 @@ Rules:
 - Public view tracking moves `sent` to `viewed` only once and writes a safe status event and audit log.
 - Repeated public views must not create duplicate viewed transitions.
 - Overdue invoices must not move back to `viewed`.
+- Public invoice viewing remains available even when Payment Setup is incomplete.
+- `POST /public/invoices/:token/pay` must first confirm the organisation has an active Paystack payment account.
 - Payment initialization amount is calculated server-side from `invoice.balance_due_kobo`.
 - The frontend must never send or control the payable amount.
+- The frontend must never send `subaccount`.
+- Backend derives `provider_subaccount_code` from the active organisation payment account and uses it when initializing Paystack.
+- `POST /public/invoices/:token/pay` creates a pending payment record, calls Paystack transaction initialization, stores `authorizationUrl`, `accessCode`, `reference`, and `provider_subaccount_code`, and writes a `payment_initialized` audit log.
+- If no active payment account exists, return a safe unavailable message such as `This business has not activated online payments yet.`
+- Public partial payment entry is not exposed in MVP.
+- Payment initialization is blocked for paid, cancelled, void, or public-access-disabled invoices.
 - Payment initialization is available for payable `sent`, `viewed`, `overdue`, and `partially_paid` public invoices with an outstanding balance.
-- Payment initialization is blocked for draft, paid, cancelled, void, or public-access-disabled invoices.
-- `POST /public/invoices/:token/pay` creates a pending payment record, calls Paystack transaction initialization, stores `authorizationUrl`, `accessCode`, and `reference`, and writes a `payment_initialized` audit log.
 - Payment initialization does not mark the invoice paid, does not update `amount_paid_kobo`, and does not update `balance_due_kobo`.
 - Paystack secret keys are backend-only. The public frontend only receives the Paystack authorization URL returned by the API.
+
+Preferred MVP initialization payload sent from backend to Paystack:
+
+```json
+{
+  "email": "customer@example.com",
+  "amount": 500000,
+  "reference": "SME-INV-000001-ABC123",
+  "subaccount": "ACCT_xxxxx",
+  "bearer": "subaccount"
+}
+```
+
+Public invoice `paymentSummary` examples:
+
+- Active payment account:
+
+```json
+{
+  "available": true,
+  "provider": "paystack",
+  "amountKobo": 500000,
+  "currency": "NGN",
+  "message": "Pay securely online."
+}
+```
+
+- Payment setup incomplete:
+
+```json
+{
+  "available": false,
+  "reason": "payment_setup_incomplete",
+  "message": "This business has not activated online payments yet."
+}
+```
 
 ## Payments
 
@@ -168,6 +273,7 @@ Rules:
 
 Webhook endpoint rules:
 
+- Verify signature with raw request body before trusting payload content.
 - Uses Paystack signature authentication, not user JWT auth.
 - Reads `x-paystack-signature` and verifies HMAC SHA512 against the raw request body with `PAYSTACK_SECRET_KEY`.
 - Must not verify against `JSON.stringify(req.body)`.
@@ -179,7 +285,7 @@ Webhook endpoint rules:
 - Recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status after successful validation.
 - Returns `{ received: true }` for processed, ignored, duplicate, mismatch, or unknown-reference events with valid signatures.
 - Rejects missing or invalid signatures safely.
-- Receipt generation remains T011 and is not performed by the webhook in T009.
+- Receipt generation remains T014 and is not performed by the webhook in T009.
 
 ## Receipts
 

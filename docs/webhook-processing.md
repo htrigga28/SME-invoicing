@@ -2,7 +2,7 @@
 
 Paystack webhook handling must be secure, idempotent, and safe when Paystack retries events.
 
-T008 creates pending Paystack payment records during checkout initialization. T009 must treat verified webhooks as the source of truth for changing payment status, invoice balances, invoice status, and receipts.
+T008 creates pending Paystack payment records during checkout initialization. T010/T012 planning adds organisation payment accounts and Paystack subaccounts to that initialization flow. T009 must treat verified webhooks as the source of truth for changing payment status, invoice balances, invoice status, and receipts.
 
 ## Required Rules
 
@@ -16,7 +16,8 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 - Successful payments must update payment status.
 - Successful payments must recalculate invoice `amount_paid_kobo` and `balance_due_kobo`.
 - Successful payments must update invoice status.
-- Successful payments must not generate receipts until T011.
+- Successful payments must not generate receipts until T014.
+- Successful payments should preserve the `provider_subaccount_code` used during initialization for traceability.
 - Failed payments must be recorded without marking invoice paid.
 - Webhook processing should be safe if Paystack retries the same event.
 
@@ -28,14 +29,14 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 4. Store event with redacted payload.
 5. Check if event/reference was already processed.
 6. Find matching pending payment.
-7. Verify amount and currency.
+7. Verify amount, currency, and stored payment context.
 8. Update payment status.
 9. Recalculate invoice payment totals.
 10. Update invoice status.
 11. Write audit log.
 12. Mark event processed.
 
-Receipt generation starts in T011 and is intentionally skipped in T009.
+Receipt generation starts in T014 and is intentionally skipped in T009.
 
 ## Signature Verification
 
@@ -60,6 +61,7 @@ Rules:
 - A duplicate event must not create a second successful payment.
 - A duplicate payment reference must not add to `amount_paid_kobo` twice.
 - A duplicate successful event must not create duplicate invoice status events.
+- A duplicate successful event must not create duplicate receipt work in later tasks.
 - Processing should be safe to retry after transient failure.
 - When Paystack does not provide a reliable event ID, `provider + provider_reference + event_type` is the defensive idempotency key.
 
@@ -71,6 +73,7 @@ Match incoming events to a pending payment by:
 - `provider_reference`.
 - Expected `amount_kobo`.
 - Expected `currency = NGN`.
+- Preserve the `provider_subaccount_code` stored at initialization time for historical context, even if webhook matching remains reference-driven.
 
 If the webhook arrives before the frontend callback, the webhook remains the source of truth. The pending payment created during initialization should still be found by reference.
 
@@ -87,13 +90,13 @@ If the webhook arrives before the frontend callback, the webhook remains the sou
 | Currency mismatch | Mark event for review, do not mark invoice paid. |
 | Invoice already paid | Store event, do not over-credit silently; flag for review if amount is new. |
 | Invoice cancelled/void | Store payment truth, do not move invoice to paid automatically, write audit log. |
-| Partial payment | Update invoice to `partially_paid`; receipt generation is T011. |
+| Partial payment | Update invoice to `partially_paid`; receipt generation is T014. |
 | Overpayment | Mark invoice `paid`, balance `0`, and flag overpayment in audit metadata. |
 | Webhook before callback | Process webhook normally if pending payment reference exists. |
 
 ## Receipt Generation
 
-Receipt generation is intentionally out of scope for T009. T011 should generate one receipt per successful payment and enforce uniqueness on `payment_id`.
+Receipt generation is intentionally out of scope for T009. T014 should generate one receipt per successful payment and enforce uniqueness on `payment_id`.
 
 ## Audit Logging
 

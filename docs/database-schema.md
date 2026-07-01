@@ -104,6 +104,35 @@ Accepted, revoked, and expired historical invitations may remain for audit.
 
 Constraint: `business_profiles.organisation_id` unique.
 
+### organisation_payment_accounts
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| provider | `paystack`. |
+| provider_subaccount_code | Nullable until subaccount creation succeeds. |
+| bank_code | Provider bank code. |
+| bank_name | Resolved bank name. |
+| account_name | Provider-resolved and user-confirmed account name. |
+| account_number_last4 | Masked last four digits only. |
+| status | `pending_confirmation`, `active`, `verification_delayed`, `disabled`. |
+| verified_at | Nullable activation/verification timestamp. |
+| disabled_at | Nullable disable timestamp. |
+| provider_metadata_redacted | Nullable JSONB with safe provider metadata only. |
+| created_by_user_id | Nullable reference to the user who created the record. |
+| created_at, updated_at | Timestamps. |
+
+Rules:
+
+- One active Paystack payment account per organisation.
+- Do not store full account number after subaccount creation.
+- Store only masked account details.
+- `provider_subaccount_code` must be unique where present.
+- Payment setup records are organisation-scoped.
+- Disabled accounts remain for audit/history.
+- Changing payout account should create or activate a new record and disable the prior active record, depending on the implementation path.
+
 ### customers
 
 | Column | Notes |
@@ -219,6 +248,7 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | customer_id | References customers. |
 | provider | `paystack`. |
 | provider_reference | Paystack reference. |
+| provider_subaccount_code | Nullable subaccount used during initialization for historical traceability. |
 | provider_access_code | Paystack checkout access code returned at initialization. |
 | provider_authorization_url | Paystack checkout URL returned at initialization. |
 | status | PaymentStatus. |
@@ -234,6 +264,11 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | created_at, updated_at | Timestamps. |
 
 Constraint: unique on `provider + provider_reference`.
+
+Subaccount traceability rules:
+
+- Invoice payment records should store the `provider_subaccount_code` used during initialization.
+- Webhook processing should reconcile by reference while preserving the subaccount context used when the payment started.
 
 T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.
 
