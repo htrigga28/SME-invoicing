@@ -130,16 +130,16 @@ describe("PublicInvoicePage", () => {
   });
 
   it("shows a safe inline error when payment initialization fails", async () => {
-    vi.mocked(initializePublicInvoicePayment).mockRejectedValueOnce(new Error("provider failed"));
+    vi.mocked(initializePublicInvoicePayment).mockRejectedValueOnce(
+      new ApiRequestError("This business has not activated online payments yet.", 409)
+    );
 
     render(<PublicInvoicePage token="public-token" />);
 
     fireEvent.click(await screen.findByRole("button", { name: /Pay .* online/ }));
 
     expect(
-      await screen.findByText(
-        "Payment could not be started. Please try again or contact the business."
-      )
+      await screen.findByText("This business has not activated online payments yet.")
     ).toBeInTheDocument();
     expect(locationAssign).not.toHaveBeenCalled();
   });
@@ -153,17 +153,17 @@ describe("PublicInvoicePage", () => {
 
   it("polls for webhook-confirmed payment updates after returning from the callback", async () => {
     const realSetInterval = window.setInterval;
-    const setIntervalSpy = vi.spyOn(window, "setInterval").mockImplementation(
-      ((handler: TimerHandler) => {
-        if (typeof handler === "function") {
-          handler();
-        }
+    const setIntervalSpy = vi.spyOn(window, "setInterval").mockImplementation(((
+      handler: TimerHandler
+    ) => {
+      if (typeof handler === "function") {
+        handler();
+      }
 
-        const intervalId = realSetInterval(() => undefined, 0);
-        window.clearInterval(intervalId);
-        return intervalId;
-      }) as typeof window.setInterval
-    );
+      const intervalId = realSetInterval(() => undefined, 0);
+      window.clearInterval(intervalId);
+      return intervalId;
+    }) as typeof window.setInterval);
     vi.mocked(getPublicInvoice)
       .mockResolvedValueOnce(publicInvoice)
       .mockResolvedValueOnce({
@@ -177,6 +177,7 @@ describe("PublicInvoicePage", () => {
         },
         paymentSummary: {
           available: false,
+          reason: "no_outstanding_balance",
           message: "This invoice has no outstanding balance."
         }
       });
@@ -187,7 +188,9 @@ describe("PublicInvoicePage", () => {
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
     expect(screen.queryByText("Payment confirmation pending")).not.toBeInTheDocument();
     expect(screen.getByText("Paid")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Pay online unavailable" })
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the pay button disabled when payment is unavailable", async () => {
@@ -195,6 +198,7 @@ describe("PublicInvoicePage", () => {
       ...publicInvoice,
       paymentSummary: {
         available: false,
+        reason: "payment_unavailable",
         message: "Online payment is unavailable for this invoice."
       }
     });
@@ -203,6 +207,37 @@ describe("PublicInvoicePage", () => {
 
     expect(await screen.findByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
     expect(initializePublicInvoicePayment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      reason: "payment_setup_incomplete" as const,
+      message: "This business has not activated online payments yet."
+    },
+    {
+      reason: "payment_setup_pending" as const,
+      message: "Online payments are not active for this business yet."
+    },
+    {
+      reason: "payment_setup_disabled" as const,
+      message: "Online payments are currently disabled for this business."
+    }
+  ])("disables Pay Online when setup state is $reason", async ({ message, reason }) => {
+    vi.mocked(getPublicInvoice).mockResolvedValueOnce({
+      ...publicInvoice,
+      paymentSummary: {
+        available: false,
+        reason,
+        message
+      }
+    });
+
+    render(<PublicInvoicePage token="public-token" />);
+
+    expect(await screen.findByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(initializePublicInvoicePayment).not.toHaveBeenCalled();
+    expect(screen.queryByText(/ACCT_/)).not.toBeInTheDocument();
   });
 
   it("hides the callback notice after webhook-confirmed payment makes the invoice non-payable", async () => {
@@ -217,6 +252,7 @@ describe("PublicInvoicePage", () => {
       },
       paymentSummary: {
         available: false,
+        reason: "no_outstanding_balance",
         message: "This invoice has no outstanding balance."
       }
     });
@@ -225,7 +261,9 @@ describe("PublicInvoicePage", () => {
 
     expect(await screen.findByText("Paid")).toBeInTheDocument();
     expect(screen.getByText("This invoice has no outstanding balance.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Pay online unavailable" })
+    ).not.toBeInTheDocument();
     expect(screen.getAllByText("NGN 0.00").length).toBeGreaterThan(0);
     expect(screen.queryByText("Payment confirmation pending")).not.toBeInTheDocument();
   });

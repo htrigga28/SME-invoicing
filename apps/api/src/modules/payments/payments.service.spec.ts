@@ -89,6 +89,7 @@ function createPayment(overrides: Partial<Payment> = {}): Payment {
     customerId: "customer-1",
     provider: "paystack",
     providerReference: "SME-INV000001-ABC123",
+    providerSubaccountCode: "ACCT_test_subaccount",
     providerAccessCode: "access-code",
     providerAuthorizationUrl: "https://checkout.paystack.test/pay/reference",
     status: "pending",
@@ -316,6 +317,41 @@ describe("PaymentsService reconciliation helpers", () => {
         fromStatus: "sent",
         toStatus: "paid",
         reason: "payment_webhook_reconciled"
+      })
+    );
+  });
+
+  it("preserves the initialized provider subaccount code when marking payment successful", async () => {
+    const { service } = setup();
+    const { tx, updateSet } = createTx();
+    const internals = service as unknown as {
+      markPaymentSuccessful: (
+        tx: unknown,
+        payment: Payment,
+        webhook: unknown,
+        paidAt: Date
+      ) => Promise<void>;
+    };
+
+    await internals.markPaymentSuccessful(
+      tx,
+      createPayment({ providerSubaccountCode: "ACCT_test_subaccount" }),
+      {
+        eventType: "charge.success",
+        payload: {
+          data: {
+            channel: "card",
+            gateway_response: "Successful",
+            status: "success"
+          }
+        }
+      },
+      new Date("2026-06-30T10:00:00.000Z")
+    );
+
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        providerSubaccountCode: expect.anything()
       })
     );
   });

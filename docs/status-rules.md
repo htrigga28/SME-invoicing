@@ -49,6 +49,7 @@ Payment Setup gating rules:
 - Public invoice viewing remains available without Payment Setup.
 - Public payment initialization must be blocked when no active organisation payment account exists.
 - When payment setup is incomplete, public invoice `paymentSummary.available` must be `false` with a safe setup-incomplete message.
+- Payment Setup state does not change invoice status; it only changes public payment availability.
 
 Public view tracking rules:
 

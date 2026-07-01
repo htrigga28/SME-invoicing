@@ -50,6 +50,13 @@
       "when": 1782941826549,
       "tag": "0006_lucky_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782942702096,
+      "tag": "0007_lonely_living_lightning",
+      "breakpoints": true
     }
   ]
 }

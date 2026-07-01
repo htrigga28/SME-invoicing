@@ -277,11 +277,15 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | metadata_redacted | Safe metadata only; no secrets or raw sensitive payloads. |
 | created_at, updated_at | Timestamps. |
 
-Constraint: unique on `provider + provider_reference`.
+Constraints and indexes:
+
+- Unique on `provider + provider_reference`.
+- Index on `organisation_id + provider_subaccount_code`.
 
 Subaccount traceability rules:
 
 - Invoice payment records should store the `provider_subaccount_code` used during initialization.
+- The column is nullable for older rows and payment attempts that predate subaccount-aware initialization.
 - Webhook processing should reconcile by reference while preserving the subaccount context used when the payment started.
 
 T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.

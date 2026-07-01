@@ -14,8 +14,10 @@ describe("PaystackService", () => {
       service.initializeTransaction({
         email: "accounts@example.com",
         amountKobo: 50000,
+        bearer: "subaccount",
         currency: "NGN",
         reference: "SME-INV000001-ABC123",
+        subaccount: "ACCT_test_subaccount",
         callbackUrl: "http://localhost:3000/invoice/token",
         metadata: {}
       })
@@ -45,8 +47,10 @@ describe("PaystackService", () => {
       service.initializeTransaction({
         email: "accounts@example.com",
         amountKobo: 50000,
+        bearer: "subaccount",
         currency: "NGN",
         reference: "SME-INV000001-ABC123",
+        subaccount: "ACCT_test_subaccount",
         callbackUrl: "http://localhost:3000/invoice/token",
         metadata: { invoiceId: "invoice-1" }
       })
@@ -70,6 +74,8 @@ describe("PaystackService", () => {
       amount: 50000,
       currency: "NGN",
       reference: "SME-INV000001-ABC123",
+      subaccount: "ACCT_test_subaccount",
+      bearer: "subaccount",
       callback_url: "http://localhost:3000/invoice/token",
       metadata: { invoiceId: "invoice-1" }
     });
@@ -93,8 +99,10 @@ describe("PaystackService", () => {
       service.initializeTransaction({
         email: "accounts@example.com",
         amountKobo: 50000,
+        bearer: "subaccount",
         currency: "NGN",
         reference: "SME-INV000001-ABC123",
+        subaccount: "ACCT_test_subaccount",
         callbackUrl: "http://localhost:3000/invoice/token",
         metadata: {}
       })

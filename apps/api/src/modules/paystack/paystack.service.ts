@@ -8,11 +8,13 @@ import { ConfigService } from "@nestjs/config";
 
 type PaystackInitializeInput = {
   amountKobo: number;
+  bearer: "subaccount";
   callbackUrl: string;
   currency: "NGN";
   email: string;
   metadata: Record<string, unknown>;
   reference: string;
+  subaccount: string;
 };
 
 type PaystackInitializeResponse = {
@@ -55,6 +57,8 @@ export class PaystackService {
         amount: input.amountKobo,
         currency: input.currency,
         reference: input.reference,
+        subaccount: input.subaccount,
+        bearer: input.bearer,
         callback_url: input.callbackUrl,
         metadata: input.metadata
       })

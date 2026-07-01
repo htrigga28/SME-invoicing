@@ -360,6 +360,7 @@ export const payments = pgTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     provider: varchar("provider", { length: 40 }).notNull(),
     providerReference: varchar("provider_reference", { length: 120 }).notNull(),
+    providerSubaccountCode: varchar("provider_subaccount_code", { length: 120 }),
     providerAccessCode: text("provider_access_code"),
     providerAuthorizationUrl: text("provider_authorization_url"),
     status: paymentStatusEnum("status").notNull().default("pending"),
@@ -391,6 +392,10 @@ export const payments = pgTable(
     organisationStatusIndex: index("payments_org_status_idx").on(
       table.organisationId,
       table.status
+    ),
+    organisationSubaccountIndex: index("payments_org_subaccount_idx").on(
+      table.organisationId,
+      table.providerSubaccountCode
     ),
     providerReferenceIndex: index("payments_provider_reference_idx").on(table.providerReference)
   })

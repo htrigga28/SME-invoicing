@@ -2,7 +2,7 @@
 
 Paystack webhook handling must be secure, idempotent, and safe when Paystack retries events.
 
-T008 creates pending Paystack payment records during checkout initialization. T010/T012 planning adds organisation payment accounts and Paystack subaccounts to that initialization flow. T009 must treat verified webhooks as the source of truth for changing payment status, invoice balances, invoice status, and receipts.
+T008 creates pending Paystack payment records during checkout initialization. T012 makes that initialization organisation-subaccount-aware by storing the Paystack `provider_subaccount_code` used for checkout. T009 must treat verified webhooks as the source of truth for changing payment status, invoice balances, invoice status, and receipts.
 
 ## Required Rules
 
@@ -18,7 +18,7 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 - Successful payments must update invoice status.
 - Successful payments must not generate receipts until T014.
 - Successful payments should preserve the `provider_subaccount_code` used during initialization for traceability.
-- After T012, newly initialized payment records should retain the organisation payment account `provider_subaccount_code`; webhook processing should preserve that stored value rather than deriving it from webhook payloads.
+- Newly initialized payment records retain the organisation payment account `provider_subaccount_code`; webhook processing preserves that stored value rather than deriving it from webhook payloads.
 - Failed payments must be recorded without marking invoice paid.
 - Webhook processing should be safe if Paystack retries the same event.
 

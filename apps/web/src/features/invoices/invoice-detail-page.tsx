@@ -156,6 +156,7 @@ export function InvoiceDetailContent({
     canCancelVoid && ["draft", "sent", "viewed", "overdue"].includes(invoice.status);
   const canVoid =
     canCancelVoid && ["draft", "sent", "viewed", "overdue", "cancelled"].includes(invoice.status);
+  const canManagePaymentSetup = role === "owner" || role === "admin";
   const canSharePublicUrl =
     response.publicUrl &&
     invoice.publicAccessEnabled &&
@@ -317,6 +318,18 @@ export function InvoiceDetailContent({
                     {formatMoney(response.paymentSummary.amountKobo)} via Paystack from this public
                     page.
                   </p>
+                ) : response.paymentSummary.reason.startsWith("payment_setup_") ? (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p>{response.paymentSummary.message}</p>
+                    {canManagePaymentSetup ? (
+                      <Link
+                        className="mt-3 inline-flex rounded-md bg-amber-900 px-3 py-2 text-sm font-semibold text-white"
+                        href="/settings/payment-setup"
+                      >
+                        Go to Payment Setup
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
               </>
             ) : (
