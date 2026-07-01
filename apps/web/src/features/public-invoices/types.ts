@@ -49,6 +49,13 @@ export type PublicInvoiceResponse = {
     | {
         available: false;
         message: string;
+        reason:
+          | "invoice_unavailable"
+          | "no_outstanding_balance"
+          | "payment_setup_disabled"
+          | "payment_setup_incomplete"
+          | "payment_setup_pending"
+          | "payment_unavailable";
       };
 };
 

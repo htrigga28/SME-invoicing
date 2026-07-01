@@ -21,6 +21,7 @@ import {
   disablePaymentSetupAccount,
   getPaymentSetupAccount,
   listPaymentSetupBanks,
+  reactivatePaymentSetupAccount,
   resolvePaymentSetupAccount
 } from "./payment-setup-api";
 import type {
@@ -65,16 +66,20 @@ export function PaymentSetupContent({
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [disableError, setDisableError] = useState<string | null>(null);
+  const [reactivationError, setReactivationError] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
   const [isDisabling, setIsDisabling] = useState(false);
+  const [reactivateDialogOpen, setReactivateDialogOpen] = useState(false);
+  const [isReactivating, setIsReactivating] = useState(false);
+  const [showDifferentAccountSetup, setShowDifferentAccountSetup] = useState(false);
   const canManage = canManagePaymentSetup(role);
   const currentAccount = accountResponse?.paymentAccount ?? null;
   const shouldShowWizard =
     canManage &&
     accountState === "ready" &&
-    (!currentAccount || currentAccount.status === "disabled");
+    (!currentAccount || (currentAccount.status === "disabled" && showDifferentAccountSetup));
   const accountNumberIsValid = /^\d{10}$/.test(accountNumber);
   const selectedBank = useMemo(
     () => banks.find((bank) => bank.code === selectedBankCode) ?? null,
@@ -144,6 +149,7 @@ export function PaymentSetupContent({
     setResolvedAccount(null);
     setResolveError(null);
     setActivationError(null);
+    setReactivationError(null);
   }
 
   async function handleResolve(event: FormEvent<HTMLFormElement>) {
@@ -151,6 +157,7 @@ export function PaymentSetupContent({
     setResolveError(null);
     setActivationError(null);
     setDisableError(null);
+    setReactivationError(null);
 
     if (!selectedBankCode) {
       setResolveError("Select a bank.");
@@ -188,6 +195,7 @@ export function PaymentSetupContent({
 
     setActivationError(null);
     setDisableError(null);
+    setReactivationError(null);
     setIsCreating(true);
 
     try {
@@ -202,6 +210,7 @@ export function PaymentSetupContent({
       });
       toast.success("Payment setup activated.", { id: "payment-setup-activated" });
       resetWizard();
+      setShowDifferentAccountSetup(false);
       setBankState("idle");
       setBankLoadError(null);
     } catch (createError) {
@@ -228,6 +237,7 @@ export function PaymentSetupContent({
       });
       setDisableDialogOpen(false);
       resetWizard();
+      setShowDifferentAccountSetup(false);
       setBankState("idle");
       setBankLoadError(null);
       toast.success("Payment setup disabled.", { id: "payment-setup-disabled" });
@@ -238,6 +248,39 @@ export function PaymentSetupContent({
       toast.error(message, { id: "payment-setup-disable-error" });
     } finally {
       setIsDisabling(false);
+    }
+  }
+
+  async function handleReactivateAccount() {
+    if (!currentAccount) {
+      return;
+    }
+
+    setReactivationError(null);
+    setDisableError(null);
+    setIsReactivating(true);
+
+    try {
+      const response = await reactivatePaymentSetupAccount(accessToken, currentAccount.id, {
+        reason: "Reactivated from Payment Setup settings."
+      });
+      setAccountResponse({
+        status: response.paymentAccount.status,
+        paymentAccount: response.paymentAccount
+      });
+      setReactivateDialogOpen(false);
+      resetWizard();
+      setShowDifferentAccountSetup(false);
+      setBankState("idle");
+      setBankLoadError(null);
+      toast.success("Payment setup reactivated.", { id: "payment-setup-reactivated" });
+    } catch (reactivateError) {
+      handleAuthError(reactivateError);
+      const message = getApiErrorMessage(reactivateError, "Could not reactivate payment setup.");
+      setReactivationError(message);
+      toast.error(message, { id: "payment-setup-reactivate-error" });
+    } finally {
+      setIsReactivating(false);
     }
   }
 
@@ -300,8 +343,11 @@ export function PaymentSetupContent({
         <PaymentAccountStatusCard
           account={currentAccount}
           canManage={canManage}
-          errorMessage={disableError}
+          errorMessage={disableError ?? reactivationError}
           onDisable={() => setDisableDialogOpen(true)}
+          onReactivate={() => setReactivateDialogOpen(true)}
+          onSetupDifferent={() => setShowDifferentAccountSetup(true)}
+          showDifferentAccountSetup={showDifferentAccountSetup}
         />
       ) : null}
 
@@ -342,6 +388,21 @@ export function PaymentSetupContent({
         onConfirm={() => void handleDisableAccount()}
         open={disableDialogOpen}
         title="Disable payout account?"
+      />
+
+      <ConfirmDialog
+        confirmLabel="Reactivate account"
+        description={
+          currentAccount
+            ? `Future online invoice payments will settle to this Paystack payout account ending ****${currentAccount.accountNumberLast4}.`
+            : "Future online invoice payments will settle to this Paystack payout account."
+        }
+        isLoading={isReactivating}
+        loadingLabel="Reactivating..."
+        onCancel={() => setReactivateDialogOpen(false)}
+        onConfirm={() => void handleReactivateAccount()}
+        open={reactivateDialogOpen}
+        title="Reactivate payout account?"
       />
     </section>
   );
@@ -500,12 +561,18 @@ function PaymentAccountStatusCard({
   account,
   canManage,
   errorMessage,
-  onDisable
+  onDisable,
+  onReactivate,
+  onSetupDifferent,
+  showDifferentAccountSetup
 }: {
   account: PaymentSetupAccount;
   canManage: boolean;
   errorMessage: string | null;
   onDisable: () => void;
+  onReactivate: () => void;
+  onSetupDifferent: () => void;
+  showDifferentAccountSetup: boolean;
 }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5">
@@ -517,7 +584,7 @@ function PaymentAccountStatusCard({
           </div>
           {account.status === "active" ? (
             <p className="mt-2 text-sm text-slate-600">
-              Public invoice payments will use this Paystack subaccount after T012 is completed.
+              Public invoice payments use this Paystack payout account.
             </p>
           ) : null}
           {account.status === "verification_delayed" ? (
@@ -527,14 +594,32 @@ function PaymentAccountStatusCard({
           ) : null}
           {account.status === "disabled" ? (
             <p className="mt-2 text-sm text-slate-600">
-              This payout account is disabled. Owner/Admin users can configure a new one below.
+              This payout account is disabled. You can reactivate it or set up a different payout
+              account.
             </p>
           ) : null}
         </div>
-        {canManage && account.status !== "disabled" ? (
-          <button className={destructiveActionClassName} onClick={onDisable} type="button">
-            Disable account
-          </button>
+        {canManage ? (
+          <div className="flex flex-wrap gap-2">
+            {account.status === "disabled" ? (
+              <>
+                <button className={primaryActionClassName} onClick={onReactivate} type="button">
+                  Reactivate this account
+                </button>
+                <button
+                  className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                  onClick={onSetupDifferent}
+                  type="button"
+                >
+                  Set up a different account
+                </button>
+              </>
+            ) : (
+              <button className={destructiveActionClassName} onClick={onDisable} type="button">
+                Disable account
+              </button>
+            )}
+          </div>
         ) : null}
       </div>
 
@@ -555,6 +640,12 @@ function PaymentAccountStatusCard({
         />
         <InfoRow label="Updated" value={formatDate(account.updatedAt)} />
       </dl>
+
+      {account.status === "disabled" && canManage && showDifferentAccountSetup ? (
+        <p className="mt-5 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Use this if you want payments to settle to a different bank account.
+        </p>
+      ) : null}
     </section>
   );
 }

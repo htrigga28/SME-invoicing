@@ -63,6 +63,25 @@ export class PaymentSetupRepository {
     return account ?? null;
   }
 
+  async findAccountById(input: {
+    accountId: string;
+    organisationId: string;
+  }): Promise<OrganisationPaymentAccount | null> {
+    const [account] = await this.databaseService.db
+      .select()
+      .from(organisationPaymentAccounts)
+      .where(
+        and(
+          eq(organisationPaymentAccounts.organisationId, input.organisationId),
+          eq(organisationPaymentAccounts.id, input.accountId),
+          eq(organisationPaymentAccounts.provider, "paystack")
+        )
+      )
+      .limit(1);
+
+    return account ?? null;
+  }
+
   async createPaymentAccount(input: {
     account: NewOrganisationPaymentAccount;
     auditLogs: AuditLogInput[];
@@ -137,6 +156,63 @@ export class PaymentSetupRepository {
         organisationId: input.organisationId,
         actorUserId: input.actorUserId,
         action: "payment_account_disabled",
+        entityType: "organisation_payment_account",
+        entityId: account.id,
+        metadataRedacted: input.metadataRedacted
+      });
+
+      return account;
+    });
+  }
+
+  async reactivatePaymentAccount(input: {
+    accountId: string;
+    actorUserId: string;
+    metadataRedacted: Record<string, unknown>;
+    now: Date;
+    organisationId: string;
+  }): Promise<OrganisationPaymentAccount> {
+    return this.databaseService.db.transaction(async (tx) => {
+      await tx
+        .update(organisationPaymentAccounts)
+        .set({
+          disabledAt: input.now,
+          status: "disabled",
+          updatedAt: input.now
+        })
+        .where(
+          and(
+            eq(organisationPaymentAccounts.organisationId, input.organisationId),
+            eq(organisationPaymentAccounts.provider, "paystack"),
+            eq(organisationPaymentAccounts.status, "active")
+          )
+        );
+
+      const [account] = await tx
+        .update(organisationPaymentAccounts)
+        .set({
+          disabledAt: null,
+          status: "active",
+          updatedAt: input.now
+        })
+        .where(
+          and(
+            eq(organisationPaymentAccounts.organisationId, input.organisationId),
+            eq(organisationPaymentAccounts.id, input.accountId),
+            eq(organisationPaymentAccounts.provider, "paystack"),
+            eq(organisationPaymentAccounts.status, "disabled")
+          )
+        )
+        .returning();
+
+      if (!account) {
+        throw new Error("Payment account reactivation failed.");
+      }
+
+      await tx.insert(auditLogs).values({
+        organisationId: input.organisationId,
+        actorUserId: input.actorUserId,
+        action: "payment_account_reactivated",
         entityType: "organisation_payment_account",
         entityId: account.id,
         metadataRedacted: input.metadataRedacted

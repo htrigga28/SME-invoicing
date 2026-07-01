@@ -131,6 +131,8 @@ Rules:
 - `provider_subaccount_code` must be unique where present.
 - Payment setup records are organisation-scoped.
 - Disabled accounts remain for audit/history.
+- Disabled accounts can be reactivated when they still have a stored `provider_subaccount_code`.
+- Reactivation clears `disabled_at` and keeps the one-active-account-per-organisation/provider rule.
 - Changing payout account should create or activate a new record and disable the prior active record, depending on the implementation path.
 
 Indexes and constraints:
@@ -277,11 +279,15 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | metadata_redacted | Safe metadata only; no secrets or raw sensitive payloads. |
 | created_at, updated_at | Timestamps. |
 
-Constraint: unique on `provider + provider_reference`.
+Constraints and indexes:
+
+- Unique on `provider + provider_reference`.
+- Index on `organisation_id + provider_subaccount_code`.
 
 Subaccount traceability rules:
 
 - Invoice payment records should store the `provider_subaccount_code` used during initialization.
+- The column is nullable for older rows and payment attempts that predate subaccount-aware initialization.
 - Webhook processing should reconcile by reference while preserving the subaccount context used when the payment started.
 
 T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.

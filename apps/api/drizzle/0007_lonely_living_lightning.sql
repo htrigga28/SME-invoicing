@@ -1,0 +1,2 @@
+ALTER TABLE "payments" ADD COLUMN "provider_subaccount_code" varchar(120);--> statement-breakpoint
+CREATE INDEX "payments_org_subaccount_idx" ON "payments" USING btree ("organisation_id","provider_subaccount_code");

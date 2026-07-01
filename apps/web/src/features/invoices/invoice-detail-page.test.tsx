@@ -121,6 +121,7 @@ describe("InvoiceDetailContent public URL", () => {
       },
       paymentSummary: {
         available: false,
+        reason: "no_outstanding_balance",
         message: "Online payment is unavailable for this invoice."
       }
     });
@@ -131,5 +132,25 @@ describe("InvoiceDetailContent public URL", () => {
     expect(screen.getAllByText("NGN 975.00").length).toBeGreaterThan(0);
     expect(screen.getByText("NGN 0.00")).toBeInTheDocument();
     expect(screen.getByText("30 Jun 2026")).toBeInTheDocument();
+  });
+
+  it("shows a Payment Setup CTA to owners when online payments are not active", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      paymentSummary: {
+        available: false,
+        reason: "payment_setup_incomplete",
+        message:
+          "Online payments are not active. Complete Payment Setup to allow customers to pay this invoice online."
+      }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByText(/Online payments are not active/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to Payment Setup" })).toHaveAttribute(
+      "href",
+      "/settings/payment-setup"
+    );
   });
 });

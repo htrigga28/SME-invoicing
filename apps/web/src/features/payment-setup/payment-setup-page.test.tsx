@@ -9,6 +9,7 @@ import {
   disablePaymentSetupAccount,
   getPaymentSetupAccount,
   listPaymentSetupBanks,
+  reactivatePaymentSetupAccount,
   resolvePaymentSetupAccount
 } from "./payment-setup-api";
 import { PaymentSetupContent } from "./payment-setup-page";
@@ -23,6 +24,7 @@ vi.mock("./payment-setup-api", () => ({
   disablePaymentSetupAccount: vi.fn(),
   getPaymentSetupAccount: vi.fn(),
   listPaymentSetupBanks: vi.fn(),
+  reactivatePaymentSetupAccount: vi.fn(),
   resolvePaymentSetupAccount: vi.fn()
 }));
 
@@ -54,6 +56,13 @@ const activeAccount = {
   updatedAt: "2026-06-30T10:00:00.000Z"
 } satisfies PaymentSetupAccount;
 
+const disabledAccount = {
+  ...activeAccount,
+  status: "disabled",
+  disabledAt: "2026-06-30T11:00:00.000Z",
+  updatedAt: "2026-06-30T11:00:00.000Z"
+} satisfies PaymentSetupAccount;
+
 beforeEach(() => {
   vi.mocked(getPaymentSetupAccount).mockResolvedValue({
     status: "not_configured",
@@ -68,11 +77,10 @@ beforeEach(() => {
   });
   vi.mocked(createPaymentSetupSubaccount).mockResolvedValue({ paymentAccount: activeAccount });
   vi.mocked(disablePaymentSetupAccount).mockResolvedValue({
-    paymentAccount: {
-      ...activeAccount,
-      status: "disabled",
-      disabledAt: "2026-06-30T11:00:00.000Z"
-    }
+    paymentAccount: disabledAccount
+  });
+  vi.mocked(reactivatePaymentSetupAccount).mockResolvedValue({
+    paymentAccount: activeAccount
   });
 });
 
@@ -168,9 +176,7 @@ describe("PaymentSetupContent", () => {
       })
     );
     expect(
-      await screen.findByText(
-        "Public invoice payments will use this Paystack subaccount after T012 is completed."
-      )
+      await screen.findByText("Public invoice payments use this Paystack payout account.")
     ).toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith("Payment setup activated.", {
       id: "payment-setup-activated"
@@ -213,6 +219,114 @@ describe("PaymentSetupContent", () => {
     expect(toast.success).toHaveBeenCalledWith("Payment setup disabled.", {
       id: "payment-setup-disabled"
     });
+  });
+
+  it("shows disabled account reactivation and setup-different actions for owners", async () => {
+    vi.mocked(getPaymentSetupAccount).mockResolvedValueOnce({
+      status: "disabled",
+      paymentAccount: disabledAccount
+    });
+
+    render(<PaymentSetupContent accessToken="token" role="owner" />);
+
+    expect(
+      await screen.findByText(
+        "This payout account is disabled. You can reactivate it or set up a different payout account."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivate this account" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set up a different account" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Bank" })).not.toBeInTheDocument();
+  });
+
+  it("keeps disabled account reactivation read-only for viewers", async () => {
+    vi.mocked(getPaymentSetupAccount).mockResolvedValueOnce({
+      status: "disabled",
+      paymentAccount: disabledAccount
+    });
+
+    render(<PaymentSetupContent accessToken="token" role="viewer" />);
+
+    expect(await screen.findByText("Disabled")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reactivate this account" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Set up a different account" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("reactivates a disabled account through the app confirmation dialog", async () => {
+    vi.mocked(getPaymentSetupAccount).mockResolvedValueOnce({
+      status: "disabled",
+      paymentAccount: disabledAccount
+    });
+
+    render(<PaymentSetupContent accessToken="token" role="admin" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivate this account" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Reactivate payout account?" });
+    expect(dialog).toHaveTextContent(
+      "Future online invoice payments will settle to this Paystack payout account ending ****7890."
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reactivate account" }));
+
+    await waitFor(() =>
+      expect(reactivatePaymentSetupAccount).toHaveBeenCalledWith("token", "payment-account-1", {
+        reason: "Reactivated from Payment Setup settings."
+      })
+    );
+    expect(await screen.findByText("Active")).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith("Payment setup reactivated.", {
+      id: "payment-setup-reactivated"
+    });
+    expect(screen.queryByText("ACCT_test")).not.toBeInTheDocument();
+  });
+
+  it("shows a friendly reactivation error inline and in a toast", async () => {
+    vi.mocked(getPaymentSetupAccount).mockResolvedValueOnce({
+      status: "disabled",
+      paymentAccount: disabledAccount
+    });
+    vi.mocked(reactivatePaymentSetupAccount).mockRejectedValueOnce(
+      new Error("This payout account cannot be reactivated.")
+    );
+
+    render(<PaymentSetupContent accessToken="token" role="owner" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivate this account" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Reactivate payout account?" })).getByRole(
+        "button",
+        { name: "Reactivate account" }
+      )
+    );
+
+    expect(
+      await screen.findByText("This payout account cannot be reactivated.")
+    ).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalledWith("This payout account cannot be reactivated.", {
+      id: "payment-setup-reactivate-error"
+    });
+  });
+
+  it("reveals the setup wizard when setting up a different disabled payout account", async () => {
+    vi.mocked(getPaymentSetupAccount).mockResolvedValueOnce({
+      status: "disabled",
+      paymentAccount: disabledAccount
+    });
+
+    render(<PaymentSetupContent accessToken="token" role="owner" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a different account" }));
+
+    expect(
+      await screen.findByText(
+        "Use this if you want payments to settle to a different bank account."
+      )
+    ).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "Bank" })).toBeInTheDocument();
   });
 
   it("shows a friendly bank load failure with retry support", async () => {

@@ -122,8 +122,12 @@ export function PublicInvoicePage({
     try {
       const payment = await initializePublicInvoicePayment(token);
       window.location.assign(payment.authorizationUrl);
-    } catch {
-      setPaymentError("Payment could not be started. Please try again or contact the business.");
+    } catch (apiError) {
+      setPaymentError(
+        isApiRequestError(apiError)
+          ? apiError.message
+          : "Payment could not be started. Please try again or contact the business."
+      );
       setIsInitializingPayment(false);
     }
   }
@@ -149,6 +153,8 @@ export function PublicInvoicePage({
   }
 
   const showPaymentCallbackNotice = paymentCallback && invoice.paymentSummary.available;
+  const showUnavailablePaymentButton =
+    !invoice.paymentSummary.available && invoice.paymentSummary.reason !== "no_outstanding_balance";
 
   return (
     <PublicInvoiceShell>
@@ -292,7 +298,7 @@ export function PublicInvoicePage({
                     ? "Redirecting..."
                     : `Pay ${formatKoboToNaira(invoice.paymentSummary.amountKobo)} online`}
                 </button>
-              ) : (
+              ) : showUnavailablePaymentButton ? (
                 <button
                   className="mt-4 w-full cursor-not-allowed rounded-md bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
                   disabled
@@ -300,7 +306,7 @@ export function PublicInvoicePage({
                 >
                   Pay online unavailable
                 </button>
-              )}
+              ) : null}
               <p className="mt-3 text-sm text-slate-700">{invoice.paymentSummary.message}</p>
               {invoice.paymentSummary.available ? (
                 <p className="mt-2 text-xs text-slate-600">

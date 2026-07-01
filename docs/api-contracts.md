@@ -65,6 +65,7 @@ Rules:
 | `POST /payment-setup/resolve-account` | Required | Owner/Admin | `{ bankCode, accountNumber }` | `{ bankCode, bankName, accountNumberLast4, accountName }` |
 | `POST /payment-setup/subaccount` | Required | Owner/Admin | `{ bankCode, accountNumber, confirmedAccountName }` | `{ paymentAccount }` |
 | `POST /payment-setup/account/disable` | Required | Owner/Admin | `{ reason? }` | `{ paymentAccount }` |
+| `POST /payment-setup/accounts/:id/reactivate` | Required | Owner/Admin | `{ reason? }` | `{ paymentAccount }` |
 
 `GET /payment-setup/account` response when no account exists:
 
@@ -144,13 +145,22 @@ Frontend responses must not expose `organisation_id`, full account numbers, raw 
 }
 ```
 
+`POST /payment-setup/accounts/:id/reactivate` rules:
+
+- Backend scopes the account lookup to the authenticated user's active organisation.
+- Only disabled Paystack accounts with an existing stored `provider_subaccount_code` can be reactivated.
+- Reactivation uses the existing stored Paystack subaccount; it does not re-resolve bank details and does not create a new Paystack subaccount.
+- Reactivation clears `disabled_at`, sets status to `active`, and disables any other active Paystack account for the organisation/provider.
+- Changing the payout bank account still requires the full setup flow again because the app does not store full account numbers.
+- Frontend responses must not expose `provider_subaccount_code`.
+
 Payment Setup RBAC rules:
 
 - Owner/Admin can manage Payment Setup.
 - Accountant/Viewer can view Payment Setup status if the product exposes it.
 - Only Owner/Admin can list setup banks, resolve accounts, create subaccounts, or disable a payment account.
 - Backend remains the source of truth for payment account status and activation.
-- T011 implements Payment Setup only. T012 will patch public invoice payment initialization to require and use the active organisation `provider_subaccount_code`.
+- Public invoice payment initialization requires and uses the active organisation `provider_subaccount_code`.
 
 ## Team Invitations and Members
 
@@ -254,6 +264,8 @@ Rules:
 - Backend derives `provider_subaccount_code` from the active organisation payment account and uses it when initializing Paystack.
 - `POST /public/invoices/:token/pay` creates a pending payment record, calls Paystack transaction initialization, stores `authorizationUrl`, `accessCode`, `reference`, and `provider_subaccount_code`, and writes a `payment_initialized` audit log.
 - If no active payment account exists, return a safe unavailable message such as `This business has not activated online payments yet.`
+- If the current payment account is `verification_delayed`, return `Online payments are not active for this business yet. Please try again later.`
+- If the current payment account is `disabled`, return `Online payments are currently disabled for this business.`
 - Public partial payment entry is not exposed in MVP.
 - Payment initialization is blocked for paid, cancelled, void, or public-access-disabled invoices.
 - Payment initialization is available for payable `sent`, `viewed`, `overdue`, and `partially_paid` public invoices with an outstanding balance.
@@ -293,6 +305,36 @@ Public invoice `paymentSummary` examples:
   "available": false,
   "reason": "payment_setup_incomplete",
   "message": "This business has not activated online payments yet."
+}
+```
+
+- Payment setup pending:
+
+```json
+{
+  "available": false,
+  "reason": "payment_setup_pending",
+  "message": "Online payments are not active for this business yet."
+}
+```
+
+- Payment setup disabled:
+
+```json
+{
+  "available": false,
+  "reason": "payment_setup_disabled",
+  "message": "Online payments are currently disabled for this business."
+}
+```
+
+- No outstanding balance:
+
+```json
+{
+  "available": false,
+  "reason": "no_outstanding_balance",
+  "message": "This invoice has no outstanding balance."
 }
 ```
 

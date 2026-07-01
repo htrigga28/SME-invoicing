@@ -129,4 +129,54 @@ describe("PaymentSetupRepository", () => {
       })
     );
   });
+
+  it("reactivates a disabled account, clears disabled_at, disables other active accounts, and audits safely", async () => {
+    const reactivated = createPaymentAccount({ status: "active", disabledAt: null });
+    const otherActiveDisableWhere = jest.fn().mockResolvedValue(undefined);
+    const reactivateReturning = jest.fn().mockResolvedValue([reactivated]);
+    const reactivateWhere = jest.fn(() => ({ returning: reactivateReturning }));
+    const updateSet = jest
+      .fn()
+      .mockImplementationOnce(() => ({ where: otherActiveDisableWhere }))
+      .mockImplementationOnce(() => ({ where: reactivateWhere }));
+    const insertValues = jest.fn().mockResolvedValue(undefined);
+    const tx = {
+      update: jest.fn(() => ({ set: updateSet })),
+      insert: jest.fn(() => ({ values: insertValues }))
+    };
+    const db = {
+      transaction: jest.fn((callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx))
+    };
+    const repository = new PaymentSetupRepository({ db } as never);
+
+    const result = await repository.reactivatePaymentAccount({
+      organisationId: "org-1",
+      actorUserId: "user-1",
+      accountId: "payment-account-1",
+      now,
+      metadataRedacted: {
+        accountNumberLast4: "7890",
+        provider: "paystack",
+        status: "active"
+      }
+    });
+
+    expect(result).toBe(reactivated);
+    expect(updateSet).toHaveBeenNthCalledWith(1, {
+      disabledAt: now,
+      status: "disabled",
+      updatedAt: now
+    });
+    expect(updateSet).toHaveBeenNthCalledWith(2, {
+      disabledAt: null,
+      status: "active",
+      updatedAt: now
+    });
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "payment_account_reactivated",
+        metadataRedacted: expect.not.objectContaining({ accountNumber: expect.any(String) })
+      })
+    );
+  });
 });

@@ -181,7 +181,17 @@ Manual local test flow:
 
 For test/demo usage, use Paystack test bank and account details where available. Do not use real production banking data in screenshots or portfolio demos.
 
-T011 stores the organisation Paystack subaccount and masked payout details. T012 will make the public invoice Pay Online flow require an active setup and initialize Paystack with the stored subaccount.
+T011 stores the organisation Paystack subaccount and masked payout details. T012 makes the public invoice Pay Online flow require an active setup and initializes Paystack with the stored subaccount.
+
+Payment initialization QA:
+
+1. Create or confirm Payment Setup as Owner/Admin.
+2. Send an invoice and open its public invoice URL.
+3. Confirm Pay Online is available only when Payment Setup status is active.
+4. Start Pay Online and confirm Paystack receives the organisation subaccount server-side.
+5. Disable Payment Setup from `/settings/payment-setup`.
+6. Reload the public invoice and confirm viewing still works while Pay Online is unavailable.
+7. Re-enable setup by creating a new active payment account when testing payments again.
 
 ## Local Paystack Webhook Testing
 
@@ -201,7 +211,7 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement receipts, dashboard metrics, exports, email, PDF generation, or reminders.
 
-Payment Setup and organisation subaccount support are planned MVP work and now gate public payment initialization in the product specification, even though the runtime implementation lands in later tasks.
+Payment Setup and organisation subaccount support now gate public payment initialization at runtime. Public invoice viewing still works without Payment Setup.
 
 Implemented so far:
 
@@ -226,5 +236,6 @@ Implemented so far:
 - Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
 - Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
 - Organisation Payment Setup with Paystack bank resolution, account confirmation, subaccount creation, and masked payout account storage.
+- Subaccount-aware public invoice payment initialization that requires active Payment Setup.
 
-Next planned implementation task: T011 Organisation Payment Setup and Paystack Subaccounts.
+Next planned implementation task: T013 Payments and Reconciliation Page.

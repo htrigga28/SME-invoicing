@@ -65,74 +65,74 @@ const demoInvitations = [
 const demoCustomers = [
   {
     name: "Lagos Bright Prints",
-    email: "accounts@lagosbrightprints.test",
+    email: "accounts@lagosbrightprints.com",
     phone: "+2348010000001",
     billingAddress: "14 Allen Avenue, Ikeja, Lagos"
   },
   {
     name: "Northstar Foods Ltd",
-    email: "finance@northstarfoods.test",
+    email: "finance@northstarfoods.com",
     phone: "+2348010000002",
     billingAddress: "22 Ahmadu Bello Way, Victoria Island, Lagos"
   },
   {
     name: "Lekki Dental Studio",
-    email: "billing@lekkidental.test",
+    email: "billing@lekkidental.com",
     phone: "+2348010000003",
     billingAddress: "8 Admiralty Road, Lekki Phase 1, Lagos"
   },
   {
     name: "BluePeak Logistics",
-    email: "ops@bluepeaklogistics.test",
+    email: "ops@bluepeaklogistics.com",
     phone: "+2348010000004",
     billingAddress: "31 Airport Road, Ikeja, Lagos"
   },
   {
     name: "Abuja Creative Hub",
-    email: "admin@abujacreativehub.test",
+    email: "admin@abujacreativehub.com",
     phone: "+2348010000005",
     billingAddress: "6 Gana Street, Maitama, Abuja"
   },
   {
     name: "Prime Tutors Academy",
-    email: "bursar@primetutors.test",
+    email: "bursar@primetutors.com",
     phone: "+2348010000006",
     billingAddress: "10 Toyin Street, Ikeja, Lagos"
   },
   {
     name: "Mainland Events Co",
-    email: "payments@mainlandevents.test",
+    email: "payments@mainlandevents.com",
     phone: "+2348010000007",
     billingAddress: "44 Bode Thomas Street, Surulere, Lagos"
   },
   {
     name: "Greenline Pharmacy",
-    email: "accounts@greenlinepharmacy.test",
+    email: "accounts@greenlinepharmacy.com",
     phone: "+2348010000008",
     billingAddress: "19 Herbert Macaulay Way, Yaba, Lagos"
   },
   {
     name: "Coral Edge Consulting",
-    email: "finance@coraledge.test",
+    email: "finance@coraledge.com",
     phone: "+2348010000009",
     billingAddress: "2 Ligali Ayorinde Street, Victoria Island, Lagos"
   },
   {
     name: "Swift Repairs NG",
-    email: "billing@swiftrepairs.test",
+    email: "billing@swiftrepairs.com",
     phone: "+2348010000010",
     billingAddress: "15 Ikorodu Road, Maryland, Lagos"
   },
   {
     name: "Archived Customer One",
-    email: "archived.one@example.test",
+    email: "archived.one@example.com",
     phone: "+2348010000011",
     billingAddress: "1 Old Marina Road, Lagos",
     archived: true
   },
   {
     name: "Archived Customer Two",
-    email: "archived.two@example.test",
+    email: "archived.two@example.com",
     phone: "+2348010000012",
     billingAddress: "2 Old Marina Road, Lagos",
     archived: true
@@ -238,7 +238,7 @@ async function main() {
       .values({
         organisationId: organisation.id,
         businessName: organisationName,
-        email: "billing@akinco.test",
+        email: "billing@akinco.com",
         phone: "+2348012345678",
         address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
         setupCompletedAt: now
@@ -247,7 +247,7 @@ async function main() {
         target: businessProfiles.organisationId,
         set: {
           businessName: organisationName,
-          email: "billing@akinco.test",
+          email: "billing@akinco.com",
           phone: "+2348012345678",
           address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
           setupCompletedAt: now,
@@ -375,18 +375,29 @@ async function main() {
           and(eq(customers.organisationId, organisation.id), eq(customers.email, customer.email))
         )
         .limit(1);
+      const [existingCustomerByName] = existingCustomer
+        ? [existingCustomer]
+        : await db
+            .select()
+            .from(customers)
+            .where(
+              and(eq(customers.organisationId, organisation.id), eq(customers.name, customer.name))
+            )
+            .limit(1);
+      const customerToUpdate = existingCustomer ?? existingCustomerByName;
 
-      if (existingCustomer) {
+      if (customerToUpdate) {
         await db
           .update(customers)
           .set({
             name: customer.name,
+            email: customer.email,
             phone: customer.phone,
             billingAddress: customer.billingAddress,
             archivedAt,
             updatedAt: now
           })
-          .where(eq(customers.id, existingCustomer.id));
+          .where(eq(customers.id, customerToUpdate.id));
       } else {
         await db.insert(customers).values({
           organisationId: organisation.id,
