@@ -60,11 +60,42 @@ Rules:
 
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
-| `GET /payment-setup/banks` | Required | Owner/Admin/Accountant/Viewer | None | `{ banks }` |
+| `GET /payment-setup/account` | Required | Owner/Admin/Accountant/Viewer | None | `{ status, paymentAccount }` |
+| `GET /payment-setup/banks` | Required | Owner/Admin | None | `{ banks }` |
 | `POST /payment-setup/resolve-account` | Required | Owner/Admin | `{ bankCode, accountNumber }` | `{ bankCode, bankName, accountNumberLast4, accountName }` |
 | `POST /payment-setup/subaccount` | Required | Owner/Admin | `{ bankCode, accountNumber, confirmedAccountName }` | `{ paymentAccount }` |
-| `GET /payment-setup/account` | Required | Owner/Admin/Accountant/Viewer | None | `{ paymentAccount }` |
-| `POST /payment-setup/account/disable` | Required | Owner/Admin | None | `{ paymentAccount }` |
+| `POST /payment-setup/account/disable` | Required | Owner/Admin | `{ reason? }` | `{ paymentAccount }` |
+
+`GET /payment-setup/account` response when no account exists:
+
+```json
+{
+  "status": "not_configured",
+  "paymentAccount": null
+}
+```
+
+`GET /payment-setup/account` response when an account exists:
+
+```json
+{
+  "status": "active",
+  "paymentAccount": {
+    "id": "payment-account-id",
+    "provider": "paystack",
+    "bankName": "Access Bank",
+    "accountName": "Acme Studio Ltd",
+    "accountNumberLast4": "1234",
+    "status": "active",
+    "verifiedAt": "2026-07-01T12:00:00.000Z",
+    "disabledAt": null,
+    "createdAt": "2026-07-01T12:00:00.000Z",
+    "updatedAt": "2026-07-01T12:00:00.000Z"
+  }
+}
+```
+
+Frontend responses must not expose `organisation_id`, full account numbers, raw Paystack metadata, `PAYSTACK_SECRET_KEY`, or `provider_subaccount_code`.
 
 `GET /payment-setup/banks` response shape:
 
@@ -95,6 +126,7 @@ Rules:
 - Backend creates the Paystack subaccount through the platform integration.
 - Backend stores `provider_subaccount_code` and masked account details only.
 - Backend does not persist the full account number after subaccount creation.
+- Backend disables any previous active Paystack account for the organisation/provider before inserting the new active account.
 
 `POST /payment-setup/subaccount` response shape:
 
@@ -116,8 +148,9 @@ Payment Setup RBAC rules:
 
 - Owner/Admin can manage Payment Setup.
 - Accountant/Viewer can view Payment Setup status if the product exposes it.
-- Only Owner/Admin can create or disable a payment account.
+- Only Owner/Admin can list setup banks, resolve accounts, create subaccounts, or disable a payment account.
 - Backend remains the source of truth for payment account status and activation.
+- T011 implements Payment Setup only. T012 will patch public invoice payment initialization to require and use the active organisation `provider_subaccount_code`.
 
 ## Team Invitations and Members
 

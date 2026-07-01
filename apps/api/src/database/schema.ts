@@ -55,6 +55,13 @@ export const paymentStatusEnum = pgEnum("payment_status", [
   "refunded"
 ]);
 
+export const organisationPaymentAccountStatusEnum = pgEnum("organisation_payment_account_status", [
+  "pending_confirmation",
+  "active",
+  "verification_delayed",
+  "disabled"
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -138,6 +145,51 @@ export const businessProfiles = pgTable("business_profiles", {
   setupCompletedAt: timestamp("setup_completed_at", { withTimezone: true }),
   ...timestamps
 });
+
+export const organisationPaymentAccounts = pgTable(
+  "organisation_payment_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("paystack"),
+    providerSubaccountCode: varchar("provider_subaccount_code", { length: 120 }),
+    bankCode: varchar("bank_code", { length: 40 }).notNull(),
+    bankName: varchar("bank_name", { length: 200 }).notNull(),
+    accountName: varchar("account_name", { length: 200 }).notNull(),
+    accountNumberLast4: varchar("account_number_last4", { length: 4 }).notNull(),
+    status: organisationPaymentAccountStatusEnum("status").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    providerMetadataRedacted: jsonb("provider_metadata_redacted").$type<Record<string, unknown>>(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    ...timestamps
+  },
+  (table) => ({
+    organisationIndex: index("organisation_payment_accounts_organisation_id_idx").on(
+      table.organisationId
+    ),
+    organisationProviderIndex: index("organisation_payment_accounts_org_provider_idx").on(
+      table.organisationId,
+      table.provider
+    ),
+    organisationStatusIndex: index("organisation_payment_accounts_org_status_idx").on(
+      table.organisationId,
+      table.status
+    ),
+    providerSubaccountCodeUnique: uniqueIndex(
+      "organisation_payment_accounts_subaccount_code_unique"
+    )
+      .on(table.providerSubaccountCode)
+      .where(sql`${table.providerSubaccountCode} is not null`),
+    activeAccountUnique: uniqueIndex("organisation_payment_accounts_active_unique")
+      .on(table.organisationId, table.provider)
+      .where(sql`${table.status} = 'active'`)
+  })
+);
 
 export const customers = pgTable(
   "customers",
@@ -412,6 +464,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 export const organisationsRelations = relations(organisations, ({ many, one }) => ({
   members: many(organisationMembers),
   invitations: many(organisationInvitations),
+  paymentAccounts: many(organisationPaymentAccounts),
   customers: many(customers),
   invoices: many(invoices),
   paymentEvents: many(paymentEvents),
@@ -448,6 +501,20 @@ export const businessProfilesRelations = relations(businessProfiles, ({ one }) =
     references: [organisations.id]
   })
 }));
+
+export const organisationPaymentAccountsRelations = relations(
+  organisationPaymentAccounts,
+  ({ one }) => ({
+    organisation: one(organisations, {
+      fields: [organisationPaymentAccounts.organisationId],
+      references: [organisations.id]
+    }),
+    createdBy: one(users, {
+      fields: [organisationPaymentAccounts.createdByUserId],
+      references: [users.id]
+    })
+  })
+);
 
 export const customersRelations = relations(customers, ({ one }) => ({
   organisation: one(organisations, {
@@ -562,6 +629,8 @@ export type Organisation = typeof organisations.$inferSelect;
 export type OrganisationMember = typeof organisationMembers.$inferSelect;
 export type OrganisationInvitation = typeof organisationInvitations.$inferSelect;
 export type BusinessProfile = typeof businessProfiles.$inferSelect;
+export type OrganisationPaymentAccount = typeof organisationPaymentAccounts.$inferSelect;
+export type NewOrganisationPaymentAccount = typeof organisationPaymentAccounts.$inferInsert;
 export type Customer = typeof customers.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;

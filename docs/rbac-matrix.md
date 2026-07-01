@@ -17,6 +17,8 @@ Customers paying public invoices do not need a platform account.
 | --- | --- | --- | --- | --- |
 | Business profile view | Yes | Yes | Yes | Yes |
 | Business profile update | Yes | Yes | No | No |
+| Payment Setup status view | Yes | Yes | Yes | Yes |
+| Payment Setup bank list/resolve/create/disable | Yes | Yes | No | No |
 | Team invitations | Yes | Limited | No | No |
 | Team members view | Yes | Yes | No | View own profile only |
 | Team role changes | Yes | Limited, not Owner | No | No |
@@ -75,6 +77,8 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Every organisation-scoped table must include `organisation_id`.
 - Every protected query must be scoped by the authenticated user's active organisation membership.
 - Never trust `organisationId` from the frontend.
+- Payment Setup reads and mutations derive organisation scope from the authenticated active membership.
+- Payment Setup management is Owner/Admin only; Accountant/Viewer can view status only.
 - Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
 - Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
 - Archived customers remain readable but cannot be updated in the MVP.

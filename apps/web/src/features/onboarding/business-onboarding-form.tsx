@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { primaryActionClassName } from "@/components/ui/styles";
 import { getBusinessProfile, updateBusinessProfile } from "@/features/auth/auth-api";
 import { getStoredSession } from "@/features/auth/session";
 import { isSubmitDisabled, validateBusinessProfileForm } from "@/features/auth/validation";
+import { getApiErrorMessage } from "@/lib/api";
 
 type FormState = {
   businessName: string;
@@ -47,7 +49,7 @@ export function BusinessOnboardingForm() {
         });
       })
       .catch((error) => {
-        setLoadError(error instanceof Error ? error.message : "Could not load business profile.");
+        setLoadError(getApiErrorMessage(error, "Could not load business profile."));
       })
       .finally(() => setIsLoading(false));
   }, [router]);
@@ -73,9 +75,10 @@ export function BusinessOnboardingForm() {
 
     try {
       await updateBusinessProfile(session.accessToken, form);
-      router.push("/dashboard");
+      toast.success("Business profile completed. Next, activate online payments.");
+      router.push("/settings/payment-setup?source=onboarding");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Could not update business profile.");
+      setSubmitError(getApiErrorMessage(error, "Could not update business profile."));
     } finally {
       setIsSubmitting(false);
     }

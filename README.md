@@ -53,6 +53,7 @@ Required categories:
 Payment Setup notes:
 
 - Payment Setup is required before public invoice payment can be initialized.
+- After business profile completion, the app redirects users into Payment Setup and the dashboard shows a follow-up CTA until online payments are active.
 - Local/test mode uses Paystack test keys.
 - `PAYSTACK_SECRET_KEY` must be configured on the backend for bank listing, account resolution, subaccount creation, payment initialization, and webhook verification.
 - `PAYSTACK_BASE_URL` defaults to `https://api.paystack.co` and is only needed when pointing local tests at a mock provider.
@@ -165,18 +166,22 @@ The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelle
 
 ## Payment Setup Flow
 
-Before a business can accept online invoice payments:
+Manual local test flow:
 
 1. Login as Owner/Admin.
 2. Complete the business profile.
-3. Open Payment Setup.
-4. Select bank.
-5. Resolve account.
-6. Confirm account name.
-7. Create Paystack subaccount.
-8. Public invoice Pay Online becomes available.
+3. Ensure `PAYSTACK_SECRET_KEY` is set to a Paystack test secret key.
+4. Follow the redirect to `/settings/payment-setup` or use the dashboard CTA.
+5. Select a Nigerian bank.
+6. Enter a Paystack test 10-digit account number.
+7. Resolve the account and confirm the masked account details.
+8. Activate payouts to create the organisation Paystack subaccount.
+9. Verify the status card shows provider, bank, account name, account last4, status, and verified/delayed state.
+10. Login as Accountant/Viewer and confirm the page is read-only.
 
 For test/demo usage, use Paystack test bank and account details where available. Do not use real production banking data in screenshots or portfolio demos.
+
+T011 stores the organisation Paystack subaccount and masked payout details. T012 will make the public invoice Pay Online flow require an active setup and initialize Paystack with the stored subaccount.
 
 ## Local Paystack Webhook Testing
 
@@ -207,7 +212,7 @@ Implemented so far:
 - CI workflow for install, lint, typecheck, test, and build.
 - Auth endpoints for register, login, refresh, logout, and current user.
 - Business profile onboarding endpoints and UI.
-- Dashboard shell gated by onboarding status.
+- Dashboard shell gated by onboarding status, with a Payment Setup CTA until online payments are active.
 - Team invitation and member management endpoints.
 - Team settings and invitation acceptance UI.
 - Idempotent development seed data with demo users and invitation records.
@@ -220,5 +225,6 @@ Implemented so far:
 - Paystack payment initialization from payable public invoices.
 - Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
 - Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
+- Organisation Payment Setup with Paystack bank resolution, account confirmation, subaccount creation, and masked payout account storage.
 
 Next planned implementation task: T011 Organisation Payment Setup and Paystack Subaccounts.

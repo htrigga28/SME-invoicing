@@ -232,10 +232,7 @@ function InvoiceHistoryPanel({ response }: { response: CustomerDetailResponse })
           <h2 className="text-lg font-semibold text-slate-950">Invoice history</h2>
           <p className="mt-1 text-sm text-slate-600">{response.invoiceSummary.message}</p>
         </div>
-        <Link
-          className="text-sm font-semibold text-teal-700 hover:text-teal-800"
-          href="/invoices"
-        >
+        <Link className="text-sm font-semibold text-teal-700 hover:text-teal-800" href="/invoices">
           View all invoices
         </Link>
       </div>

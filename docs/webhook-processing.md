@@ -18,6 +18,7 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 - Successful payments must update invoice status.
 - Successful payments must not generate receipts until T014.
 - Successful payments should preserve the `provider_subaccount_code` used during initialization for traceability.
+- After T012, newly initialized payment records should retain the organisation payment account `provider_subaccount_code`; webhook processing should preserve that stored value rather than deriving it from webhook payloads.
 - Failed payments must be recorded without marking invoice paid.
 - Webhook processing should be safe if Paystack retries the same event.
 

@@ -82,6 +82,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -151,7 +152,18 @@ describe("PublicInvoicePage", () => {
   });
 
   it("polls for webhook-confirmed payment updates after returning from the callback", async () => {
-    vi.useFakeTimers();
+    const realSetInterval = window.setInterval;
+    const setIntervalSpy = vi.spyOn(window, "setInterval").mockImplementation(
+      ((handler: TimerHandler) => {
+        if (typeof handler === "function") {
+          handler();
+        }
+
+        const intervalId = realSetInterval(() => undefined, 0);
+        window.clearInterval(intervalId);
+        return intervalId;
+      }) as typeof window.setInterval
+    );
     vi.mocked(getPublicInvoice)
       .mockResolvedValueOnce(publicInvoice)
       .mockResolvedValueOnce({
@@ -171,16 +183,11 @@ describe("PublicInvoicePage", () => {
 
     render(<PublicInvoicePage paymentCallback token="public-token" />);
 
-    expect(await screen.findByText("Payment confirmation pending")).toBeInTheDocument();
-
-    await vi.advanceTimersByTimeAsync(3000);
-
     await screen.findByText("This invoice has no outstanding balance.");
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
     expect(screen.queryByText("Payment confirmation pending")).not.toBeInTheDocument();
     expect(screen.getByText("Paid")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pay online unavailable" })).toBeDisabled();
-
-    vi.useRealTimers();
   });
 
   it("keeps the pay button disabled when payment is unavailable", async () => {

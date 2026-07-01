@@ -43,6 +43,13 @@
       "when": 1782814932080,
       "tag": "0005_rainy_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782941826549,
+      "tag": "0006_lucky_miracleman",
+      "breakpoints": true
     }
   ]
 }
