@@ -2,7 +2,7 @@
 
 Paystack webhook handling must be secure, idempotent, and safe when Paystack retries events.
 
-T008 creates pending Paystack payment records during checkout initialization. T010/T012 planning adds organisation payment accounts and Paystack subaccounts to that initialization flow. T009 must treat verified webhooks as the source of truth for changing payment status, invoice balances, invoice status, and receipts.
+T008 creates pending Paystack payment records during checkout initialization. T012 makes that initialization organisation-subaccount-aware by storing the Paystack `provider_subaccount_code` used for checkout. T009/T013 treat verified webhooks and server-side verification as provider truth for changing payment status, invoice balances, invoice status, and refund state. Receipts remain T014.
 
 ## Required Rules
 
@@ -14,12 +14,13 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 - Duplicate events must be idempotent.
 - Duplicate Paystack references must not double-count payments.
 - Successful payments must update payment status.
-- Successful payments must recalculate invoice `amount_paid_kobo` and `balance_due_kobo`.
+- Successful payments must recalculate invoice `amount_paid_kobo` and `balance_due_kobo` from payment/refund truth.
 - Successful payments must update invoice status.
 - Successful payments must not generate receipts until T014.
 - Successful payments should preserve the `provider_subaccount_code` used during initialization for traceability.
-- After T012, newly initialized payment records should retain the organisation payment account `provider_subaccount_code`; webhook processing should preserve that stored value rather than deriving it from webhook payloads.
+- Newly initialized payment records retain the organisation payment account `provider_subaccount_code`; webhook processing preserves that stored value rather than deriving it from webhook payloads.
 - Failed payments must be recorded without marking invoice paid.
+- Refund webhooks must update `payment_refunds` and only processed refunds may reduce net paid totals.
 - Webhook processing should be safe if Paystack retries the same event.
 
 ## Processing Flow
@@ -29,10 +30,10 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 3. Extract event type and payment reference.
 4. Store event with redacted payload.
 5. Check if event/reference was already processed.
-6. Find matching pending payment.
+6. Find matching payment or refund context.
 7. Verify amount, currency, and stored payment context.
-8. Update payment status.
-9. Recalculate invoice payment totals.
+8. Update payment or refund status.
+9. Recalculate invoice payment totals when money truth changes.
 10. Update invoice status.
 11. Write audit log.
 12. Mark event processed.
@@ -78,6 +79,30 @@ Match incoming events to a pending payment by:
 
 If the webhook arrives before the frontend callback, the webhook remains the source of truth. The pending payment created during initialization should still be found by reference.
 
+## Refund Matching
+
+T013 supports minimal Paystack excess-refund tracking for overpayments. Refund events handled:
+
+- `refund.pending`
+- `refund.processing`
+- `refund.needs-attention`
+- `refund.failed`
+- `refund.processed`
+
+Refund events are matched first by Paystack refund ID when present, then defensively by the original transaction reference. Processing rules:
+
+- `pending` and `processing` update refund status only.
+- `needs_attention` keeps the overpayment review open and tells Owner/Admin to resolve through Paystack/provider workflow.
+- `failed` keeps the overpayment review open.
+- `processed` sets `processed_at`, recalculates invoice financial truth, and resolves overpayment review if excess becomes zero.
+- Duplicate refund events must not subtract refunded amounts twice.
+
+T013 reads `payments`, `payment_refunds`, and `payment_events` to show reconciliation visibility. The payments UI shows provider references, invoice/customer matches, computed reconciliation/review state, safe event summaries, refund state, and masked settlement account details where the stored subaccount code matches an organisation payment account. It must not expose raw webhook payloads or `provider_subaccount_code`.
+
+T013 also adds a server-side Paystack Verify Transaction fallback after the customer returns from Paystack. The public callback endpoint verifies that the reference belongs to the invoice token, calls Paystack from the backend, validates reference, amount in kobo, and currency, and then uses the same idempotent reconciliation service as the `charge.success` webhook. The frontend callback is never proof of payment.
+
+For local development, Paystack cannot deliver webhooks to a localhost-only URL. Use a public tunnel or deployed test backend URL in Paystack Test Mode. Valid webhook logs should include only safe structured fields such as provider, event type, provider reference, whether the signature was valid, whether a payment matched, and the processing result.
+
 ## Edge Cases
 
 | Edge case | Behaviour |
@@ -92,8 +117,13 @@ If the webhook arrives before the frontend callback, the webhook remains the sou
 | Invoice already paid | Store event, do not over-credit silently; flag for review if amount is new. |
 | Invoice cancelled/void | Store payment truth, do not move invoice to paid automatically, write audit log. |
 | Partial payment | Update invoice to `partially_paid`; receipt generation is T014. |
-| Overpayment | Mark invoice `paid`, balance `0`, and flag overpayment in audit metadata. |
+| Overpayment | Mark invoice `paid`, balance `0`, and show Needs Review until excess is resolved. |
+| Refund pending/processing | Store refund state; do not reduce invoice paid totals yet. |
+| Refund needs attention | Keep review open and show safe provider-action-required state. |
+| Refund failed | Keep review open; allow Owner/Admin to retry a valid excess refund. |
+| Refund processed | Subtract processed refund once and recalculate invoice financial state. |
 | Webhook before callback | Process webhook normally if pending payment reference exists. |
+| Callback before webhook | Backend verification may reconcile first; the later webhook must be idempotent and must not double-count. |
 
 ## Receipt Generation
 
@@ -108,6 +138,6 @@ Write audit logs for:
 - Duplicate ignored event.
 - Amount or currency mismatch.
 - Cancelled/void invoice payment arrival.
-- Receipt generation.
+- Refund initiated, failed submission, and processed refund recalculation.
 
-Audit metadata must be redacted and should not contain raw secrets, full card details, or sensitive webhook payloads.
+Audit metadata must be redacted and should not contain raw secrets, full card details, customer bank details, or sensitive webhook/refund payloads.

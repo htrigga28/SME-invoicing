@@ -1,6 +1,10 @@
 import { apiGet, apiRequest } from "@/lib/api";
 
-import type { PublicInvoicePaymentInitialization, PublicInvoiceResponse } from "./types";
+import type {
+  PublicInvoicePaymentInitialization,
+  PublicInvoicePaymentVerification,
+  PublicInvoiceResponse
+} from "./types";
 
 export function getPublicInvoice(token: string) {
   return apiGet<PublicInvoiceResponse>(`/public/invoices/${encodeURIComponent(token)}`);
@@ -15,6 +19,15 @@ export function markPublicInvoiceViewed(token: string) {
 export function initializePublicInvoicePayment(token: string) {
   return apiRequest<PublicInvoicePaymentInitialization>(
     `/public/invoices/${encodeURIComponent(token)}/pay`,
+    {
+      method: "POST"
+    }
+  );
+}
+
+export function verifyPublicInvoicePayment(token: string, reference: string) {
+  return apiRequest<PublicInvoicePaymentVerification>(
+    `/public/invoices/${encodeURIComponent(token)}/payments/${encodeURIComponent(reference)}/verify`,
     {
       method: "POST"
     }

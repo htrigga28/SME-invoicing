@@ -2,13 +2,29 @@ import { randomBytes } from "crypto";
 import {
   BadRequestException,
   BadGatewayException,
+  ConflictException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
   UnprocessableEntityException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, asc, count, desc, eq, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL
+} from "drizzle-orm";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { DatabaseService } from "../../database/database.service";
@@ -19,16 +35,20 @@ import {
   invoiceLineItems,
   invoiceStatusEvents,
   invoices,
+  organisationPaymentAccounts,
   organisations,
+  paymentEvents,
   payments,
   type BusinessProfile,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
   type InvoiceStatusEvent,
+  type OrganisationPaymentAccount,
   type Payment
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { PaymentsService } from "../payments/payments.service";
 import { PaystackService } from "../paystack/paystack.service";
 import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
 import type { InvoiceLineItemDto } from "./dto/invoice-line-item.dto";
@@ -53,6 +73,33 @@ type PublicInvoiceRow = InvoiceWithCustomer & {
     name: string;
   };
 };
+
+type PaymentAvailabilityAccount = {
+  disabledAt: Date | null;
+  id: string;
+  providerSubaccountCode: string | null;
+  status: "pending_confirmation" | "active" | "verification_delayed" | "disabled";
+};
+
+type PaymentSummary =
+  | {
+      amountKobo: number;
+      available: true;
+      currency: "NGN";
+      message: string;
+      provider: "paystack";
+    }
+  | {
+      available: false;
+      message: string;
+      reason:
+        | "invoice_unavailable"
+        | "no_outstanding_balance"
+        | "payment_setup_disabled"
+        | "payment_setup_incomplete"
+        | "payment_setup_pending"
+        | "payment_unavailable";
+    };
 
 type SequenceExecutor = {
   execute: <TRow extends Record<string, unknown>>(query: SQL) => Promise<{ rows: TRow[] }>;
@@ -118,7 +165,8 @@ export class InvoicesService {
     @Inject(DatabaseService) private readonly databaseService: DatabaseService,
     @Inject(AuditLogService) private readonly auditLogService: AuditLogService,
     @Inject(ConfigService) private readonly configService: ConfigService,
-    @Inject(PaystackService) private readonly paystackService: PaystackService
+    @Inject(PaystackService) private readonly paystackService: PaystackService,
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService
   ) {}
 
   async listInvoices(context: ActiveOrganisationContext, query: ListInvoicesQueryDto) {
@@ -277,19 +325,29 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
-    const [lineItems, statusEvents] = await Promise.all([
+    const [lineItems, statusEvents, invoicePayments, financialSummary] = await Promise.all([
       this.findLineItems(context.activeOrganisation.id, invoiceId),
-      this.findStatusEvents(context.activeOrganisation.id, invoiceId)
+      this.findStatusEvents(context.activeOrganisation.id, invoiceId),
+      this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId),
+      this.paymentsService.getInvoiceFinancialSummary(context.activeOrganisation.id, invoiceId)
     ]);
+
+    const paymentAccount = await this.findPaymentAvailabilityAccount(context.activeOrganisation.id);
+    const paymentSummary = this.toAuthenticatedPaymentSummary(
+      invoiceWithCustomer.invoice,
+      paymentAccount
+    );
 
     return {
       invoice: this.toSafeInvoiceDetail(invoiceWithCustomer.invoice, invoiceWithCustomer.customer),
       lineItems: lineItems.map((lineItem) => this.toSafeLineItem(lineItem)),
       statusEvents: statusEvents.map((event) => this.toSafeStatusEvent(event)),
+      payments: invoicePayments,
+      financialSummary,
       publicUrl: invoiceWithCustomer.invoice.publicAccessEnabled
         ? this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
         : null,
-      paymentSummary: this.toAuthenticatedPaymentSummary(invoiceWithCustomer.invoice)
+      paymentSummary
     };
   }
 
@@ -461,12 +519,12 @@ export class InvoicesService {
 
   async getPublicInvoice(publicToken: string) {
     const publicInvoice = await this.requirePublicInvoice(publicToken);
-    const lineItems = await this.findLineItems(
-      publicInvoice.invoice.organisationId,
-      publicInvoice.invoice.id
-    );
+    const [lineItems, paymentAccount] = await Promise.all([
+      this.findLineItems(publicInvoice.invoice.organisationId, publicInvoice.invoice.id),
+      this.findPaymentAvailabilityAccount(publicInvoice.invoice.organisationId)
+    ]);
 
-    return this.toPublicInvoiceResponse(publicInvoice, lineItems);
+    return this.toPublicInvoiceResponse(publicInvoice, lineItems, paymentAccount);
   }
 
   async markPublicInvoiceViewed(publicToken: string) {
@@ -526,6 +584,9 @@ export class InvoicesService {
   async initializePublicInvoicePayment(publicToken: string) {
     const publicInvoice = await this.requirePublicInvoice(publicToken);
     this.assertInvoicePayable(publicInvoice.invoice, publicInvoice.customer);
+    const paymentAccount = await this.requireActivePaymentAccount(
+      publicInvoice.invoice.organisationId
+    );
 
     const amountKobo = publicInvoice.invoice.balanceDueKobo;
     const reference = this.generatePaymentReference(publicInvoice.invoice.invoiceNumber);
@@ -536,6 +597,7 @@ export class InvoicesService {
       invoiceNumber: publicInvoice.invoice.invoiceNumber,
       customerId: publicInvoice.customer.id,
       organisationId: publicInvoice.invoice.organisationId,
+      providerSubaccountCode: paymentAccount.providerSubaccountCode,
       source: "public_invoice_page"
     };
 
@@ -547,6 +609,7 @@ export class InvoicesService {
         customerId: publicInvoice.customer.id,
         provider: "paystack",
         providerReference: reference,
+        providerSubaccountCode: paymentAccount.providerSubaccountCode,
         status: "pending",
         currency: "NGN",
         amountKobo,
@@ -563,6 +626,8 @@ export class InvoicesService {
       const paystackResponse = await this.paystackService.initializeTransaction({
         email: publicInvoice.customer.email,
         amountKobo,
+        subaccount: paymentAccount.providerSubaccountCode,
+        bearer: "subaccount",
         currency: "NGN",
         reference,
         callbackUrl,
@@ -601,6 +666,7 @@ export class InvoicesService {
           paymentId: payment.id,
           provider: "paystack",
           providerReference: reference,
+          paymentAccountId: paymentAccount.id,
           amountKobo
         }
       });
@@ -612,6 +678,9 @@ export class InvoicesService {
       };
     } catch (error) {
       await this.markPaymentInitializationFailed(payment, error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new BadGatewayException("Payment initialization failed. Please try again later.");
     }
   }
@@ -735,6 +804,80 @@ export class InvoicesService {
     return row as PublicInvoiceRow | undefined;
   }
 
+  private async findPaymentAvailabilityAccount(
+    organisationId: string
+  ): Promise<PaymentAvailabilityAccount | null> {
+    const [account] = await this.databaseService.db
+      .select({
+        id: organisationPaymentAccounts.id,
+        providerSubaccountCode: organisationPaymentAccounts.providerSubaccountCode,
+        status: organisationPaymentAccounts.status,
+        disabledAt: organisationPaymentAccounts.disabledAt
+      })
+      .from(organisationPaymentAccounts)
+      .where(
+        and(
+          eq(organisationPaymentAccounts.organisationId, organisationId),
+          eq(organisationPaymentAccounts.provider, "paystack")
+        )
+      )
+      .orderBy(
+        sql`case ${organisationPaymentAccounts.status}
+          when 'active' then 1
+          when 'verification_delayed' then 2
+          when 'pending_confirmation' then 3
+          else 4
+        end`,
+        desc(organisationPaymentAccounts.updatedAt)
+      )
+      .limit(1);
+
+    return account ?? null;
+  }
+
+  private async requireActivePaymentAccount(organisationId: string) {
+    const [activeAccount] = await this.databaseService.db
+      .select({
+        id: organisationPaymentAccounts.id,
+        providerSubaccountCode: organisationPaymentAccounts.providerSubaccountCode,
+        status: organisationPaymentAccounts.status,
+        disabledAt: organisationPaymentAccounts.disabledAt
+      })
+      .from(organisationPaymentAccounts)
+      .where(
+        and(
+          eq(organisationPaymentAccounts.organisationId, organisationId),
+          eq(organisationPaymentAccounts.provider, "paystack"),
+          eq(organisationPaymentAccounts.status, "active"),
+          isNull(organisationPaymentAccounts.disabledAt)
+        )
+      )
+      .orderBy(desc(organisationPaymentAccounts.updatedAt))
+      .limit(1);
+
+    if (activeAccount?.providerSubaccountCode) {
+      return {
+        ...activeAccount,
+        providerSubaccountCode: activeAccount.providerSubaccountCode
+      };
+    }
+
+    const currentAccount =
+      activeAccount ?? (await this.findPaymentAvailabilityAccount(organisationId));
+
+    if (currentAccount?.status === "verification_delayed") {
+      throw new ConflictException(
+        "Online payments are not active for this business yet. Please try again later."
+      );
+    }
+
+    if (currentAccount?.status === "disabled") {
+      throw new ConflictException("Online payments are currently disabled for this business.");
+    }
+
+    throw new ConflictException("This business has not activated online payments yet.");
+  }
+
   private async requirePublicInvoice(publicToken: string) {
     const publicInvoice = await this.findPublicInvoice(publicToken);
 
@@ -772,16 +915,28 @@ export class InvoicesService {
     }
   }
 
-  private async markPaymentInitializationFailed(payment: Payment, _error: unknown) {
+  private async markPaymentInitializationFailed(payment: Payment, error: unknown) {
     await this.databaseService.db
       .update(payments)
       .set({
         status: "failed",
         failedAt: new Date(),
-        gatewayResponse: "Payment initialization failed.",
+        gatewayResponse: this.safePaymentInitializationFailure(error),
         updatedAt: new Date()
       })
       .where(eq(payments.id, payment.id));
+  }
+
+  private safePaymentInitializationFailure(error: unknown) {
+    if (error instanceof HttpException) {
+      const message = error.message.trim();
+
+      if (message && message.length <= 240 && !/[{}[\]<>]/.test(message)) {
+        return message;
+      }
+    }
+
+    return "Payment initialization failed.";
   }
 
   private async findLineItems(organisationId: string, invoiceId: string) {
@@ -808,6 +963,109 @@ export class InvoicesService {
         )
       )
       .orderBy(asc(invoiceStatusEvents.createdAt));
+  }
+
+  private async findPaymentsForInvoice(organisationId: string, invoiceId: string) {
+    const rows = await this.databaseService.db
+      .select({
+        payment: payments,
+        settlementAccount: organisationPaymentAccounts
+      })
+      .from(payments)
+      .leftJoin(
+        organisationPaymentAccounts,
+        and(
+          eq(organisationPaymentAccounts.organisationId, payments.organisationId),
+          eq(organisationPaymentAccounts.provider, payments.provider),
+          eq(organisationPaymentAccounts.providerSubaccountCode, payments.providerSubaccountCode)
+        )
+      )
+      .where(and(eq(payments.organisationId, organisationId), eq(payments.invoiceId, invoiceId)))
+      .orderBy(desc(payments.createdAt));
+    const paymentIds = rows.map((row) => row.payment.id);
+    const events = paymentIds.length
+      ? await this.databaseService.db
+          .select()
+          .from(paymentEvents)
+          .where(inArray(paymentEvents.paymentId, paymentIds))
+          .orderBy(desc(paymentEvents.createdAt))
+      : [];
+    const eventsByPaymentId = new Map<string, typeof events>();
+
+    for (const event of events) {
+      if (!event.paymentId) {
+        continue;
+      }
+
+      const current = eventsByPaymentId.get(event.paymentId) ?? [];
+      current.push(event);
+      eventsByPaymentId.set(event.paymentId, current);
+    }
+
+    return rows.map((row) =>
+      this.toInvoicePaymentHistoryItem(
+        row.payment,
+        row.settlementAccount,
+        eventsByPaymentId.get(row.payment.id) ?? []
+      )
+    );
+  }
+
+  private toInvoicePaymentHistoryItem(
+    payment: Payment,
+    settlementAccount: OrganisationPaymentAccount | null,
+    events: { errorMessage: string | null }[]
+  ) {
+    return {
+      id: payment.id,
+      provider: payment.provider,
+      providerReference: payment.providerReference,
+      status: payment.status,
+      reconciliationState: this.toPaymentReconciliationState(payment, settlementAccount, events),
+      currency: payment.currency,
+      amountKobo: payment.amountKobo,
+      paidAt: payment.paidAt,
+      failedAt: payment.failedAt,
+      abandonedAt: payment.abandonedAt,
+      initializedAt: payment.initializedAt,
+      createdAt: payment.createdAt,
+      settlementAccount: settlementAccount
+        ? {
+            provider: settlementAccount.provider,
+            bankName: settlementAccount.bankName,
+            accountName: settlementAccount.accountName,
+            accountNumberLast4: settlementAccount.accountNumberLast4,
+            status: settlementAccount.status
+          }
+        : null
+    };
+  }
+
+  private toPaymentReconciliationState(
+    payment: Payment,
+    settlementAccount: OrganisationPaymentAccount | null,
+    events: { errorMessage: string | null }[]
+  ) {
+    if (
+      payment.status === "successful" &&
+      (!payment.providerSubaccountCode || !settlementAccount)
+    ) {
+      return "review_required";
+    }
+
+    if (payment.status === "pending") {
+      return "pending_confirmation";
+    }
+
+    if (payment.status === "successful") {
+      if (events.some((event) => event.errorMessage)) {
+        return "review_required";
+      }
+
+      return "matched";
+    }
+
+    return payment.status;
   }
 
   private normalizeInvoiceInput(input: CreateInvoiceDto) {
@@ -1025,7 +1283,11 @@ export class InvoicesService {
     };
   }
 
-  private toPublicInvoiceResponse(publicInvoice: PublicInvoiceRow, lineItems: InvoiceLineItem[]) {
+  private toPublicInvoiceResponse(
+    publicInvoice: PublicInvoiceRow,
+    lineItems: InvoiceLineItem[],
+    paymentAccount: PaymentAvailabilityAccount | null
+  ) {
     const { businessProfile, customer, invoice, organisation } = publicInvoice;
 
     return {
@@ -1067,17 +1329,21 @@ export class InvoicesService {
         sortOrder: lineItem.sortOrder
       })),
       paymentSummary: {
-        ...this.toPublicPaymentSummary(invoice)
+        ...this.toPublicPaymentSummary(invoice, paymentAccount)
       }
     };
   }
 
-  private toPublicPaymentSummary(invoice: Invoice) {
+  private toPublicPaymentSummary(
+    invoice: Invoice,
+    paymentAccount: PaymentAvailabilityAccount | null
+  ): PaymentSummary {
     const displayStatus = this.displayStatus(invoice);
 
     if (!invoice.publicAccessEnabled || ["draft", "cancelled", "void"].includes(invoice.status)) {
       return {
         available: false as const,
+        reason: "invoice_unavailable",
         message: "This invoice is no longer available for payment."
       };
     }
@@ -1085,6 +1351,7 @@ export class InvoicesService {
     if (invoice.status === "paid" || invoice.balanceDueKobo <= 0) {
       return {
         available: false as const,
+        reason: "no_outstanding_balance",
         message: "This invoice has no outstanding balance."
       };
     }
@@ -1092,7 +1359,40 @@ export class InvoicesService {
     if (!["sent", "viewed", "overdue", "partially_paid"].includes(displayStatus)) {
       return {
         available: false as const,
+        reason: "payment_unavailable",
         message: "Online payment is unavailable for this invoice."
+      };
+    }
+
+    if (!paymentAccount) {
+      return {
+        available: false as const,
+        reason: "payment_setup_incomplete",
+        message: "This business has not activated online payments yet."
+      };
+    }
+
+    if (paymentAccount.status === "verification_delayed") {
+      return {
+        available: false as const,
+        reason: "payment_setup_pending",
+        message: "Online payments are not active for this business yet."
+      };
+    }
+
+    if (paymentAccount.status === "disabled" || paymentAccount.disabledAt) {
+      return {
+        available: false as const,
+        reason: "payment_setup_disabled",
+        message: "Online payments are currently disabled for this business."
+      };
+    }
+
+    if (paymentAccount.status !== "active" || !paymentAccount.providerSubaccountCode) {
+      return {
+        available: false as const,
+        reason: "payment_setup_incomplete",
+        message: "This business has not activated online payments yet."
       };
     }
 
@@ -1105,13 +1405,27 @@ export class InvoicesService {
     };
   }
 
-  private toAuthenticatedPaymentSummary(invoice: Invoice) {
-    const publicSummary = this.toPublicPaymentSummary(invoice);
+  private toAuthenticatedPaymentSummary(
+    invoice: Invoice,
+    paymentAccount: PaymentAvailabilityAccount | null
+  ) {
+    const publicSummary = this.toPublicPaymentSummary(invoice, paymentAccount);
 
     if (!publicSummary.available) {
+      if (publicSummary.reason.startsWith("payment_setup_")) {
+        return {
+          ...publicSummary,
+          message:
+            "Online payments are not active. Complete Payment Setup to allow customers to pay this invoice online."
+        };
+      }
+
       return {
-        available: false,
-        message: "Online payment is unavailable for this invoice."
+        ...publicSummary,
+        message:
+          publicSummary.reason === "no_outstanding_balance"
+            ? "This invoice has no outstanding balance."
+            : "Online payment is unavailable for this invoice."
       };
     }
 

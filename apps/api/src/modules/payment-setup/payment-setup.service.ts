@@ -12,6 +12,7 @@ import type { ActiveOrganisationContext } from "../../common/types/request-conte
 import type { OrganisationPaymentAccount } from "../../database/schema";
 import { CreatePaymentSubaccountDto } from "./dto/create-payment-subaccount.dto";
 import { DisablePaymentAccountDto } from "./dto/disable-payment-account.dto";
+import { ReactivatePaymentAccountDto } from "./dto/reactivate-payment-account.dto";
 import { ResolvePaymentAccountDto } from "./dto/resolve-payment-account.dto";
 import {
   PaystackClient,
@@ -257,6 +258,64 @@ export class PaymentSetupService {
     });
 
     return { paymentAccount: this.toSafePaymentAccount(disabled) };
+  }
+
+  async reactivateAccount(
+    context: ActiveOrganisationContext,
+    accountId: string,
+    input: ReactivatePaymentAccountDto
+  ) {
+    const account = await this.paymentSetupRepository.findAccountById({
+      organisationId: context.activeOrganisation.id,
+      accountId
+    });
+
+    if (!account) {
+      throw new ConflictException("Payment account was not found.");
+    }
+
+    if (account.provider !== "paystack") {
+      throw new ConflictException("Only Paystack payment accounts can be reactivated.");
+    }
+
+    if (account.status === "active") {
+      throw new ConflictException("This payout account is already active.");
+    }
+
+    if (account.status === "verification_delayed") {
+      throw new ConflictException(
+        "This payout account is still pending verification and cannot be reactivated."
+      );
+    }
+
+    if (account.status !== "disabled") {
+      throw new ConflictException("Only disabled payout accounts can be reactivated.");
+    }
+
+    if (!account.providerSubaccountCode) {
+      throw new ConflictException(
+        "This payout account cannot be reactivated because it has no Paystack subaccount."
+      );
+    }
+
+    const reactivated = await this.paymentSetupRepository.reactivatePaymentAccount({
+      organisationId: context.activeOrganisation.id,
+      actorUserId: context.user.id,
+      accountId: account.id,
+      now: new Date(),
+      metadataRedacted: {
+        provider: account.provider,
+        bankCode: account.bankCode,
+        bankName: account.bankName,
+        accountNumberLast4: account.accountNumberLast4,
+        accountName: account.accountName,
+        paymentAccountId: account.id,
+        status: "active",
+        reason: input.reason?.trim() || null
+      }
+    });
+
+    return { paymentAccount: this.toSafePaymentAccount(reactivated) };
   }
 
   private normalizeAccountInput(input: ResolvePaymentAccountDto) {

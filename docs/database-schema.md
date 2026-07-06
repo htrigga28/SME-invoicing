@@ -131,6 +131,8 @@ Rules:
 - `provider_subaccount_code` must be unique where present.
 - Payment setup records are organisation-scoped.
 - Disabled accounts remain for audit/history.
+- Disabled accounts can be reactivated when they still have a stored `provider_subaccount_code`.
+- Reactivation clears `disabled_at` and keeps the one-active-account-per-organisation/provider rule.
 - Changing payout account should create or activate a new record and disable the prior active record, depending on the implementation path.
 
 Indexes and constraints:
@@ -191,8 +193,8 @@ Duplicate active customer emails are blocked within an organisation. Archived cu
 | discount_kobo | Invoice-level discount. |
 | tax_kobo | Invoice-level tax. |
 | total_kobo | Server-calculated. |
-| amount_paid_kobo | Recalculated from successful payments. |
-| balance_due_kobo | Recalculated from total minus amount paid. |
+| amount_paid_kobo | Derived from payment/refund truth as net received. May exceed `total_kobo` when overpaid. |
+| balance_due_kobo | Derived from invoice total minus net received, floored at zero. |
 | paid_at | Nullable. Set when invoice first becomes fully paid. |
 | sent_at | Nullable. |
 | viewed_at | Nullable. |
@@ -254,6 +256,8 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 
 ### payments
 
+Rows in `payments` represent Paystack checkout/payment attempts. They are not deleted when a customer retries checkout or when a later successful payment supersedes an older failed/pending/abandoned attempt.
+
 | Column | Notes |
 | --- | --- |
 | id | Primary key. |
@@ -277,14 +281,62 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | metadata_redacted | Safe metadata only; no secrets or raw sensitive payloads. |
 | created_at, updated_at | Timestamps. |
 
-Constraint: unique on `provider + provider_reference`.
+Constraints and indexes:
+
+- Unique on `provider + provider_reference`.
+- Index on `organisation_id + provider_subaccount_code`.
+- Index on `organisation_id + status`.
+- Index on `organisation_id + created_at` for the T013 payments list and summary views.
+- Index on `provider + provider_reference` for webhook matching and detail lookups.
 
 Subaccount traceability rules:
 
 - Invoice payment records should store the `provider_subaccount_code` used during initialization.
+- The column is nullable for older rows and payment attempts that predate subaccount-aware initialization.
 - Webhook processing should reconcile by reference while preserving the subaccount context used when the payment started.
+- T013 reconciliation views do not expose `provider_subaccount_code`; they show a safe settlement account summary by matching the stored code to `organisation_payment_accounts` inside the current organisation.
+- Attempt state and reconciliation state are computed in service logic from payment status, invoice/customer ownership, invoice balance/status, payment events, and settlement account traceability. They are not stored as database columns.
+- Superseded attempts remain stored for audit/support and are available through `GET /payments?view=all_attempts`, but they are hidden from the default reconciliation-focused view.
 
 T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.
+
+### payment_refunds
+
+Rows in `payment_refunds` represent Paystack refund requests against successful payment attempts. Refunds are asynchronous provider records; a pending/processing refund does not reduce invoice paid totals until Paystack confirms it as processed.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| payment_id | References payments. One payment can have multiple partial refunds. |
+| provider | `paystack`. |
+| provider_refund_id | Nullable Paystack refund identifier. |
+| amount_kobo | Integer kobo. |
+| currency | Defaults to `NGN`. |
+| status | `pending`, `processing`, `needs_attention`, `processed`, `failed`. |
+| reason | Required internal reason supplied by Owner/Admin. |
+| customer_note | Nullable safe note sent to Paystack. |
+| merchant_note | Nullable safe note sent to Paystack. |
+| initiated_by_user_id | Nullable user reference. |
+| processed_at | Nullable provider-processed timestamp. |
+| failed_at | Nullable provider-failed timestamp. |
+| needs_attention_at | Nullable provider-attention timestamp. |
+| provider_metadata_redacted | Safe provider metadata only; no raw response, secrets, card data, or bank details. |
+| created_at, updated_at | Timestamps. |
+
+Constraints and indexes:
+
+- Index on `payment_id`.
+- Index on `organisation_id + status`.
+- Unique on `provider + provider_refund_id` where `provider_refund_id is not null`.
+
+Refund rules:
+
+- Total requested non-failed refunds must not exceed the selected payment amount.
+- Manual T013 refunds are limited to invoice overpayment resolution.
+- Only processed refunds contribute to the derived invoice financial calculation.
+- Pending/processing/needs-attention/failed refunds remain visible for resolution tracking.
+- The app does not collect customer refund bank details in the MVP.
 
 ### payment_events
 
@@ -309,7 +361,16 @@ Constraints and idempotency:
 
 - Unique `provider + provider_event_id` when `provider_event_id` is present.
 - Index provider, provider_reference, payment_id, organisation_id, event_type, and processed.
+- Index on `organisation_id + processed` for the T013 review-events view.
 - Processing also checks existing processed `provider + provider_reference + event_type` events to prevent double-counting when Paystack does not provide a reliable event ID.
+- T013 exposes safe event summaries for reconciliation review only. Raw `payload_redacted` remains backend/internal data and is not returned by default.
+
+Payment/refund financial truth:
+
+- `payments.status = successful` contributes to gross received.
+- `payment_refunds.status = processed` subtracts from gross received.
+- Invoice `amount_paid_kobo`, `balance_due_kobo`, payment-derived status, and overpayment state are derived from those persisted records.
+- Attempt state, reconciliation state, review state, and review resolution are computed service fields and are not stored as columns.
 
 ### receipts
 

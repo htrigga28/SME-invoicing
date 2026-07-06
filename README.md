@@ -143,9 +143,12 @@ pnpm db:migrate
 pnpm db:studio
 pnpm db:test:migrate
 pnpm db:seed
+pnpm payments:reconcile-invoices
 ```
 
 `pnpm db:push` is available for local development experiments only. Migrations remain the source of truth.
+
+`pnpm payments:reconcile-invoices` recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status from persisted payment/refund truth. It is safe to run after local manual Paystack testing or seeded data changes.
 
 ## Demo Login
 
@@ -162,7 +165,9 @@ Seeded Owner/Admin users can access `/settings/team`. Seeded Accountant/Viewer u
 
 The seed also adds 12 realistic demo customers to the demo organisation. Ten are active and two are archived so `/customers` can demonstrate active, archived, and all status filters.
 
-The seed adds 24 demo invoices: 6 draft, 6 sent, 4 viewed, 5 overdue, 2 cancelled, and 1 void. It also prints sample public invoice URLs for sent/viewed/overdue invoices. Paid and partially paid invoices are intentionally not seeded yet because payment and reconciliation flows start in later tasks.
+The seed adds 24 demo invoices and updates a subset with deterministic demo payments: 6 full successful payments mark invoices paid, 4 partial successful payments mark invoices partially paid, and pending/failed/abandoned payments remain visible without changing invoice paid state. It also prints sample public invoice URLs for sent/viewed/overdue invoices.
+
+Seeded payment data is local-only and does not create Paystack transactions. Historical demo payment records use a clearly fake disabled subaccount code for settlement traceability; the seed does not create a fake active Payment Setup account.
 
 ## Payment Setup Flow
 
@@ -181,17 +186,69 @@ Manual local test flow:
 
 For test/demo usage, use Paystack test bank and account details where available. Do not use real production banking data in screenshots or portfolio demos.
 
-T011 stores the organisation Paystack subaccount and masked payout details. T012 will make the public invoice Pay Online flow require an active setup and initialize Paystack with the stored subaccount.
+T011 stores the organisation Paystack subaccount and masked payout details. T012 makes the public invoice Pay Online flow require an active setup and initializes Paystack with the stored subaccount.
+
+Payment initialization QA:
+
+1. Create or confirm Payment Setup as Owner/Admin.
+2. Send an invoice and open its public invoice URL.
+3. Confirm Pay Online is available only when Payment Setup status is active.
+4. Start Pay Online and confirm Paystack receives the organisation subaccount server-side.
+5. Disable Payment Setup from `/settings/payment-setup`.
+6. Reload the public invoice and confirm viewing still works while Pay Online is unavailable.
+7. Reactivate the disabled payout account or create a different active payment account when testing payments again.
+
+## Payments and Reconciliation Flow
+
+The internal payments module is available at `/payments`; payment details are available at `/payments/:id`.
+
+Manual local test flow:
+
+1. Login as any demo organisation member.
+2. Open `/payments`.
+3. Review collected, pending, failed/abandoned, and review-required summary cards.
+4. Search by Paystack-like reference, invoice number, or customer name.
+5. Filter by status or reconciliation state.
+6. Confirm the default Reconciliation view hides superseded retry attempts.
+7. Switch to All attempts to inspect historical failed/pending/abandoned checkout attempts kept for audit/support.
+8. Switch to Needs review to inspect true reconciliation problems only.
+9. Open a payment detail page and confirm the linked invoice, customer, masked settlement account, attempt lifecycle, and safe event timeline render.
+10. For an overpaid payment, confirm Owner/Admin can open the Resolve overpayment dialog, enter a reason, and send a Paystack refund request. Accountant/Viewer should see read-only refund state.
+11. Open an invoice detail page with linked payments and confirm the Payments section shows financial summary, refunds, and overpayment warning when applicable.
+12. Use pagination after switching filters/views and confirm Previous/Next remains visible when matching records exist.
+
+The Payments module separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and exposes one T013 mutation: Owner/Admin can request a Paystack refund for invoice overpayments. It does not create receipts, manually reconcile payments, export CSV files, or expose raw webhook payloads. Receipts are planned for T014.
 
 ## Local Paystack Webhook Testing
 
-Paystack needs a public webhook URL to call your local API. In local development, use a tunnel such as ngrok and configure the Paystack dashboard webhook URL as:
+Paystack cannot send a webhook to a localhost-only URL. In local development, use a publicly reachable tunnel such as ngrok and configure the Paystack Test Mode webhook URL as:
 
 ```text
 https://your-tunnel.example/payments/paystack/webhook
 ```
 
 The API verifies `x-paystack-signature` against the exact raw request body with `PAYSTACK_SECRET_KEY`. Do not send handcrafted JSON through tools that change the body when validating signatures. For automated tests, the project signs raw fixture buffers directly and does not call Paystack.
+
+After Paystack redirects the customer back to the public invoice page, the frontend calls a backend Verify Transaction fallback once. This fallback can reconcile a returned transaction if the webhook has not arrived yet, but it still calls Paystack server-side and validates the reference, amount in kobo, and currency before updating payment or invoice state. The webhook remains the preferred confirmation path.
+
+Manual Paystack confirmation check:
+
+1. Complete a Paystack test payment from a public invoice.
+2. Copy the payment reference from the callback URL or payment detail.
+3. Confirm a payment row exists for that reference.
+4. Confirm webhook logs show safe received/processed metadata when using a tunnel.
+5. Confirm a `charge.success` payment event exists when the webhook is delivered.
+6. Confirm the payment becomes successful and the invoice paid/balance/status fields update.
+7. If webhook delivery is unavailable locally, confirm the callback verification fallback updates the same payment without exposing raw Paystack data.
+
+Manual overpayment/refund check:
+
+1. Create or locate an invoice with two successful payments whose net total exceeds the invoice total.
+2. Run `pnpm payments:reconcile-invoices` if local invoice fields are stale after manual webhook/verification testing.
+3. Open `/payments` and confirm the invoice appears in Needs review as an overpayment, not overdue or partially paid.
+4. Open the payment detail page as Owner/Admin and initiate a refund for the excess amount.
+5. Confirm the refund shows pending/processing until Paystack sends a processed refund event.
+6. Simulate or receive `refund.processed` and confirm the invoice financial summary recalculates from successful payments minus processed refunds.
 
 ## Auth Session Trade-Off
 
@@ -201,7 +258,9 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement receipts, dashboard metrics, exports, email, PDF generation, or reminders.
 
-Payment Setup and organisation subaccount support are planned MVP work and now gate public payment initialization in the product specification, even though the runtime implementation lands in later tasks.
+Payment Setup and organisation subaccount support now gate public payment initialization at runtime. Public invoice viewing still works without Payment Setup.
+
+The Payments module provides reconciliation visibility for Paystack references, invoice/customer matches, safe webhook/refund event summaries, masked settlement payout accounts, and Owner/Admin overpayment refund requests. Receipt generation remains T014.
 
 Implemented so far:
 
@@ -226,5 +285,7 @@ Implemented so far:
 - Pending payment records with Paystack reference, access code, authorization URL, and safe audit metadata.
 - Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
 - Organisation Payment Setup with Paystack bank resolution, account confirmation, subaccount creation, and masked payout account storage.
+- Subaccount-aware public invoice payment initialization that requires active Payment Setup.
+- Payments and Reconciliation pages with payment lists, detail views, safe event timelines, settlement account summaries, overpayment detection, Paystack excess-refund requests, and seeded demo payment history.
 
-Next planned implementation task: T011 Organisation Payment Setup and Paystack Subaccounts.
+Next planned implementation task: T014 Receipts.

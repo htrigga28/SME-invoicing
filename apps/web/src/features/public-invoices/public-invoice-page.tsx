@@ -12,11 +12,16 @@ import { isApiRequestError } from "@/lib/api";
 import {
   getPublicInvoice,
   initializePublicInvoicePayment,
-  markPublicInvoiceViewed
+  markPublicInvoiceViewed,
+  verifyPublicInvoicePayment
 } from "./public-invoices-api";
 import type { PublicInvoiceResponse } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
+type PaymentConfirmationState = {
+  message: string;
+  status: "confirming" | "failed" | "pending" | "successful";
+} | null;
 
 const PAYMENT_CALLBACK_POLL_INTERVAL_MS = 3000;
 const PAYMENT_CALLBACK_POLL_LIMIT = 10;
@@ -34,16 +39,20 @@ const statusStyles: Record<InvoiceStatus, string> = {
 
 export function PublicInvoicePage({
   paymentCallback = false,
+  paymentReference,
   token
 }: {
   paymentCallback?: boolean;
+  paymentReference?: string;
   token: string;
 }) {
   const [invoice, setInvoice] = useState<PublicInvoiceResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentConfirmation, setPaymentConfirmation] = useState<PaymentConfirmationState>(null);
   const [isInitializingPayment, setIsInitializingPayment] = useState(false);
+  const verificationStartedRef = useRef(false);
   const viewTrackedRef = useRef(false);
 
   useEffect(() => {
@@ -51,6 +60,8 @@ export function PublicInvoicePage({
       setState("loading");
       setError(null);
       viewTrackedRef.current = false;
+      verificationStartedRef.current = false;
+      setPaymentConfirmation(null);
 
       try {
         const response = await getPublicInvoice(token);
@@ -70,7 +81,80 @@ export function PublicInvoicePage({
   }, [token]);
 
   useEffect(() => {
-    if (!paymentCallback || state !== "ready" || !invoice?.paymentSummary.available) {
+    if (
+      !paymentCallback ||
+      !paymentReference ||
+      state !== "ready" ||
+      verificationStartedRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    verificationStartedRef.current = true;
+    setPaymentConfirmation({
+      status: "confirming",
+      message: "Confirming payment with Paystack..."
+    });
+
+    void verifyPublicInvoicePayment(token, paymentReference)
+      .then(async (verification) => {
+        if (cancelled) {
+          return;
+        }
+
+        const refreshedInvoice = await getPublicInvoice(token);
+
+        if (cancelled) {
+          return;
+        }
+
+        setInvoice(refreshedInvoice);
+
+        if (verification.status === "successful") {
+          setPaymentConfirmation({
+            status: "successful",
+            message: verification.invoiceUpdated
+              ? "Payment confirmed. The invoice balance has been updated."
+              : "Payment was already confirmed. The invoice has been refreshed."
+          });
+        } else if (verification.status === "pending") {
+          setPaymentConfirmation({
+            status: "pending",
+            message:
+              "Payment confirmation is still pending. This invoice will update after confirmation."
+          });
+        } else {
+          setPaymentConfirmation({
+            status: "failed",
+            message: "Paystack did not confirm a successful payment for this checkout attempt."
+          });
+        }
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setPaymentConfirmation({
+          status: "pending",
+          message:
+            "Payment confirmation is still pending. If you completed payment, this invoice will update after Paystack confirms it."
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentCallback, paymentReference, state, token]);
+
+  useEffect(() => {
+    if (
+      paymentReference ||
+      !paymentCallback ||
+      state !== "ready" ||
+      !invoice?.paymentSummary.available
+    ) {
       return;
     }
 
@@ -122,8 +206,12 @@ export function PublicInvoicePage({
     try {
       const payment = await initializePublicInvoicePayment(token);
       window.location.assign(payment.authorizationUrl);
-    } catch {
-      setPaymentError("Payment could not be started. Please try again or contact the business.");
+    } catch (apiError) {
+      setPaymentError(
+        isApiRequestError(apiError)
+          ? apiError.message
+          : "Payment could not be started. Please try again or contact the business."
+      );
       setIsInitializingPayment(false);
     }
   }
@@ -148,17 +236,20 @@ export function PublicInvoicePage({
     );
   }
 
-  const showPaymentCallbackNotice = paymentCallback && invoice.paymentSummary.available;
+  const callbackNotice =
+    paymentReference || invoice.paymentSummary.available || paymentConfirmation
+      ? getCallbackNotice(paymentCallback, paymentConfirmation, paymentReference)
+      : null;
+  const showPaymentCallbackNotice = Boolean(callbackNotice);
+  const showUnavailablePaymentButton =
+    !invoice.paymentSummary.available && invoice.paymentSummary.reason !== "no_outstanding_balance";
 
   return (
     <PublicInvoiceShell>
       {showPaymentCallbackNotice ? (
         <div className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Payment confirmation pending</p>
-          <p className="mt-1">
-            If you completed payment, this invoice will update after Paystack confirms the
-            transaction.
-          </p>
+          <p className="font-semibold">{callbackNotice?.title}</p>
+          <p className="mt-1">{callbackNotice?.message}</p>
         </div>
       ) : null}
       <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -292,7 +383,7 @@ export function PublicInvoicePage({
                     ? "Redirecting..."
                     : `Pay ${formatKoboToNaira(invoice.paymentSummary.amountKobo)} online`}
                 </button>
-              ) : (
+              ) : showUnavailablePaymentButton ? (
                 <button
                   className="mt-4 w-full cursor-not-allowed rounded-md bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
                   disabled
@@ -300,7 +391,7 @@ export function PublicInvoicePage({
                 >
                   Pay online unavailable
                 </button>
-              )}
+              ) : null}
               <p className="mt-3 text-sm text-slate-700">{invoice.paymentSummary.message}</p>
               {invoice.paymentSummary.available ? (
                 <p className="mt-2 text-xs text-slate-600">
@@ -335,6 +426,50 @@ function StatusBadge({ status }: { status: InvoiceStatus }) {
       {INVOICE_STATUS_LABELS[status]}
     </span>
   );
+}
+
+function getCallbackNotice(
+  paymentCallback: boolean,
+  paymentConfirmation: PaymentConfirmationState,
+  paymentReference?: string
+) {
+  if (!paymentCallback) {
+    return null;
+  }
+
+  if (!paymentReference) {
+    return {
+      title: "Payment confirmation pending",
+      message:
+        "If you completed payment, this invoice will update after Paystack confirms the transaction."
+    };
+  }
+
+  if (!paymentConfirmation) {
+    return {
+      title: "Confirming payment",
+      message: "Confirming payment with Paystack..."
+    };
+  }
+
+  if (paymentConfirmation.status === "successful") {
+    return {
+      title: "Payment confirmed",
+      message: paymentConfirmation.message
+    };
+  }
+
+  if (paymentConfirmation.status === "failed") {
+    return {
+      title: "Payment not confirmed",
+      message: paymentConfirmation.message
+    };
+  }
+
+  return {
+    title: "Payment confirmation pending",
+    message: paymentConfirmation.message
+  };
 }
 
 function StatusPanel({

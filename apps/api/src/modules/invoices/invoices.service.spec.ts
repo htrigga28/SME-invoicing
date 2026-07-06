@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  NotFoundException,
+  UnprocessableEntityException
+} from "@nestjs/common";
 
 import {
   auditLogs,
@@ -29,7 +33,16 @@ type ServiceInternals = {
     lineItems: { description: string; quantity: number; unitPriceKobo: number }[]
   ) => { description: string; quantity: number; unitPriceKobo: number }[];
   findLineItems: jest.Mock;
+  findPaymentAvailabilityAccount: jest.Mock;
   findPublicInvoice: jest.Mock;
+  requireActivePaymentAccount: jest.Mock;
+};
+
+const activePaymentAccount = {
+  id: "payment-account-1",
+  providerSubaccountCode: "ACCT_test_subaccount",
+  status: "active" as const,
+  disabledAt: null
 };
 
 const now = new Date("2026-06-28T10:00:00.000Z");
@@ -45,7 +58,7 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     status: "sent",
     currency: "NGN",
     issueDate: "2026-06-01",
-    dueDate: "2026-07-01",
+    dueDate: "2026-07-15",
     notes: "Thank you.",
     subtotalKobo: 100000,
     discountKobo: 10000,
@@ -121,6 +134,7 @@ function createPayment(overrides: Partial<Payment> = {}): Payment {
     customerId: "customer-1",
     provider: "paystack",
     providerReference: "SME-INV000001-ABC123",
+    providerSubaccountCode: "ACCT_test_subaccount",
     providerAccessCode: null,
     providerAuthorizationUrl: null,
     status: "pending",
@@ -161,7 +175,8 @@ function setup(
     databaseService as never,
     {} as never,
     configService as never,
-    paystackService as never
+    paystackService as never,
+    { getInvoiceFinancialSummary: jest.fn() } as never
   );
   return service as unknown as ServiceInternals;
 }
@@ -223,6 +238,7 @@ describe("InvoicesService public invoice access", () => {
     const service = setup();
     service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
     service.findLineItems = jest.fn().mockResolvedValue([createLineItem()]);
+    service.findPaymentAvailabilityAccount = jest.fn().mockResolvedValue(activePaymentAccount);
 
     const response = await (service as unknown as InvoicesService).getPublicInvoice("public-token");
 
@@ -249,8 +265,49 @@ describe("InvoicesService public invoice access", () => {
       }
     ]);
     expect(JSON.stringify(response)).not.toMatch(
-      /organisationId|customerId|createdByUserId|publicToken|metadataRedacted|auditLogs/
+      /organisationId|customerId|createdByUserId|publicToken|providerSubaccountCode|metadataRedacted|auditLogs/
     );
+  });
+
+  it("shows payment setup incomplete when no active payment account exists", async () => {
+    const service = setup();
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.findLineItems = jest.fn().mockResolvedValue([createLineItem()]);
+    service.findPaymentAvailabilityAccount = jest.fn().mockResolvedValue(null);
+
+    const response = await (service as unknown as InvoicesService).getPublicInvoice("public-token");
+
+    expect(response.paymentSummary).toEqual({
+      available: false,
+      reason: "payment_setup_incomplete",
+      message: "This business has not activated online payments yet."
+    });
+  });
+
+  it.each([
+    {
+      account: { ...activePaymentAccount, status: "verification_delayed" as const },
+      reason: "payment_setup_pending",
+      message: "Online payments are not active for this business yet."
+    },
+    {
+      account: { ...activePaymentAccount, status: "disabled" as const, disabledAt: now },
+      reason: "payment_setup_disabled",
+      message: "Online payments are currently disabled for this business."
+    }
+  ])("shows $reason when payment setup is not active", async ({ account, message, reason }) => {
+    const service = setup();
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.findLineItems = jest.fn().mockResolvedValue([createLineItem()]);
+    service.findPaymentAvailabilityAccount = jest.fn().mockResolvedValue(account);
+
+    const response = await (service as unknown as InvoicesService).getPublicInvoice("public-token");
+
+    expect(response.paymentSummary).toEqual({
+      available: false,
+      reason,
+      message
+    });
   });
 
   it.each([
@@ -335,11 +392,12 @@ describe("InvoicesService public payment initialization", () => {
         createPublicInvoiceRow(
           createInvoice({
             balanceDueKobo: 42500,
-            dueDate: status === "overdue" ? "2026-01-01" : "2026-07-01",
+            dueDate: status === "overdue" ? "2026-01-01" : "2026-07-15",
             status: status === "overdue" ? "sent" : status
           })
         )
       );
+      service.requireActivePaymentAccount = jest.fn().mockResolvedValue(activePaymentAccount);
 
       await expect(
         (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
@@ -356,17 +414,23 @@ describe("InvoicesService public payment initialization", () => {
           invoiceId: "invoice-1",
           organisationId: "org-1",
           provider: "paystack",
+          providerSubaccountCode: "ACCT_test_subaccount",
           status: "pending"
         })
       );
       expect(paystackService.initializeTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
           amountKobo: 42500,
+          bearer: "subaccount",
           callbackUrl: expect.stringContaining("/invoice/public-token?payment=callback&reference="),
           currency: "NGN",
           email: "accounts@lagosbrightprints.test",
-          reference: expect.stringMatching(/^SME-INV000001-[A-F0-9]{8}$/)
+          reference: expect.stringMatching(/^SME-INV000001-[A-F0-9]{8}$/),
+          subaccount: "ACCT_test_subaccount"
         })
+      );
+      expect(JSON.stringify(paystackService.initializeTransaction.mock.calls)).not.toContain(
+        "frontend-subaccount"
       );
       expect(db.update).toHaveBeenCalledWith(payments);
       expect(db.updateSet).toHaveBeenCalledWith(
@@ -406,6 +470,60 @@ describe("InvoicesService public payment initialization", () => {
     expect(paystackService.initializeTransaction).not.toHaveBeenCalled();
   });
 
+  it("uses a reactivated payment account subaccount for Paystack initialization", async () => {
+    const reactivatedAccount = {
+      ...activePaymentAccount,
+      id: "reactivated-payment-account",
+      providerSubaccountCode: "ACCT_reactivated"
+    };
+    const db = createPaymentDb(createPayment({ providerSubaccountCode: "ACCT_reactivated" }));
+    const paystackService = {
+      initializeTransaction: jest.fn().mockResolvedValue({
+        authorizationUrl: "https://checkout.paystack.test/pay/reference",
+        accessCode: "access-code",
+        reference: "SME-INV000001-ABC123"
+      })
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.requireActivePaymentAccount = jest.fn().mockResolvedValue(reactivatedAccount);
+
+    await (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token");
+
+    expect(db.paymentInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerSubaccountCode: "ACCT_reactivated"
+      })
+    );
+    expect(paystackService.initializeTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subaccount: "ACCT_reactivated",
+        bearer: "subaccount"
+      })
+    );
+  });
+
+  it.each([
+    "This business has not activated online payments yet.",
+    "Online payments are not active for this business yet. Please try again later.",
+    "Online payments are currently disabled for this business."
+  ])("rejects setup-unavailable payments before creating a payment row: %s", async (message) => {
+    const db = createPaymentDb();
+    const paystackService = {
+      initializeTransaction: jest.fn()
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.requireActivePaymentAccount = jest.fn().mockRejectedValue(new Error(message));
+
+    await expect(
+      (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
+    ).rejects.toThrow(message);
+
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(paystackService.initializeTransaction).not.toHaveBeenCalled();
+  });
+
   it("marks the pending payment failed and returns a safe error when Paystack fails", async () => {
     const db = createPaymentDb();
     const paystackService = {
@@ -413,6 +531,7 @@ describe("InvoicesService public payment initialization", () => {
     };
     const service = setup({ db: db.db }, paystackService);
     service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.requireActivePaymentAccount = jest.fn().mockResolvedValue(activePaymentAccount);
 
     await expect(
       (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
@@ -426,6 +545,29 @@ describe("InvoicesService public payment initialization", () => {
     );
     expect(db.auditInsertValues).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "payment_initialized" })
+    );
+  });
+
+  it("propagates safe Paystack validation messages to the public client", async () => {
+    const db = createPaymentDb();
+    const paystackService = {
+      initializeTransaction: jest
+        .fn()
+        .mockRejectedValue(new UnprocessableEntityException("Invalid Email Address Passed"))
+    };
+    const service = setup({ db: db.db }, paystackService);
+    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.requireActivePaymentAccount = jest.fn().mockResolvedValue(activePaymentAccount);
+
+    await expect(
+      (service as unknown as InvoicesService).initializePublicInvoicePayment("public-token")
+    ).rejects.toThrow("Invalid Email Address Passed");
+
+    expect(db.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        gatewayResponse: "Invalid Email Address Passed"
+      })
     );
   });
 });

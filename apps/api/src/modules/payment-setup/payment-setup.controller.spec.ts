@@ -19,5 +19,6 @@ describe("PaymentSetupController RBAC metadata", () => {
     expect(rolesFor("resolveAccount")).toEqual(managerRoles);
     expect(rolesFor("createSubaccount")).toEqual(managerRoles);
     expect(rolesFor("disableAccount")).toEqual(managerRoles);
+    expect(rolesFor("reactivateAccount")).toEqual(managerRoles);
   });
 });

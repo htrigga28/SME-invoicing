@@ -62,6 +62,14 @@ export const organisationPaymentAccountStatusEnum = pgEnum("organisation_payment
   "disabled"
 ]);
 
+export const paymentRefundStatusEnum = pgEnum("payment_refund_status", [
+  "pending",
+  "processing",
+  "needs_attention",
+  "processed",
+  "failed"
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -179,6 +187,10 @@ export const organisationPaymentAccounts = pgTable(
     organisationStatusIndex: index("organisation_payment_accounts_org_status_idx").on(
       table.organisationId,
       table.status
+    ),
+    organisationSubaccountIndex: index("organisation_payment_accounts_org_subaccount_idx").on(
+      table.organisationId,
+      table.providerSubaccountCode
     ),
     providerSubaccountCodeUnique: uniqueIndex(
       "organisation_payment_accounts_subaccount_code_unique"
@@ -360,6 +372,7 @@ export const payments = pgTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     provider: varchar("provider", { length: 40 }).notNull(),
     providerReference: varchar("provider_reference", { length: 120 }).notNull(),
+    providerSubaccountCode: varchar("provider_subaccount_code", { length: 120 }),
     providerAccessCode: text("provider_access_code"),
     providerAuthorizationUrl: text("provider_authorization_url"),
     status: paymentStatusEnum("status").notNull().default("pending"),
@@ -392,6 +405,14 @@ export const payments = pgTable(
       table.organisationId,
       table.status
     ),
+    organisationCreatedAtIndex: index("payments_org_created_at_idx").on(
+      table.organisationId,
+      table.createdAt
+    ),
+    organisationSubaccountIndex: index("payments_org_subaccount_idx").on(
+      table.organisationId,
+      table.providerSubaccountCode
+    ),
     providerReferenceIndex: index("payments_provider_reference_idx").on(table.providerReference)
   })
 );
@@ -423,11 +444,54 @@ export const paymentEvents = pgTable(
     ),
     paymentIndex: index("payment_events_payment_id_idx").on(table.paymentId),
     organisationIndex: index("payment_events_organisation_id_idx").on(table.organisationId),
+    organisationProcessedIndex: index("payment_events_org_processed_idx").on(
+      table.organisationId,
+      table.processed
+    ),
     eventTypeIndex: index("payment_events_event_type_idx").on(table.eventType),
     processedIndex: index("payment_events_processed_idx").on(table.processed),
     providerEventUnique: uniqueIndex("payment_events_provider_event_unique")
       .on(table.provider, table.providerEventId)
       .where(sql`${table.providerEventId} is not null`)
+  })
+);
+
+export const paymentRefunds = pgTable(
+  "payment_refunds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "restrict" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("paystack"),
+    providerRefundId: varchar("provider_refund_id", { length: 120 }),
+    amountKobo: integer("amount_kobo").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("NGN"),
+    status: paymentRefundStatusEnum("status").notNull().default("pending"),
+    reason: text("reason").notNull(),
+    customerNote: text("customer_note"),
+    merchantNote: text("merchant_note"),
+    initiatedByUserId: uuid("initiated_by_user_id").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    needsAttentionAt: timestamp("needs_attention_at", { withTimezone: true }),
+    providerMetadataRedacted: jsonb("provider_metadata_redacted").$type<Record<string, unknown>>(),
+    ...timestamps
+  },
+  (table) => ({
+    paymentIndex: index("payment_refunds_payment_id_idx").on(table.paymentId),
+    organisationStatusIndex: index("payment_refunds_org_status_idx").on(
+      table.organisationId,
+      table.status
+    ),
+    providerRefundUnique: uniqueIndex("payment_refunds_provider_refund_unique")
+      .on(table.provider, table.providerRefundId)
+      .where(sql`${table.providerRefundId} is not null`)
   })
 );
 
@@ -468,6 +532,7 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   customers: many(customers),
   invoices: many(invoices),
   paymentEvents: many(paymentEvents),
+  paymentRefunds: many(paymentRefunds),
   invoiceNumberSequence: one(invoiceNumberSequences),
   businessProfile: one(businessProfiles),
   auditLogs: many(auditLogs)
@@ -591,7 +656,8 @@ export const paymentsRelations = relations(payments, ({ many, one }) => ({
     fields: [payments.customerId],
     references: [customers.id]
   }),
-  events: many(paymentEvents)
+  events: many(paymentEvents),
+  refunds: many(paymentRefunds)
 }));
 
 export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
@@ -602,6 +668,21 @@ export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
   payment: one(payments, {
     fields: [paymentEvents.paymentId],
     references: [payments.id]
+  })
+}));
+
+export const paymentRefundsRelations = relations(paymentRefunds, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [paymentRefunds.organisationId],
+    references: [organisations.id]
+  }),
+  payment: one(payments, {
+    fields: [paymentRefunds.paymentId],
+    references: [payments.id]
+  }),
+  initiatedBy: one(users, {
+    fields: [paymentRefunds.initiatedByUserId],
+    references: [users.id]
   })
 }));
 
@@ -637,5 +718,6 @@ export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
+export type PaymentRefund = typeof paymentRefunds.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

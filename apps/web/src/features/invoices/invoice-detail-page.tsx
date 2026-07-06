@@ -7,6 +7,12 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
+import {
+  formatDateTime as formatPaymentDateTime,
+  formatSettlementAccount,
+  PaymentStatusBadge,
+  ReconciliationBadge
+} from "@/features/payments/payment-ui";
 import { isApiRequestError } from "@/lib/api";
 
 import { cancelInvoice, getInvoice, sendInvoice, voidInvoice } from "./invoices-api";
@@ -156,6 +162,8 @@ export function InvoiceDetailContent({
     canCancelVoid && ["draft", "sent", "viewed", "overdue"].includes(invoice.status);
   const canVoid =
     canCancelVoid && ["draft", "sent", "viewed", "overdue", "cancelled"].includes(invoice.status);
+  const canManagePaymentSetup = role === "owner" || role === "admin";
+  const financialSummary = response.financialSummary;
   const canSharePublicUrl =
     response.publicUrl &&
     invoice.publicAccessEnabled &&
@@ -281,6 +289,75 @@ export function InvoiceDetailContent({
               ))}
             </div>
           </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <h2 className="text-lg font-semibold text-slate-950">Payments</h2>
+            {financialSummary.hasOverpayment ? (
+              <div className="mt-3 rounded-md border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                <p className="font-semibold">Overpayment detected</p>
+                <p className="mt-1">
+                  Customer payments exceed this invoice by{" "}
+                  {formatMoney(financialSummary.overpaymentKobo)}.
+                </p>
+                <dl className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <SummaryRow
+                    label="Received"
+                    value={formatMoney(financialSummary.netReceivedKobo)}
+                  />
+                  <SummaryRow
+                    label="Invoice total"
+                    value={formatMoney(response.invoice.totalKobo)}
+                  />
+                  <SummaryRow
+                    label="Excess"
+                    strong
+                    value={formatMoney(financialSummary.overpaymentKobo)}
+                  />
+                </dl>
+                {role === "owner" || role === "admin" ? (
+                  <p className="mt-3 text-xs">
+                    Open a successful payment detail to refund the excess through Paystack.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {response.payments.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">
+                No payment records are linked to this invoice yet.
+              </p>
+            ) : (
+              <div className="mt-4 divide-y divide-slate-100">
+                {response.payments.map((payment) => (
+                  <article className="py-3 text-sm" key={payment.id}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <Link
+                          className="font-medium text-teal-800"
+                          href={`/payments/${payment.id}`}
+                        >
+                          {payment.providerReference}
+                        </Link>
+                        <p className="mt-1 text-slate-600">
+                          {formatMoney(payment.amountKobo)} •{" "}
+                          {formatSettlementAccount(payment.settlementAccount)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatPaymentDateTime(payment.paidAt ?? payment.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <PaymentStatusBadge status={payment.status} />
+                        <ReconciliationBadge state={payment.reconciliationState} />
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Receipt generation will be available after T014.
+            </p>
+          </div>
         </div>
 
         <aside className="space-y-5">
@@ -290,8 +367,27 @@ export function InvoiceDetailContent({
               <SummaryRow label="Subtotal" value={formatMoney(invoice.subtotalKobo)} />
               <SummaryRow label="Discount" value={formatMoney(invoice.discountKobo)} />
               <SummaryRow label="Tax" value={formatMoney(invoice.taxKobo)} />
-              <SummaryRow label="Amount paid" value={formatMoney(invoice.amountPaidKobo)} />
-              <SummaryRow label="Balance due" strong value={formatMoney(invoice.balanceDueKobo)} />
+              <SummaryRow
+                label={financialSummary.hasOverpayment ? "Amount received" : "Amount paid"}
+                value={formatMoney(financialSummary.netReceivedKobo)}
+              />
+              {financialSummary.hasOverpayment ? (
+                <>
+                  <SummaryRow
+                    label="Applied to invoice"
+                    value={formatMoney(financialSummary.appliedToInvoiceKobo)}
+                  />
+                  <SummaryRow
+                    label="Overpayment"
+                    value={formatMoney(financialSummary.overpaymentKobo)}
+                  />
+                </>
+              ) : null}
+              <SummaryRow
+                label="Balance due"
+                strong
+                value={formatMoney(financialSummary.balanceDueKobo)}
+              />
               <SummaryRow label="Total" strong value={formatMoney(invoice.totalKobo)} />
             </dl>
           </div>
@@ -317,6 +413,18 @@ export function InvoiceDetailContent({
                     {formatMoney(response.paymentSummary.amountKobo)} via Paystack from this public
                     page.
                   </p>
+                ) : response.paymentSummary.reason.startsWith("payment_setup_") ? (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p>{response.paymentSummary.message}</p>
+                    {canManagePaymentSetup ? (
+                      <Link
+                        className="mt-3 inline-flex rounded-md bg-amber-900 px-3 py-2 text-sm font-semibold text-white"
+                        href="/settings/payment-setup"
+                      >
+                        Go to Payment Setup
+                      </Link>
+                    ) : null}
+                  </div>
                 ) : null}
               </>
             ) : (

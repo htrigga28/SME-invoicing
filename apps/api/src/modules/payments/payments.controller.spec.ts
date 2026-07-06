@@ -15,6 +15,11 @@ describe("PaymentsController", () => {
 
   it("delegates raw body and signature to the payment service", () => {
     const service = {
+      createPaymentRefund: jest.fn(),
+      getPayment: jest.fn(),
+      getPaymentSummary: jest.fn(),
+      listPayments: jest.fn(),
+      listReviewEvents: jest.fn(),
       processPaystackWebhook: jest.fn().mockResolvedValue({ received: true })
     };
     const controller = new PaymentsController(service as never);
@@ -27,11 +32,70 @@ describe("PaymentsController", () => {
 
   it("rejects requests when raw body support is unavailable", () => {
     const service = {
+      createPaymentRefund: jest.fn(),
+      getPayment: jest.fn(),
+      getPaymentSummary: jest.fn(),
+      listPayments: jest.fn(),
+      listReviewEvents: jest.fn(),
       processPaystackWebhook: jest.fn()
     };
     const controller = new PaymentsController(service as never);
 
     expect(() => controller.processPaystackWebhook({}, "signature")).toThrow(BadRequestException);
     expect(service.processPaystackWebhook).not.toHaveBeenCalled();
+  });
+
+  it("protects internal payment read routes while leaving webhook public", () => {
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.listPayments)
+    ).toBeDefined();
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.getPaymentSummary)
+    ).toBeDefined();
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.listReviewEvents)
+    ).toBeDefined();
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.getPayment)
+    ).toBeDefined();
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.createRefund)
+    ).toBeDefined();
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.processPaystackWebhook)
+    ).toBeUndefined();
+  });
+
+  it("delegates internal payment reads to the service", () => {
+    const service = {
+      createPaymentRefund: jest.fn(),
+      getPayment: jest.fn(),
+      getPaymentSummary: jest.fn(),
+      listPayments: jest.fn(),
+      listReviewEvents: jest.fn(),
+      processPaystackWebhook: jest.fn()
+    };
+    const controller = new PaymentsController(service as never);
+    const context = { activeOrganisation: { id: "org-1" } };
+
+    controller.listPayments(context as never, { search: "ref" });
+    controller.getPaymentSummary(context as never, { dateFrom: "2026-06-01" });
+    controller.listReviewEvents(context as never, { processed: true });
+    controller.getPayment(context as never, "payment-1");
+    controller.createRefund(context as never, { userId: "user-1" } as never, "payment-1", {
+      amountKobo: 170000,
+      reason: "Duplicate payment"
+    });
+
+    expect(service.listPayments).toHaveBeenCalledWith(context, { search: "ref" });
+    expect(service.getPaymentSummary).toHaveBeenCalledWith(context, { dateFrom: "2026-06-01" });
+    expect(service.listReviewEvents).toHaveBeenCalledWith(context, { processed: true });
+    expect(service.getPayment).toHaveBeenCalledWith(context, "payment-1");
+    expect(service.createPaymentRefund).toHaveBeenCalledWith(
+      context,
+      { userId: "user-1" },
+      "payment-1",
+      { amountKobo: 170000, reason: "Duplicate payment" }
+    );
   });
 });
