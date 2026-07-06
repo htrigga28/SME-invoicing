@@ -141,4 +141,51 @@ describe("PaystackService", () => {
       })
     ).rejects.toThrow("Payment provider authentication failed. Please contact the business.");
   });
+
+  it("verifies a transaction and returns normalized safe fields", async () => {
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        status: true,
+        message: "Verification successful",
+        data: {
+          reference: "SME-INV000001-ABC123",
+          status: "success",
+          amount: 50000,
+          currency: "NGN",
+          paid_at: "2026-06-30T10:00:00.000Z",
+          channel: "card",
+          gateway_response: "Successful",
+          authorization: {
+            authorization_code: "AUTH_secret"
+          }
+        }
+      })
+    } as never);
+    const service = new PaystackService({
+      get: jest.fn((key: string) =>
+        key === "PAYSTACK_SECRET_KEY" ? "sk_test_secret" : "https://api.paystack.co"
+      )
+    } as never);
+
+    await expect(service.verifyTransaction("SME-INV000001-ABC123")).resolves.toEqual({
+      reference: "SME-INV000001-ABC123",
+      status: "success",
+      amountKobo: 50000,
+      currency: "NGN",
+      paidAt: "2026-06-30T10:00:00.000Z",
+      channel: "card",
+      gatewayResponse: "Successful"
+    });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("https://api.paystack.co/transaction/verify/SME-INV000001-ABC123");
+    expect(init).toMatchObject({
+      method: "GET",
+      headers: {
+        Authorization: "Bearer sk_test_secret",
+        "Content-Type": "application/json"
+      }
+    });
+  });
 });

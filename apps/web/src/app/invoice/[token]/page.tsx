@@ -9,11 +9,13 @@ export default async function PublicInvoiceRoute({
 }) {
   const { token } = await params;
   const query = await searchParams;
+  const paymentReferenceProps = query.reference ? { paymentReference: query.reference } : {};
 
   return (
     <PublicInvoicePage
       paymentCallback={query.payment === "callback" || Boolean(query.reference)}
       token={token}
+      {...paymentReferenceProps}
     />
   );
 }

@@ -20,7 +20,7 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | Status | Meaning |
 | --- | --- |
 | `pending` | Paystack transaction initialized but not confirmed. |
-| `successful` | Paystack webhook confirms payment success. |
+| `successful` | Paystack webhook or server-side Paystack verification confirms payment success. |
 | `failed` | Paystack webhook confirms failure. |
 | `abandoned` | Payment was initialized but not completed after a defined time. |
 | `refunded` | Refund recorded. |
@@ -62,6 +62,8 @@ Public view tracking rules:
 
 `amount_paid_kobo` is the sum of successful, non-refunded payments for the invoice.
 
+Failed, abandoned, pending, stale pending, and superseded retry attempts do not contribute to invoice paid totals.
+
 `balance_due_kobo` is:
 
 ```text
@@ -85,16 +87,19 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - Partial payments are allowed in the MVP.
 - Each successful payment is recorded independently.
 - The invoice remains `partially_paid` until successful payment totals meet or exceed `total_kobo`.
-- A receipt is generated for each successful payment.
+- Receipt generation starts in T014; T013 only shows the linked payment history and receipt placeholder.
 - Public partial payment entry is not exposed in MVP.
 - Public payment initialization charges the current server-calculated `balance_due_kobo`.
 - Public payment initialization must use the active organisation `provider_subaccount_code`.
-- Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified webhook processing is the source of truth for reconciliation.
+- Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified provider confirmation is the source of truth for reconciliation.
 - A verified `charge.success` webhook can mark a matching payment `successful`.
+- A server-side Paystack Verify Transaction fallback can also mark a matching payment `successful` after validating that the returned reference, amount in kobo, and currency match the pending payment. The frontend callback itself is never proof of payment.
 - After a successful payment, invoice paid and balance amounts are recalculated from all successful payments for the invoice.
 - Full payment marks the invoice `paid` and sets `paid_at` the first time it becomes fully paid.
 - Partial successful totals mark the invoice `partially_paid`.
 - If a previously overdue invoice is fully paid, it becomes `paid`.
+- Pending, failed, or abandoned attempts after an invoice is already paid, cancelled, void, or has `balance_due_kobo = 0` are superseded audit records. They should remain stored but should not appear as active reconciliation work.
+- For unresolved invoices with multiple pending attempts, only the newest pending attempt should remain active reconciliation work; older pending attempts are superseded. True anomalies such as amount mismatch, currency mismatch, unknown reference, overpayment, cancelled/void invoice payment, processing error, or settlement mismatch remain review-required.
 
 ## Cancellation Rules
 
@@ -126,7 +131,7 @@ Duplicate events must be idempotent:
 
 - Store the duplicate safely or mark it as duplicate.
 - Do not double-count payment amounts.
-- Do not generate duplicate receipts.
+- Do not generate duplicate receipts after T014.
 - Do not write repeated status transitions unless useful as safe audit metadata.
 
 ## Overpayment

@@ -17,7 +17,7 @@ const mainRoutes: AppRoute[] = [
   { href: "/dashboard", label: "Dashboard", status: "available" },
   { href: "/customers", label: "Customers", status: "available" },
   { href: "/invoices", label: "Invoices", status: "available" },
-  { href: "/payments", label: "Payments", status: "coming-soon", task: "T013" },
+  { href: "/payments", label: "Payments", status: "available" },
   { href: "/receipts", label: "Receipts", status: "coming-soon", task: "T014" },
   { href: "/exports", label: "Exports", status: "coming-soon", task: "T016" },
   {

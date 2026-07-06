@@ -256,6 +256,8 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 
 ### payments
 
+Rows in `payments` represent Paystack checkout/payment attempts. They are not deleted when a customer retries checkout or when a later successful payment supersedes an older failed/pending/abandoned attempt.
+
 | Column | Notes |
 | --- | --- |
 | id | Primary key. |
@@ -283,12 +285,18 @@ Constraints and indexes:
 
 - Unique on `provider + provider_reference`.
 - Index on `organisation_id + provider_subaccount_code`.
+- Index on `organisation_id + status`.
+- Index on `organisation_id + created_at` for the T013 payments list and summary views.
+- Index on `provider + provider_reference` for webhook matching and detail lookups.
 
 Subaccount traceability rules:
 
 - Invoice payment records should store the `provider_subaccount_code` used during initialization.
 - The column is nullable for older rows and payment attempts that predate subaccount-aware initialization.
 - Webhook processing should reconcile by reference while preserving the subaccount context used when the payment started.
+- T013 reconciliation views do not expose `provider_subaccount_code`; they show a safe settlement account summary by matching the stored code to `organisation_payment_accounts` inside the current organisation.
+- Attempt state and reconciliation state are computed in service logic from payment status, invoice/customer ownership, invoice balance/status, payment events, and settlement account traceability. They are not stored as database columns.
+- Superseded attempts remain stored for audit/support and are available through `GET /payments?view=all_attempts`, but they are hidden from the default reconciliation-focused view.
 
 T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.
 
@@ -315,7 +323,9 @@ Constraints and idempotency:
 
 - Unique `provider + provider_event_id` when `provider_event_id` is present.
 - Index provider, provider_reference, payment_id, organisation_id, event_type, and processed.
+- Index on `organisation_id + processed` for the T013 review-events view.
 - Processing also checks existing processed `provider + provider_reference + event_type` events to prevent double-counting when Paystack does not provide a reliable event ID.
+- T013 exposes safe event summaries for reconciliation review only. Raw `payload_redacted` remains backend/internal data and is not returned by default.
 
 ### receipts
 

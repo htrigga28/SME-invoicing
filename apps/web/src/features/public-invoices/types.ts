@@ -64,3 +64,8 @@ export type PublicInvoicePaymentInitialization = {
   accessCode: string;
   reference: string;
 };
+
+export type PublicInvoicePaymentVerification = {
+  invoiceUpdated: boolean;
+  status: "abandoned" | "failed" | "pending" | "successful";
+};

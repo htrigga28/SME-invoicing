@@ -244,6 +244,7 @@ Rules:
 | `GET /public/invoices/:token` | Public | None | None | `{ invoice, business, customer, lineItems, paymentSummary }` |
 | `POST /public/invoices/:token/view` | Public | None | None | `{ success: true }` |
 | `POST /public/invoices/:token/pay` | Public | None | `{}` | `{ authorizationUrl, accessCode, reference }` |
+| `POST /public/invoices/:token/payments/:reference/verify` | Public | None | None | `{ status, invoiceUpdated }` |
 
 Rules:
 
@@ -271,6 +272,8 @@ Rules:
 - Payment initialization is available for payable `sent`, `viewed`, `overdue`, and `partially_paid` public invoices with an outstanding balance.
 - Payment initialization does not mark the invoice paid, does not update `amount_paid_kobo`, and does not update `balance_due_kobo`.
 - Paystack secret keys are backend-only. The public frontend only receives the Paystack authorization URL returned by the API.
+- After Paystack redirects the customer back with a reference, the frontend may call `POST /public/invoices/:token/payments/:reference/verify`. The backend verifies that the reference belongs to the invoice token, calls Paystack Verify Transaction server-side, validates reference, amount, and currency, and then uses the same idempotent reconciliation path as the `charge.success` webhook.
+- The verify endpoint is a fallback for local or delayed webhook delivery. It must never trust the frontend callback as proof of payment and must not expose raw Paystack verification data.
 
 Preferred MVP initialization payload sent from backend to Paystack:
 
@@ -343,8 +346,120 @@ Public invoice `paymentSummary` examples:
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
 | `POST /payments/paystack/webhook` | Paystack signature | Provider | Raw Paystack body | `{ received: true }` |
-| `GET /payments` | Required | Owner/Admin/Accountant/Viewer | Query: status, customer, invoice, dates | `{ payments, pagination }` |
-| `GET /payments/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ payment, invoice, customer, events }` |
+| `GET /payments` | Required | Owner/Admin/Accountant/Viewer | Query: `view`, `search`, `status`, `customerId`, `invoiceId`, `reconciliationState`, `dateFrom`, `dateTo`, `page`, `limit` | `{ payments, pagination }` |
+| `GET /payments/summary` | Required | Owner/Admin/Accountant/Viewer | Query: `dateFrom`, `dateTo` | `{ totals, statusBreakdown, recentPayments }` |
+| `GET /payments/events/review` | Required | Owner/Admin/Accountant/Viewer | Query: `page`, `limit`, `eventType`, `processed` | `{ events, pagination }` |
+| `GET /payments/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ payment, invoice, customer, settlementAccount, events }` |
+
+T013 payment/reconciliation endpoints are read-only. They do not create manual payments, mutate reconciliation state, issue refunds, export CSV files, or generate receipts.
+
+Payment records are Paystack checkout/payment attempts. The default Payments page is reconciliation-focused, not raw attempt history.
+
+`GET /payments` supports `view`:
+
+- `reconciliation` default: shows successful payments, active/stale pending confirmations, true review-required records, and the latest meaningful failed/abandoned attempt for an unpaid invoice. Superseded retry attempts are hidden.
+- `all_attempts`: shows every stored payment attempt for audit/support.
+- `review_required`: shows only payment attempts with true reconciliation problems.
+- Pagination is defensive: if filtering or classification leaves the requested page outside the available range, the API returns the last available page so the UI cannot strand the user on an empty page without navigation.
+
+`GET /payments` returns safe list items:
+
+```json
+{
+  "payments": [
+    {
+      "id": "uuid",
+      "provider": "paystack",
+      "providerReference": "PAYSTACK_REF",
+      "status": "successful",
+      "attemptState": "successful",
+      "reconciliationState": "matched",
+      "isSuperseded": false,
+      "supersededReason": null,
+      "currency": "NGN",
+      "amountKobo": 97500,
+      "paidAt": "2026-06-30T10:00:00.000Z",
+      "failedAt": null,
+      "abandonedAt": null,
+      "initializedAt": "2026-06-30T09:59:00.000Z",
+      "createdAt": "2026-06-30T09:59:00.000Z",
+      "invoice": {
+        "id": "uuid",
+        "invoiceNumber": "INV-000011",
+        "status": "paid",
+        "totalKobo": 97500,
+        "amountPaidKobo": 97500,
+        "balanceDueKobo": 0
+      },
+      "customer": {
+        "id": "uuid",
+        "name": "Lagos Bright Prints",
+        "email": "accounts@example.test"
+      },
+      "settlementAccount": {
+        "provider": "paystack",
+        "bankName": "United Bank for Africa",
+        "accountName": "Akin & Co Creative Services",
+        "accountNumberLast4": "9090"
+      },
+      "settlementAccountContext": {
+        "currentStatus": "disabled",
+        "isCurrentActiveAccount": false,
+        "isHistorical": true
+      },
+      "latestEventSummary": {
+        "eventType": "charge.success",
+        "processed": true,
+        "errorMessage": null,
+        "createdAt": "2026-06-30T10:00:00.000Z"
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+Attempt state is computed in service logic. Allowed values are `successful`, `active_pending`, `stale_pending`, `failed_attempt`, `abandoned_attempt`, `refunded_attempt`, `superseded`, `review_required`, and `unknown`.
+
+Reconciliation state is computed in service logic. Allowed values are `matched`, `pending_confirmation`, `stale_pending`, `failed`, `abandoned`, `refunded`, `superseded`, `review_required`, and `unknown`.
+
+Superseded attempts are retained for audit/support but no longer affect invoice balance. Examples include pending/failed/abandoned retries after another successful payment has already paid the invoice, or attempts for invoices that no longer accept payment.
+
+Normal failed or abandoned checkout attempts are not `review_required` unless there is a true reconciliation problem such as amount mismatch, currency mismatch, unknown reference, cancelled/void invoice payment, overpayment, processing error, missing expected subaccount trace, or safely inferable settlement mismatch.
+
+Settlement account responses are safe summaries derived by matching `payments.provider_subaccount_code` to an organisation payment account. The API does not expose `provider_subaccount_code`, full bank account numbers, raw webhook payloads, raw Paystack responses, organisation IDs, token hashes, or secrets.
+
+`settlementAccount` describes the payout account used for that payment. `settlementAccountContext` describes current/historical context separately, so a historically valid payment can show "Historical account" without implying the payment itself is invalid. Matching must use the same organisation, same provider, and exact `provider_subaccount_code`; bank name or last4 are not enough.
+
+Amount mismatch checks compare Paystack subunit amounts directly against `payments.amount_kobo`. They must not compare formatted NGN strings or divide only one side by 100. Genuine amount/currency mismatches can include safe `reviewDetails` with `expectedAmountKobo`, `receivedAmountKobo`, and `currency`.
+
+`GET /payments/:id` returns safe event timeline entries only:
+
+```json
+{
+  "events": [
+    {
+      "id": "uuid",
+      "eventType": "charge.success",
+      "providerReference": "PAYSTACK_REF",
+      "processed": true,
+      "processedAt": "2026-06-30T10:00:01.000Z",
+      "errorMessage": null,
+      "createdAt": "2026-06-30T10:00:00.000Z"
+    }
+  ],
+  "receiptPlaceholder": "Receipts will be available after T014."
+}
+```
+
+`GET /payments/events/review` only returns organisation-scoped events that have safe review signals such as processing errors or unprocessed state. Events with null `organisation_id` are excluded unless they can be safely scoped through a linked payment reference.
+
+`GET /payments/events/review` excludes ordinary unsupported/duplicate provider events that do not require human reconciliation work.
 
 Webhook endpoint rules:
 
@@ -354,6 +469,7 @@ Webhook endpoint rules:
 - Must not verify against `JSON.stringify(req.body)`.
 - Parses JSON only after signature verification succeeds.
 - Handles `charge.success` in T009.
+- The `charge.success` webhook and server-side Verify Transaction fallback share the same idempotent successful-payment reconciliation service.
 - Stores a redacted payment event before or during processing.
 - Matches `data.reference` to an existing Paystack payment reference.
 - Validates amount and `NGN` currency before marking payment successful.

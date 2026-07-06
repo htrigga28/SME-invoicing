@@ -13,9 +13,12 @@ import {
   invoiceNumberSequences,
   invoices,
   invoiceStatusEvents,
+  organisationPaymentAccounts,
   organisationInvitations,
   organisationMembers,
   organisations,
+  paymentEvents,
+  payments,
   users
 } from "./schema";
 
@@ -167,6 +170,8 @@ const serviceLineItems = [
   ["Event production coordination", 1, 300000],
   ["Business advisory session", 3, 60000]
 ] as const;
+
+const demoHistoricalSubaccountCode = "ACCT_demo_historical";
 
 function invoiceDate(daysFromNow: number) {
   const date = new Date();
@@ -593,6 +598,340 @@ async function main() {
         }))
       );
     }
+
+    const [existingHistoricalPaymentAccount] = await db
+      .select()
+      .from(organisationPaymentAccounts)
+      .where(
+        and(
+          eq(organisationPaymentAccounts.organisationId, organisation.id),
+          eq(organisationPaymentAccounts.providerSubaccountCode, demoHistoricalSubaccountCode)
+        )
+      )
+      .limit(1);
+
+    const historicalPaymentAccountValues = {
+      organisationId: organisation.id,
+      provider: "paystack" as const,
+      providerSubaccountCode: demoHistoricalSubaccountCode,
+      bankCode: "033",
+      bankName: "United Bank for Africa",
+      accountName: "Akin & Co Creative Services",
+      accountNumberLast4: "9090",
+      status: "disabled" as const,
+      verifiedAt: new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000),
+      disabledAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+      providerMetadataRedacted: {
+        provider: "paystack",
+        seed: "historical_demo_settlement_account"
+      },
+      createdByUserId: owner.id,
+      updatedAt: now
+    };
+
+    const [historicalPaymentAccount] = existingHistoricalPaymentAccount
+      ? await db
+          .update(organisationPaymentAccounts)
+          .set(historicalPaymentAccountValues)
+          .where(eq(organisationPaymentAccounts.id, existingHistoricalPaymentAccount.id))
+          .returning()
+      : await db
+          .insert(organisationPaymentAccounts)
+          .values(historicalPaymentAccountValues)
+          .returning();
+
+    if (!historicalPaymentAccount) {
+      throw new Error("Demo historical payment account could not be seeded.");
+    }
+
+    await db
+      .delete(paymentEvents)
+      .where(
+        and(
+          eq(paymentEvents.provider, "paystack"),
+          sql`(${paymentEvents.providerReference} like 'PAYSTACK_DEMO_%' or ${paymentEvents.providerReference} like 'PAYSTACK_REVIEW_%')`
+        )
+      );
+    await db
+      .delete(payments)
+      .where(
+        and(
+          eq(payments.organisationId, organisation.id),
+          eq(payments.provider, "paystack"),
+          sql`${payments.providerReference} like 'PAYSTACK_DEMO_%'`
+        )
+      );
+
+    const seededInvoices = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.organisationId, organisation.id));
+    const invoiceByNumber = new Map(
+      seededInvoices.map((invoice) => [invoice.invoiceNumber, invoice])
+    );
+
+    const fullPaymentInvoiceNumbers = [
+      "INV-000011",
+      "INV-000012",
+      "INV-000013",
+      "INV-000014",
+      "INV-000015",
+      "INV-000016"
+    ];
+    const partialPaymentInvoiceNumbers = ["INV-000017", "INV-000018", "INV-000019", "INV-000020"];
+    const pendingPaymentInvoiceNumbers = ["INV-000007", "INV-000008", "INV-000009"];
+    const failedPaymentInvoiceNumbers = ["INV-000010"];
+    const abandonedPaymentInvoiceNumbers = ["INV-000021"];
+    const supersededRetryRows = [
+      { invoiceNumber: "INV-000011", status: "pending" as const, suffix: "RETRY_PENDING" },
+      { invoiceNumber: "INV-000012", status: "failed" as const, suffix: "RETRY_FAILED" },
+      { invoiceNumber: "INV-000013", status: "abandoned" as const, suffix: "RETRY_ABANDONED" }
+    ];
+
+    const seededPaymentRows: {
+      amountKobo: number;
+      eventErrorMessage?: string | null;
+      eventAmountKobo?: number;
+      eventType?: string;
+      invoiceNumber: string;
+      offsetDays: number;
+      referenceSuffix?: string;
+      status: "abandoned" | "failed" | "pending" | "successful";
+    }[] = [
+      ...fullPaymentInvoiceNumbers.map((invoiceNumber, index) => {
+        const invoice = invoiceByNumber.get(invoiceNumber);
+
+        if (!invoice) {
+          throw new Error(`Seed invoice was not found for payment: ${invoiceNumber}`);
+        }
+
+        return {
+          invoiceNumber,
+          amountKobo: invoice.totalKobo,
+          status: "successful" as const,
+          offsetDays: 18 - index
+        };
+      }),
+      ...partialPaymentInvoiceNumbers.map((invoiceNumber, index) => {
+        const invoice = invoiceByNumber.get(invoiceNumber);
+
+        if (!invoice) {
+          throw new Error(`Seed invoice was not found for payment: ${invoiceNumber}`);
+        }
+
+        return {
+          invoiceNumber,
+          amountKobo: Math.max(Math.floor(invoice.totalKobo * 0.4), 1000),
+          status: "successful" as const,
+          offsetDays: 12 - index
+        };
+      }),
+      ...pendingPaymentInvoiceNumbers.map((invoiceNumber, index) => ({
+        invoiceNumber,
+        amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
+        status: "pending" as const,
+        offsetDays: index === 0 ? 0 : 5 - index,
+        eventErrorMessage:
+          invoiceNumber === "INV-000009"
+            ? "Payment amount did not match the pending payment."
+            : null,
+        ...(invoiceNumber === "INV-000009"
+          ? {
+              eventAmountKobo: Math.max(
+                (invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0) - 10000,
+                0
+              )
+            }
+          : {})
+      })),
+      ...failedPaymentInvoiceNumbers.map((invoiceNumber, index) => ({
+        invoiceNumber,
+        amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
+        status: "failed" as const,
+        offsetDays: 4 - index,
+        eventType: "charge.failed"
+      })),
+      ...abandonedPaymentInvoiceNumbers.map((invoiceNumber) => ({
+        invoiceNumber,
+        amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
+        status: "abandoned" as const,
+        offsetDays: 2
+      })),
+      ...supersededRetryRows.map((row, index) => {
+        const paymentSeed = {
+          invoiceNumber: row.invoiceNumber,
+          amountKobo: invoiceByNumber.get(row.invoiceNumber)?.totalKobo ?? 0,
+          status: row.status,
+          offsetDays: 1 + index,
+          referenceSuffix: row.suffix
+        };
+
+        return row.status === "failed"
+          ? { ...paymentSeed, eventType: "charge.failed" }
+          : paymentSeed;
+      })
+    ];
+
+    for (const paymentSeed of seededPaymentRows) {
+      const invoice = invoiceByNumber.get(paymentSeed.invoiceNumber);
+
+      if (!invoice) {
+        throw new Error(`Seed invoice was not found for payment: ${paymentSeed.invoiceNumber}`);
+      }
+
+      const customer = activeCustomers.find((item) => item.id === invoice.customerId);
+
+      if (!customer) {
+        throw new Error(`Seed customer was not found for payment: ${paymentSeed.invoiceNumber}`);
+      }
+
+      const createdAt = new Date(now.getTime() - paymentSeed.offsetDays * 24 * 60 * 60 * 1000);
+      const providerReference = `PAYSTACK_DEMO_${paymentSeed.invoiceNumber.replace("-", "")}_${paymentSeed.referenceSuffix ?? paymentSeed.status.toUpperCase()}`;
+      const paidAt = paymentSeed.status === "successful" ? createdAt : null;
+      const failedAt = paymentSeed.status === "failed" ? createdAt : null;
+      const abandonedAt = paymentSeed.status === "abandoned" ? createdAt : null;
+
+      const [payment] = await db
+        .insert(payments)
+        .values({
+          organisationId: organisation.id,
+          invoiceId: invoice.id,
+          customerId: customer.id,
+          provider: "paystack",
+          providerReference,
+          providerSubaccountCode: demoHistoricalSubaccountCode,
+          providerAccessCode: `demo_access_${paymentSeed.invoiceNumber}`,
+          providerAuthorizationUrl: `https://checkout.paystack.com/demo-${paymentSeed.invoiceNumber.toLowerCase()}`,
+          status: paymentSeed.status,
+          currency: "NGN",
+          amountKobo: paymentSeed.amountKobo,
+          paidAt,
+          failedAt,
+          abandonedAt,
+          channel: paymentSeed.status === "successful" ? "card" : null,
+          gatewayResponse:
+            paymentSeed.status === "successful"
+              ? "Successful"
+              : paymentSeed.status === "failed"
+                ? "Declined"
+                : null,
+          metadataRedacted: {
+            seed: "demo_payment",
+            invoiceNumber: invoice.invoiceNumber,
+            provider: "paystack"
+          },
+          initializedAt: createdAt,
+          createdAt,
+          updatedAt: now
+        })
+        .returning();
+
+      if (!payment) {
+        throw new Error(`Demo payment could not be seeded: ${providerReference}`);
+      }
+
+      if (paymentSeed.status === "successful") {
+        const amountPaidKobo = paymentSeed.amountKobo;
+        const balanceDueKobo = Math.max(invoice.totalKobo - amountPaidKobo, 0);
+        const nextStatus = balanceDueKobo === 0 ? "paid" : "partially_paid";
+
+        await db
+          .update(invoices)
+          .set({
+            amountPaidKobo,
+            balanceDueKobo,
+            status: nextStatus,
+            paidAt: nextStatus === "paid" ? paidAt : null,
+            updatedAt: now
+          })
+          .where(eq(invoices.id, invoice.id));
+
+        await db.insert(invoiceStatusEvents).values({
+          organisationId: organisation.id,
+          invoiceId: invoice.id,
+          fromStatus: invoice.status,
+          toStatus: nextStatus,
+          reason: "payment_webhook_reconciled",
+          actorUserId: null,
+          metadataRedacted: {
+            paymentId: payment.id,
+            providerReference,
+            amountPaidKobo,
+            balanceDueKobo
+          },
+          createdAt
+        });
+      }
+
+      if (
+        paymentSeed.status === "successful" ||
+        paymentSeed.status === "failed" ||
+        paymentSeed.eventErrorMessage
+      ) {
+        await db.insert(paymentEvents).values({
+          organisationId: organisation.id,
+          paymentId: payment.id,
+          provider: "paystack",
+          providerEventId: `demo_${providerReference}`,
+          providerReference,
+          eventType: paymentSeed.eventType ?? "charge.success",
+          signatureValid: true,
+          processed: true,
+          processedAt: createdAt,
+          payloadRedacted: {
+            event: paymentSeed.eventType ?? "charge.success",
+            data: {
+              reference: providerReference,
+              amount: paymentSeed.eventAmountKobo ?? paymentSeed.amountKobo,
+              currency: "NGN",
+              status: paymentSeed.status,
+              gateway_response: payment.gatewayResponse,
+              channel: payment.channel,
+              paid_at: paidAt?.toISOString(),
+              customer: {
+                email: customer.email
+              },
+              metadata: {
+                invoiceId: invoice.id,
+                invoiceNumber: invoice.invoiceNumber,
+                customerId: customer.id,
+                organisationId: organisation.id,
+                source: "seed"
+              }
+            }
+          },
+          errorMessage:
+            paymentSeed.eventErrorMessage ??
+            (paymentSeed.status === "failed" ? "Unsupported Paystack event ignored." : null),
+          createdAt
+        });
+      }
+    }
+
+    await db.insert(paymentEvents).values({
+      organisationId: organisation.id,
+      paymentId: null,
+      provider: "paystack",
+      providerEventId: "demo_PAYSTACK_REVIEW_UNKNOWN_REF",
+      providerReference: "PAYSTACK_REVIEW_UNKNOWN_REF",
+      eventType: "charge.success",
+      signatureValid: true,
+      processed: true,
+      processedAt: now,
+      payloadRedacted: {
+        event: "charge.success",
+        data: {
+          reference: "PAYSTACK_REVIEW_UNKNOWN_REF",
+          amount: 100000,
+          currency: "NGN",
+          status: "success",
+          gateway_response: "Successful",
+          source: "seed"
+        }
+      },
+      errorMessage: "Unknown payment reference.",
+      createdAt: now
+    });
 
     await db
       .insert(invoiceNumberSequences)

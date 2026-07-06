@@ -71,6 +71,7 @@ const invoiceResponse = {
       createdAt: "2026-06-01T10:00:00.000Z"
     }
   ],
+  payments: [],
   publicUrl: "http://localhost:3000/invoice/public-token",
   paymentSummary: {
     available: true,
@@ -132,6 +133,43 @@ describe("InvoiceDetailContent public URL", () => {
     expect(screen.getAllByText("NGN 975.00").length).toBeGreaterThan(0);
     expect(screen.getByText("NGN 0.00")).toBeInTheDocument();
     expect(screen.getByText("30 Jun 2026")).toBeInTheDocument();
+  });
+
+  it("renders linked payment history without receipts", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      payments: [
+        {
+          id: "payment-1",
+          provider: "paystack",
+          providerReference: "PAYSTACK_DEMO_INV000007_SUCCESSFUL",
+          status: "successful",
+          reconciliationState: "matched",
+          currency: "NGN",
+          amountKobo: 97500,
+          paidAt: "2026-06-30T10:00:00.000Z",
+          failedAt: null,
+          abandonedAt: null,
+          initializedAt: "2026-06-30T09:59:00.000Z",
+          createdAt: "2026-06-30T09:59:00.000Z",
+          settlementAccount: {
+            provider: "paystack",
+            bankName: "United Bank for Africa",
+            accountName: "Akin & Co Creative Services",
+            accountNumberLast4: "9090",
+            status: "disabled"
+          }
+        }
+      ]
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="viewer" />);
+
+    expect(await screen.findByText("PAYSTACK_DEMO_INV000007_SUCCESSFUL")).toBeInTheDocument();
+    expect(screen.getByText("NGN 975.00 • United Bank for Africa • ****9090")).toBeInTheDocument();
+    expect(
+      screen.getByText("Receipt generation will be available after T014.")
+    ).toBeInTheDocument();
   });
 
   it("shows a Payment Setup CTA to owners when online payments are not active", async () => {

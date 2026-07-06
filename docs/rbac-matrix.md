@@ -6,7 +6,7 @@
 | --- | --- |
 | Owner | Full access. Can manage team, settings, operations, and ownership-sensitive actions. |
 | Admin | Can manage business operations but cannot transfer ownership. |
-| Accountant | Can manage customers, invoices, payments, receipts, and exports, but cannot manage team/settings. |
+| Accountant | Can manage customers and invoices and can view payments/reconciliation. Later tasks may add receipt/export operations, but Accountant cannot manage team/settings. |
 | Viewer | Read-only access. |
 
 Customers paying public invoices do not need a platform account.
@@ -28,7 +28,7 @@ Customers paying public invoices do not need a platform account.
 | Invoices create/update/send | Yes | Yes | Yes | No |
 | Invoices cancel/void | Yes | Yes | No | No |
 | Payments view | Yes | Yes | Yes | Yes |
-| Payments mutate manually | Yes | Yes | Limited/manual notes only | No |
+| Payments mutate manually | No | No | No | No |
 | Receipts view | Yes | Yes | Yes | Yes |
 | Receipts generate/regenerate | Yes | Yes | Yes | No |
 | Exports | Yes | Yes | Yes | No |
@@ -79,6 +79,7 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Never trust `organisationId` from the frontend.
 - Payment Setup reads and mutations derive organisation scope from the authenticated active membership.
 - Payment Setup management is Owner/Admin only; Accountant/Viewer can view status only.
+- Payments and reconciliation views are read-only in T013 for Owner/Admin/Accountant/Viewer.
 - Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
 - Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
 - Archived customers remain readable but cannot be updated in the MVP.

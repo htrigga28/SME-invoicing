@@ -7,6 +7,12 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
+import {
+  formatDateTime as formatPaymentDateTime,
+  formatSettlementAccount,
+  PaymentStatusBadge,
+  ReconciliationBadge
+} from "@/features/payments/payment-ui";
 import { isApiRequestError } from "@/lib/api";
 
 import { cancelInvoice, getInvoice, sendInvoice, voidInvoice } from "./invoices-api";
@@ -281,6 +287,46 @@ export function InvoiceDetailContent({
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-5">
+            <h2 className="text-lg font-semibold text-slate-950">Payments</h2>
+            {response.payments.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">
+                No payment records are linked to this invoice yet.
+              </p>
+            ) : (
+              <div className="mt-4 divide-y divide-slate-100">
+                {response.payments.map((payment) => (
+                  <article className="py-3 text-sm" key={payment.id}>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <Link
+                          className="font-medium text-teal-800"
+                          href={`/payments/${payment.id}`}
+                        >
+                          {payment.providerReference}
+                        </Link>
+                        <p className="mt-1 text-slate-600">
+                          {formatMoney(payment.amountKobo)} •{" "}
+                          {formatSettlementAccount(payment.settlementAccount)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatPaymentDateTime(payment.paidAt ?? payment.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <PaymentStatusBadge status={payment.status} />
+                        <ReconciliationBadge state={payment.reconciliationState} />
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Receipt generation will be available after T014.
+            </p>
           </div>
         </div>
 

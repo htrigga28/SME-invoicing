@@ -57,6 +57,13 @@
       "when": 1782942702096,
       "tag": "0007_lonely_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782948190976,
+      "tag": "0008_brave_skreet",
+      "breakpoints": true
     }
   ]
 }

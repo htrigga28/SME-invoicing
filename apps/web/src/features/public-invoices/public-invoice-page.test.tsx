@@ -8,14 +8,16 @@ import { PublicInvoicePage } from "./public-invoice-page";
 import {
   getPublicInvoice,
   initializePublicInvoicePayment,
-  markPublicInvoiceViewed
+  markPublicInvoiceViewed,
+  verifyPublicInvoicePayment
 } from "./public-invoices-api";
 import type { PublicInvoiceResponse } from "./types";
 
 vi.mock("./public-invoices-api", () => ({
   getPublicInvoice: vi.fn(),
   initializePublicInvoicePayment: vi.fn(),
-  markPublicInvoiceViewed: vi.fn()
+  markPublicInvoiceViewed: vi.fn(),
+  verifyPublicInvoicePayment: vi.fn()
 }));
 
 const publicInvoice = {
@@ -77,6 +79,10 @@ beforeEach(() => {
     reference: "SME-INV000007-ABC123"
   });
   vi.mocked(markPublicInvoiceViewed).mockResolvedValue({ success: true });
+  vi.mocked(verifyPublicInvoicePayment).mockResolvedValue({
+    status: "successful",
+    invoiceUpdated: true
+  });
   vi.stubGlobal("location", { assign: locationAssign });
 });
 
@@ -189,6 +195,63 @@ describe("PublicInvoicePage", () => {
     expect(
       screen.queryByRole("button", { name: "Pay online unavailable" })
     ).not.toBeInTheDocument();
+  });
+
+  it("verifies the Paystack reference server-side after returning from callback", async () => {
+    vi.mocked(getPublicInvoice)
+      .mockResolvedValueOnce(publicInvoice)
+      .mockResolvedValueOnce({
+        ...publicInvoice,
+        invoice: {
+          ...publicInvoice.invoice,
+          status: "paid",
+          amountPaidKobo: 97500,
+          balanceDueKobo: 0,
+          paidAt: "2026-06-30T10:00:00.000Z"
+        },
+        paymentSummary: {
+          available: false,
+          reason: "no_outstanding_balance",
+          message: "This invoice has no outstanding balance."
+        }
+      });
+
+    render(
+      <PublicInvoicePage
+        paymentCallback
+        paymentReference="SME-INV000007-ABC123"
+        token="public-token"
+      />
+    );
+
+    expect(await screen.findByText("Confirming payment")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(verifyPublicInvoicePayment).toHaveBeenCalledWith(
+        "public-token",
+        "SME-INV000007-ABC123"
+      )
+    );
+    expect(await screen.findByText("Payment confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+  });
+
+  it("keeps callback payment state neutral when verification is pending", async () => {
+    vi.mocked(verifyPublicInvoicePayment).mockResolvedValueOnce({
+      status: "pending",
+      invoiceUpdated: false
+    });
+
+    render(
+      <PublicInvoicePage
+        paymentCallback
+        paymentReference="SME-INV000007-ABC123"
+        token="public-token"
+      />
+    );
+
+    expect(await screen.findByText("Payment confirmation pending")).toBeInTheDocument();
+    expect(screen.getByText(/still pending/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Pay .* online/ })).toBeEnabled();
   });
 
   it("keeps the pay button disabled when payment is unavailable", async () => {

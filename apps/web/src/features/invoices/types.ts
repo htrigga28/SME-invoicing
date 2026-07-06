@@ -1,4 +1,5 @@
 import type { InvoiceStatus } from "@sme-invoicing/shared";
+import type { PaymentStatus, ReconciliationState } from "@sme-invoicing/shared";
 
 import type { Customer, Pagination } from "@/features/customers/types";
 
@@ -52,6 +53,27 @@ export type InvoiceDetailResponse = {
   invoice: Invoice;
   lineItems: InvoiceLineItem[];
   statusEvents: InvoiceStatusEvent[];
+  payments: {
+    id: string;
+    provider: string;
+    providerReference: string;
+    status: PaymentStatus;
+    reconciliationState: ReconciliationState;
+    currency: string;
+    amountKobo: number;
+    paidAt: string | null;
+    failedAt: string | null;
+    abandonedAt: string | null;
+    initializedAt: string;
+    createdAt: string;
+    settlementAccount: {
+      provider: string;
+      bankName: string;
+      accountName: string;
+      accountNumberLast4: string;
+      status: "pending_confirmation" | "active" | "verification_delayed" | "disabled";
+    } | null;
+  }[];
   publicUrl: string | null;
   paymentSummary:
     | {

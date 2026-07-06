@@ -38,6 +38,30 @@ type PaystackInitializeApiResponse = {
   };
 };
 
+export type PaystackVerifyResponse = {
+  amountKobo: number;
+  channel: string | null;
+  currency: string;
+  gatewayResponse: string | null;
+  paidAt: string | null;
+  reference: string;
+  status: string;
+};
+
+type PaystackVerifyApiResponse = {
+  status: boolean;
+  message?: unknown;
+  data?: {
+    amount?: unknown;
+    channel?: unknown;
+    currency?: unknown;
+    gateway_response?: unknown;
+    paid_at?: unknown;
+    reference?: unknown;
+    status?: unknown;
+  };
+};
+
 @Injectable()
 export class PaystackService {
   constructor(@Inject(ConfigService) private readonly configService: ConfigService) {}
@@ -102,6 +126,57 @@ export class PaystackService {
     };
   }
 
+  async verifyTransaction(reference: string): Promise<PaystackVerifyResponse> {
+    const secretKey = this.configService.get<string>("PAYSTACK_SECRET_KEY");
+
+    if (!secretKey) {
+      throw new ServiceUnavailableException("Paystack is not configured.");
+    }
+
+    const baseUrl =
+      this.configService.get<string>("PAYSTACK_BASE_URL") ?? "https://api.paystack.co";
+    let response: Response;
+
+    try {
+      response = await fetch(
+        new URL(`/transaction/verify/${encodeURIComponent(reference)}`, baseUrl),
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+    } catch {
+      throw new ServiceUnavailableException(
+        "Paystack is temporarily unavailable. Please try again later."
+      );
+    }
+
+    let payload: PaystackVerifyApiResponse | undefined;
+
+    try {
+      payload = (await response.json()) as PaystackVerifyApiResponse;
+    } catch {
+      payload = undefined;
+    }
+
+    if (!response.ok || !payload?.status || !payload.data?.reference || !payload.data.status) {
+      throw this.toPaystackException(response.status, this.safeProviderMessage(payload?.message));
+    }
+
+    return {
+      reference: this.safeString(payload.data.reference, 120) ?? reference,
+      status: this.safeString(payload.data.status, 80) ?? "unknown",
+      amountKobo: this.numberValue(payload.data.amount),
+      currency: this.safeString(payload.data.currency, 3) ?? "",
+      paidAt: this.safeString(payload.data.paid_at, 80),
+      channel: this.safeString(payload.data.channel, 80),
+      gatewayResponse: this.safeString(payload.data.gateway_response, 500)
+    };
+  }
+
   private toPaystackException(responseStatus: number, providerMessage: string | null) {
     if (responseStatus === 401 || responseStatus === 403) {
       return new ServiceUnavailableException(
@@ -157,5 +232,32 @@ export class PaystackService {
     }
 
     return trimmed;
+  }
+
+  private safeString(value: unknown, maxLength: number) {
+    if (typeof value !== "string" && typeof value !== "number") {
+      return null;
+    }
+
+    const normalized = String(value).trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized.slice(0, maxLength);
+  }
+
+  private numberValue(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
   }
 }

@@ -180,6 +180,10 @@ export const organisationPaymentAccounts = pgTable(
       table.organisationId,
       table.status
     ),
+    organisationSubaccountIndex: index("organisation_payment_accounts_org_subaccount_idx").on(
+      table.organisationId,
+      table.providerSubaccountCode
+    ),
     providerSubaccountCodeUnique: uniqueIndex(
       "organisation_payment_accounts_subaccount_code_unique"
     )
@@ -393,6 +397,10 @@ export const payments = pgTable(
       table.organisationId,
       table.status
     ),
+    organisationCreatedAtIndex: index("payments_org_created_at_idx").on(
+      table.organisationId,
+      table.createdAt
+    ),
     organisationSubaccountIndex: index("payments_org_subaccount_idx").on(
       table.organisationId,
       table.providerSubaccountCode
@@ -428,6 +436,10 @@ export const paymentEvents = pgTable(
     ),
     paymentIndex: index("payment_events_payment_id_idx").on(table.paymentId),
     organisationIndex: index("payment_events_organisation_id_idx").on(table.organisationId),
+    organisationProcessedIndex: index("payment_events_org_processed_idx").on(
+      table.organisationId,
+      table.processed
+    ),
     eventTypeIndex: index("payment_events_event_type_idx").on(table.eventType),
     processedIndex: index("payment_events_processed_idx").on(table.processed),
     providerEventUnique: uniqueIndex("payment_events_provider_event_unique")

@@ -1,0 +1,3 @@
+CREATE INDEX "organisation_payment_accounts_org_subaccount_idx" ON "organisation_payment_accounts" USING btree ("organisation_id","provider_subaccount_code");--> statement-breakpoint
+CREATE INDEX "payment_events_org_processed_idx" ON "payment_events" USING btree ("organisation_id","processed");--> statement-breakpoint
+CREATE INDEX "payments_org_created_at_idx" ON "payments" USING btree ("organisation_id","created_at");

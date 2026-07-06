@@ -22,6 +22,12 @@ describe("PublicInvoicesController", () => {
         PublicInvoicesController.prototype.initializePublicInvoicePayment
       )
     ).toBeUndefined();
+    expect(
+      Reflect.getMetadata(
+        GUARDS_METADATA,
+        PublicInvoicesController.prototype.verifyPublicInvoicePayment
+      )
+    ).toBeUndefined();
   });
 
   it("delegates public invoice requests to the invoice service", () => {
@@ -30,14 +36,19 @@ describe("PublicInvoicesController", () => {
       initializePublicInvoicePayment: jest.fn(),
       markPublicInvoiceViewed: jest.fn()
     };
-    const controller = new PublicInvoicesController(service as never);
+    const paymentsService = {
+      verifyPublicInvoicePayment: jest.fn()
+    };
+    const controller = new PublicInvoicesController(service as never, paymentsService as never);
 
     controller.getPublicInvoice("token");
     controller.initializePublicInvoicePayment("token");
     controller.markPublicInvoiceViewed("token");
+    controller.verifyPublicInvoicePayment("token", "reference");
 
     expect(service.getPublicInvoice).toHaveBeenCalledWith("token");
     expect(service.initializePublicInvoicePayment).toHaveBeenCalledWith("token");
     expect(service.markPublicInvoiceViewed).toHaveBeenCalledWith("token");
+    expect(paymentsService.verifyPublicInvoicePayment).toHaveBeenCalledWith("token", "reference");
   });
 });

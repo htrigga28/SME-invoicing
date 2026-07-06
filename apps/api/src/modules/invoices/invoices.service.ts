@@ -10,7 +10,21 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, asc, count, desc, eq, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL
+} from "drizzle-orm";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { DatabaseService } from "../../database/database.service";
@@ -23,12 +37,14 @@ import {
   invoices,
   organisationPaymentAccounts,
   organisations,
+  paymentEvents,
   payments,
   type BusinessProfile,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
   type InvoiceStatusEvent,
+  type OrganisationPaymentAccount,
   type Payment
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
@@ -307,9 +323,10 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
-    const [lineItems, statusEvents] = await Promise.all([
+    const [lineItems, statusEvents, invoicePayments] = await Promise.all([
       this.findLineItems(context.activeOrganisation.id, invoiceId),
-      this.findStatusEvents(context.activeOrganisation.id, invoiceId)
+      this.findStatusEvents(context.activeOrganisation.id, invoiceId),
+      this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId)
     ]);
 
     const paymentAccount = await this.findPaymentAvailabilityAccount(context.activeOrganisation.id);
@@ -322,6 +339,7 @@ export class InvoicesService {
       invoice: this.toSafeInvoiceDetail(invoiceWithCustomer.invoice, invoiceWithCustomer.customer),
       lineItems: lineItems.map((lineItem) => this.toSafeLineItem(lineItem)),
       statusEvents: statusEvents.map((event) => this.toSafeStatusEvent(event)),
+      payments: invoicePayments,
       publicUrl: invoiceWithCustomer.invoice.publicAccessEnabled
         ? this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
         : null,
@@ -941,6 +959,106 @@ export class InvoicesService {
         )
       )
       .orderBy(asc(invoiceStatusEvents.createdAt));
+  }
+
+  private async findPaymentsForInvoice(organisationId: string, invoiceId: string) {
+    const rows = await this.databaseService.db
+      .select({
+        payment: payments,
+        settlementAccount: organisationPaymentAccounts
+      })
+      .from(payments)
+      .leftJoin(
+        organisationPaymentAccounts,
+        and(
+          eq(organisationPaymentAccounts.organisationId, payments.organisationId),
+          eq(organisationPaymentAccounts.provider, payments.provider),
+          eq(organisationPaymentAccounts.providerSubaccountCode, payments.providerSubaccountCode)
+        )
+      )
+      .where(and(eq(payments.organisationId, organisationId), eq(payments.invoiceId, invoiceId)))
+      .orderBy(desc(payments.createdAt));
+    const paymentIds = rows.map((row) => row.payment.id);
+    const events = paymentIds.length
+      ? await this.databaseService.db
+          .select()
+          .from(paymentEvents)
+          .where(inArray(paymentEvents.paymentId, paymentIds))
+          .orderBy(desc(paymentEvents.createdAt))
+      : [];
+    const eventsByPaymentId = new Map<string, typeof events>();
+
+    for (const event of events) {
+      if (!event.paymentId) {
+        continue;
+      }
+
+      const current = eventsByPaymentId.get(event.paymentId) ?? [];
+      current.push(event);
+      eventsByPaymentId.set(event.paymentId, current);
+    }
+
+    return rows.map((row) =>
+      this.toInvoicePaymentHistoryItem(
+        row.payment,
+        row.settlementAccount,
+        eventsByPaymentId.get(row.payment.id) ?? []
+      )
+    );
+  }
+
+  private toInvoicePaymentHistoryItem(
+    payment: Payment,
+    settlementAccount: OrganisationPaymentAccount | null,
+    events: { errorMessage: string | null }[]
+  ) {
+    return {
+      id: payment.id,
+      provider: payment.provider,
+      providerReference: payment.providerReference,
+      status: payment.status,
+      reconciliationState: this.toPaymentReconciliationState(payment, settlementAccount, events),
+      currency: payment.currency,
+      amountKobo: payment.amountKobo,
+      paidAt: payment.paidAt,
+      failedAt: payment.failedAt,
+      abandonedAt: payment.abandonedAt,
+      initializedAt: payment.initializedAt,
+      createdAt: payment.createdAt,
+      settlementAccount: settlementAccount
+        ? {
+            provider: settlementAccount.provider,
+            bankName: settlementAccount.bankName,
+            accountName: settlementAccount.accountName,
+            accountNumberLast4: settlementAccount.accountNumberLast4,
+            status: settlementAccount.status
+          }
+        : null
+    };
+  }
+
+  private toPaymentReconciliationState(
+    payment: Payment,
+    settlementAccount: OrganisationPaymentAccount | null,
+    events: { errorMessage: string | null }[]
+  ) {
+    if (
+      events.some((event) => event.errorMessage) ||
+      !payment.providerSubaccountCode ||
+      !settlementAccount
+    ) {
+      return "review_required";
+    }
+
+    if (payment.status === "pending") {
+      return "pending_confirmation";
+    }
+
+    if (payment.status === "successful") {
+      return "matched";
+    }
+
+    return payment.status;
   }
 
   private normalizeInvoiceInput(input: CreateInvoiceDto) {

@@ -1,11 +1,17 @@
 import { createHmac } from "crypto";
 import {
   BadRequestException,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException
 } from "@nestjs/common";
 
-import type { Invoice, Payment, PaymentEvent } from "../../database/schema";
+import type {
+  Invoice,
+  OrganisationPaymentAccount,
+  Payment,
+  PaymentEvent
+} from "../../database/schema";
 import { PaymentsService } from "./payments.service";
 
 const secret = "sk_test_secret";
@@ -128,14 +134,79 @@ function createPaymentEvent(overrides: Partial<PaymentEvent> = {}): PaymentEvent
   };
 }
 
+const context = {
+  activeOrganisation: { id: "org-1" },
+  user: { id: "user-1" },
+  membership: { role: "owner" },
+  businessProfile: {}
+};
+
+function createCustomer() {
+  return {
+    id: "customer-1",
+    organisationId: "org-1",
+    name: "Lagos Bright Prints",
+    email: "accounts@lagosbrightprints.com",
+    phone: "+2348010000001",
+    billingAddress: "14 Allen Avenue",
+    createdByUserId: "user-1",
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function createSettlementAccount(): OrganisationPaymentAccount {
+  return {
+    id: "payment-account-1",
+    organisationId: "org-1",
+    provider: "paystack",
+    providerSubaccountCode: "ACCT_test_subaccount",
+    bankCode: "033",
+    bankName: "United Bank for Africa",
+    accountName: "Akin & Co Creative Services",
+    accountNumberLast4: "9090",
+    status: "disabled",
+    verifiedAt: now,
+    disabledAt: now,
+    providerMetadataRedacted: null,
+    createdByUserId: "user-1",
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function createPaymentRelation(
+  overrides: {
+    events?: PaymentEvent[];
+    invoice?: Partial<Invoice>;
+    payment?: Partial<Payment>;
+    settlementAccount?: ReturnType<typeof createSettlementAccount> | null;
+  } = {}
+) {
+  return {
+    payment: createPayment(overrides.payment),
+    invoice: createInvoice(overrides.invoice),
+    customer: createCustomer(),
+    settlementAccount: overrides.settlementAccount ?? createSettlementAccount(),
+    events: overrides.events ?? [createPaymentEvent({ processed: true, processedAt: now })]
+  };
+}
+
 function setup() {
   const transaction = jest.fn(async (callback: (tx: unknown) => Promise<void>) => callback({}));
+  const paystackService = {
+    verifyTransaction: jest.fn()
+  };
   const service = new PaymentsService(
     { db: { transaction } } as never,
-    { get: jest.fn((key: string) => (key === "PAYSTACK_SECRET_KEY" ? secret : undefined)) } as never
+    {
+      get: jest.fn((key: string) => (key === "PAYSTACK_SECRET_KEY" ? secret : undefined))
+    } as never,
+    paystackService as never
   );
 
-  return { service, transaction };
+  return { service, paystackService, transaction };
 }
 
 describe("PaymentsService signature handling", () => {
@@ -184,7 +255,8 @@ describe("PaymentsService signature handling", () => {
   it("requires Paystack secret configuration", async () => {
     const service = new PaymentsService(
       { db: { transaction: jest.fn() } } as never,
-      { get: jest.fn().mockReturnValue(undefined) } as never
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { verifyTransaction: jest.fn() } as never
     );
     const rawBody = Buffer.from(JSON.stringify(createPayload()));
 
@@ -264,6 +336,573 @@ describe("PaymentsService event safety", () => {
   });
 });
 
+describe("PaymentsService read APIs", () => {
+  it("lists payments with computed reconciliation state and masked settlement account", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { initializedAt: new Date(), createdAt: new Date(), updatedAt: new Date() }
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, {});
+
+    expect(response.payments).toHaveLength(1);
+    expect(response.payments[0]).toMatchObject({
+      providerReference: "SME-INV000001-ABC123",
+      attemptState: "active_pending",
+      reconciliationState: "pending_confirmation",
+      settlementAccount: {
+        bankName: "United Bank for Africa",
+        accountNumberLast4: "9090"
+      },
+      settlementAccountContext: {
+        currentStatus: "disabled",
+        isCurrentActiveAccount: false,
+        isHistorical: true
+      }
+    });
+    expect(JSON.stringify(response)).not.toContain("ACCT_test_subaccount");
+  });
+
+  it("filters by computed reconciliation state after loading organisation payments", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { id: "payment-1", status: "successful" }
+      }),
+      createPaymentRelation({
+        payment: { id: "payment-2", initializedAt: new Date() },
+        events: [
+          createPaymentEvent({
+            id: "event-2",
+            paymentId: "payment-2",
+            errorMessage: "Payment amount did not match the pending payment."
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, {
+      reconciliationState: "review_required"
+    });
+
+    expect(response.payments).toHaveLength(1);
+    expect(response.payments[0]?.id).toBe("payment-2");
+    expect(response.pagination.total).toBe(1);
+  });
+
+  it("clamps out-of-range payment pages to the last available page", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest
+      .fn()
+      .mockResolvedValue([
+        createPaymentRelation({ payment: { id: "payment-1", status: "successful" } }),
+        createPaymentRelation({ payment: { id: "payment-2", status: "successful" } })
+      ]);
+
+    const response = await service.listPayments(context as never, {
+      limit: 1,
+      page: 5,
+      view: "all_attempts"
+    });
+
+    expect(response.pagination).toMatchObject({
+      page: 2,
+      limit: 1,
+      total: 2,
+      totalPages: 2
+    });
+    expect(response.payments.map((payment) => payment.id)).toEqual(["payment-2"]);
+  });
+
+  it("calculates payment summary totals and review-required count", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { id: "payment-1", status: "successful", amountKobo: 1000 }
+      }),
+      createPaymentRelation({ payment: { id: "payment-2", status: "pending", amountKobo: 2000 } }),
+      createPaymentRelation({ payment: { id: "payment-3", status: "failed", amountKobo: 3000 } }),
+      createPaymentRelation({
+        payment: { id: "payment-4", status: "abandoned", amountKobo: 4000 },
+        events: [
+          createPaymentEvent({
+            id: "event-4",
+            paymentId: "payment-4",
+            errorMessage: "Unknown payment reference."
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.getPaymentSummary(context as never, {});
+
+    expect(response.totals).toMatchObject({
+      collectedKobo: 1000,
+      pendingKobo: 0,
+      failedKobo: 3000,
+      abandonedKobo: 0,
+      reviewRequiredCount: 1
+    });
+  });
+
+  it("classifies pending attempts for unpaid invoices as active pending", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { initializedAt: new Date(), createdAt: new Date(), updatedAt: new Date() }
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, {});
+
+    expect(response.payments[0]).toMatchObject({
+      attemptState: "active_pending",
+      reconciliationState: "pending_confirmation",
+      isSuperseded: false
+    });
+  });
+
+  it("classifies old pending attempts as stale pending", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([createPaymentRelation()]);
+
+    const response = await service.listPayments(context as never, {});
+
+    expect(response.payments[0]).toMatchObject({
+      attemptState: "stale_pending",
+      reconciliationState: "stale_pending"
+    });
+  });
+
+  it("supersedes pending retries when aggregate successful payments fully paid the invoice", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: {
+          id: "payment-success",
+          status: "successful",
+          amountKobo: 97500,
+          paidAt: now
+        },
+        invoice: { status: "sent", balanceDueKobo: 97500, amountPaidKobo: 0 }
+      }),
+      createPaymentRelation({
+        payment: {
+          id: "payment-pending",
+          status: "pending",
+          amountKobo: 97500,
+          initializedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        invoice: { status: "sent", balanceDueKobo: 97500, amountPaidKobo: 0 }
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, { view: "all_attempts" });
+
+    expect(response.payments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "payment-success", attemptState: "successful" }),
+        expect.objectContaining({
+          id: "payment-pending",
+          attemptState: "superseded",
+          supersededReason: "Invoice already paid by a successful payment."
+        })
+      ])
+    );
+  });
+
+  it("keeps only the newest pending attempt active for an unpaid invoice", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: {
+          id: "older-pending",
+          status: "pending",
+          initializedAt: new Date("2026-06-30T09:00:00.000Z"),
+          createdAt: new Date("2026-06-30T09:00:00.000Z"),
+          updatedAt: new Date("2026-06-30T09:00:00.000Z")
+        }
+      }),
+      createPaymentRelation({
+        payment: {
+          id: "newer-pending",
+          status: "pending",
+          initializedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      })
+    ]);
+
+    const defaultResponse = await service.listPayments(context as never, {});
+    const allAttemptsResponse = await service.listPayments(context as never, {
+      view: "all_attempts"
+    });
+
+    expect(defaultResponse.payments.map((payment) => payment.id)).toEqual(["newer-pending"]);
+    expect(allAttemptsResponse.payments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "newer-pending", attemptState: "active_pending" }),
+        expect.objectContaining({ id: "older-pending", attemptState: "superseded" })
+      ])
+    );
+  });
+
+  it("does not keep false amount-mismatch events in needs-review when kobo amounts are equal", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: {
+          id: "payment-1",
+          amountKobo: 870000,
+          initializedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        invoice: {
+          totalKobo: 870000,
+          balanceDueKobo: 870000
+        },
+        events: [
+          createPaymentEvent({
+            errorMessage: "Payment amount did not match the pending payment.",
+            payloadRedacted: {
+              event: "charge.success",
+              data: {
+                amount: 870000,
+                currency: "NGN"
+              }
+            }
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, { view: "review_required" });
+
+    expect(response.payments).toHaveLength(0);
+  });
+
+  it("returns review details for a genuine amount mismatch", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: {
+          id: "payment-1",
+          amountKobo: 870000,
+          initializedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        events: [
+          createPaymentEvent({
+            errorMessage: "Payment amount did not match the pending payment.",
+            payloadRedacted: {
+              event: "charge.success",
+              data: {
+                amount: 860000,
+                currency: "NGN"
+              }
+            }
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, { view: "review_required" });
+
+    expect(response.payments[0]).toMatchObject({
+      attemptState: "review_required",
+      reviewDetails: {
+        expectedAmountKobo: 870000,
+        receivedAmountKobo: 860000,
+        currency: "NGN"
+      }
+    });
+  });
+
+  it("classifies pending, failed, and abandoned attempts for paid invoices as superseded", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { id: "payment-1", status: "pending" },
+        invoice: { status: "paid", balanceDueKobo: 0, amountPaidKobo: 97500 }
+      }),
+      createPaymentRelation({
+        payment: { id: "payment-2", status: "failed" },
+        invoice: { status: "paid", balanceDueKobo: 0, amountPaidKobo: 97500 }
+      }),
+      createPaymentRelation({
+        payment: { id: "payment-3", status: "abandoned" },
+        invoice: { status: "paid", balanceDueKobo: 0, amountPaidKobo: 97500 }
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, { view: "all_attempts" });
+
+    expect(response.payments).toHaveLength(3);
+    expect(response.payments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "payment-1", attemptState: "superseded" }),
+        expect.objectContaining({ id: "payment-2", attemptState: "superseded" }),
+        expect.objectContaining({ id: "payment-3", attemptState: "superseded" })
+      ])
+    );
+  });
+
+  it("does not mark ordinary failed attempts as review required", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { id: "payment-1", status: "failed" },
+        events: [
+          createPaymentEvent({
+            id: "event-1",
+            paymentId: "payment-1",
+            eventType: "charge.failed",
+            processed: true,
+            processedAt: now,
+            errorMessage: "Unsupported Paystack event ignored."
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, { view: "all_attempts" });
+
+    expect(response.payments[0]).toMatchObject({
+      attemptState: "failed_attempt",
+      reconciliationState: "failed"
+    });
+  });
+
+  it("excludes superseded attempts from the default view but includes them in all attempts", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { id: "payment-1", status: "successful" },
+        invoice: { status: "paid", balanceDueKobo: 0, amountPaidKobo: 97500 }
+      }),
+      createPaymentRelation({
+        payment: { id: "payment-2", status: "failed" },
+        invoice: { status: "paid", balanceDueKobo: 0, amountPaidKobo: 97500 }
+      })
+    ]);
+
+    const defaultResponse = await service.listPayments(context as never, {});
+    const allAttemptsResponse = await service.listPayments(context as never, {
+      view: "all_attempts"
+    });
+
+    expect(defaultResponse.payments.map((payment) => payment.id)).toEqual(["payment-1"]);
+    expect(allAttemptsResponse.payments.map((payment) => payment.id)).toEqual([
+      "payment-1",
+      "payment-2"
+    ]);
+  });
+
+  it("returns only review-required payment records for review view", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        payment: { id: "payment-1", status: "successful" }
+      }),
+      createPaymentRelation({
+        payment: { id: "payment-2", initializedAt: new Date() },
+        events: [
+          createPaymentEvent({
+            id: "event-2",
+            paymentId: "payment-2",
+            errorMessage: "Payment amount did not match the pending payment."
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.listPayments(context as never, { view: "review_required" });
+
+    expect(response.payments).toHaveLength(1);
+    expect(response.payments[0]).toMatchObject({
+      id: "payment-2",
+      attemptState: "review_required"
+    });
+  });
+
+  it("returns safe payment detail event summaries without raw payloads or subaccount codes", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        events: [
+          createPaymentEvent({
+            payloadRedacted: { raw: "not returned" },
+            processed: true,
+            processedAt: now
+          })
+        ]
+      })
+    ]);
+
+    const response = await service.getPayment(context as never, "payment-1");
+
+    expect(response.events[0]).toEqual(
+      expect.not.objectContaining({
+        payloadRedacted: expect.anything()
+      })
+    );
+    expect(JSON.stringify(response)).not.toContain("ACCT_test_subaccount");
+    expect(response.receiptPlaceholder).toBe("Receipts will be available after T014.");
+  });
+
+  it("reports active exact settlement account context without exposing subaccount code", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      findPaymentsWithRelations: jest.Mock;
+    };
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
+      createPaymentRelation({
+        settlementAccount: {
+          ...createSettlementAccount(),
+          status: "active",
+          disabledAt: null
+        }
+      })
+    ]);
+
+    const response = await service.getPayment(context as never, "payment-1");
+
+    expect(response.settlementAccount).toEqual({
+      provider: "paystack",
+      bankName: "United Bank for Africa",
+      accountName: "Akin & Co Creative Services",
+      accountNumberLast4: "9090"
+    });
+    expect(response.settlementAccountContext).toEqual({
+      currentStatus: "active",
+      isCurrentActiveAccount: true,
+      isHistorical: false
+    });
+    expect(JSON.stringify(response)).not.toContain("ACCT_test_subaccount");
+  });
+
+  it("verifies a returned public invoice payment through the shared reconciler", async () => {
+    const { paystackService, service } = setup();
+    const limit = jest.fn().mockResolvedValue([
+      {
+        invoice: createInvoice(),
+        payment: createPayment()
+      }
+    ]);
+    const where = jest.fn(() => ({ limit }));
+    const innerJoin = jest.fn(() => ({ where }));
+    const from = jest.fn(() => ({ innerJoin }));
+    const select = jest.fn(() => ({ from }));
+    const transaction = jest.fn((callback: (tx: unknown) => Promise<unknown>) => callback({}));
+    const internals = service as unknown as {
+      databaseService: { db: unknown };
+      reconcileSuccessfulPaystackPayment: jest.Mock;
+    };
+    internals.databaseService.db = { select, transaction };
+    internals.reconcileSuccessfulPaystackPayment = jest.fn().mockResolvedValue({
+      status: "successful",
+      invoiceUpdated: true
+    });
+    paystackService.verifyTransaction.mockResolvedValue({
+      reference: "SME-INV000001-ABC123",
+      status: "success",
+      amountKobo: 97500,
+      currency: "NGN",
+      paidAt: "2026-06-30T10:00:00.000Z",
+      channel: "card",
+      gatewayResponse: "Successful"
+    });
+
+    await expect(
+      service.verifyPublicInvoicePayment("public-token", "SME-INV000001-ABC123")
+    ).resolves.toEqual({
+      status: "successful",
+      invoiceUpdated: true
+    });
+
+    expect(paystackService.verifyTransaction).toHaveBeenCalledWith("SME-INV000001-ABC123");
+    expect(internals.reconcileSuccessfulPaystackPayment).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        amountKobo: 97500,
+        currency: "NGN",
+        reference: "SME-INV000001-ABC123",
+        source: "verification"
+      })
+    );
+  });
+
+  it("does not verify references unrelated to the public invoice token", async () => {
+    const { paystackService, service } = setup();
+    const limit = jest.fn().mockResolvedValue([]);
+    const where = jest.fn(() => ({ limit }));
+    const innerJoin = jest.fn(() => ({ where }));
+    const from = jest.fn(() => ({ innerJoin }));
+    const select = jest.fn(() => ({ from }));
+    const internals = service as unknown as {
+      databaseService: { db: unknown };
+    };
+    internals.databaseService.db = { select };
+
+    await expect(
+      service.verifyPublicInvoicePayment("public-token", "SME-OTHER-REFERENCE")
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(paystackService.verifyTransaction).not.toHaveBeenCalled();
+  });
+});
+
 describe("PaymentsService reconciliation helpers", () => {
   function createTx() {
     const updateWhere = jest.fn().mockResolvedValue(undefined);
@@ -325,28 +964,23 @@ describe("PaymentsService reconciliation helpers", () => {
     const { service } = setup();
     const { tx, updateSet } = createTx();
     const internals = service as unknown as {
-      markPaymentSuccessful: (
-        tx: unknown,
-        payment: Payment,
-        webhook: unknown,
-        paidAt: Date
-      ) => Promise<void>;
+      markPaymentSuccessful: (tx: unknown, payment: Payment, input: unknown) => Promise<void>;
     };
 
     await internals.markPaymentSuccessful(
       tx,
       createPayment({ providerSubaccountCode: "ACCT_test_subaccount" }),
       {
+        amountKobo: 97500,
+        channel: "card",
+        currency: "NGN",
         eventType: "charge.success",
-        payload: {
-          data: {
-            channel: "card",
-            gateway_response: "Successful",
-            status: "success"
-          }
-        }
-      },
-      new Date("2026-06-30T10:00:00.000Z")
+        gatewayResponse: "Successful",
+        paidAt: new Date("2026-06-30T10:00:00.000Z"),
+        providerStatus: "success",
+        reference: "SME-INV000001-ABC123",
+        source: "webhook"
+      }
     );
 
     expect(updateSet).toHaveBeenCalledWith(
