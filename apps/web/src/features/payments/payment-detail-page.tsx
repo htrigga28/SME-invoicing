@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearStoredSession } from "@/features/auth/session";
 import { InvoiceStatusBadge } from "@/features/invoices/invoice-ui";
 import { isApiRequestError } from "@/lib/api";
 
-import { getPayment } from "./payments-api";
+import { createPaymentRefund, getPayment } from "./payments-api";
 import {
   AttemptStateBadge,
   formatDateTime,
@@ -26,8 +28,12 @@ type LoadState = "loading" | "ready" | "error";
 export function PaymentDetailPage({ paymentId }: { paymentId: string }) {
   return (
     <AppShell>
-      {({ accessToken }) => (
-        <PaymentDetailContent accessToken={accessToken} paymentId={paymentId} />
+      {({ accessToken, me }) => (
+        <PaymentDetailContent
+          accessToken={accessToken}
+          paymentId={paymentId}
+          role={me.membership.role}
+        />
       )}
     </AppShell>
   );
@@ -35,14 +41,19 @@ export function PaymentDetailPage({ paymentId }: { paymentId: string }) {
 
 export function PaymentDetailContent({
   accessToken,
-  paymentId
+  paymentId,
+  role
 }: {
   accessToken: string;
   paymentId: string;
+  role: "admin" | "owner" | "accountant" | "viewer";
 }) {
   const [response, setResponse] = useState<PaymentDetailResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState("");
+  const [isRefunding, setIsRefunding] = useState(false);
 
   useEffect(() => {
     void loadPayment();
@@ -64,6 +75,42 @@ export function PaymentDetailContent({
 
       setError(loadError instanceof Error ? loadError.message : "Could not load payment.");
       setState("error");
+    }
+  }
+
+  function handleAuthError(apiError: unknown) {
+    if (isApiRequestError(apiError) && apiError.status === 401) {
+      clearStoredSession();
+      window.location.assign("/login");
+    }
+  }
+
+  async function handleRefundExcess() {
+    if (!response?.financialSummary?.overpaymentKobo || !refundReason.trim()) {
+      setError("A refund reason is required.");
+      return;
+    }
+
+    setIsRefunding(true);
+    setError(null);
+
+    try {
+      await createPaymentRefund(accessToken, paymentId, {
+        amountKobo: response.financialSummary.overpaymentKobo,
+        reason: refundReason.trim()
+      });
+      toast.success("Refund request sent to Paystack.", { id: "payment-refund-created" });
+      setRefundDialogOpen(false);
+      setRefundReason("");
+      await loadPayment();
+    } catch (refundError) {
+      handleAuthError(refundError);
+      const message =
+        refundError instanceof Error ? refundError.message : "Could not initiate refund.";
+      setError(message);
+      toast.error(message, { id: "payment-refund-error" });
+    } finally {
+      setIsRefunding(false);
     }
   }
 
@@ -95,8 +142,20 @@ export function PaymentDetailContent({
     );
   }
 
-  const { customer, events, invoice, payment, settlementAccount, settlementAccountContext } =
-    response;
+  const {
+    customer,
+    events,
+    financialSummary,
+    invoice,
+    payment,
+    refunds,
+    settlementAccount,
+    settlementAccountContext
+  } = response;
+  const canRefundOverpayment =
+    (role === "owner" || role === "admin") &&
+    payment.status === "successful" &&
+    Boolean(financialSummary?.hasOverpayment);
 
   return (
     <section className="space-y-5">
@@ -132,6 +191,24 @@ export function PaymentDetailContent({
                 Expected: {formatReviewAmount(payment.reviewDetails.expectedAmountKobo)} · Received:{" "}
                 {formatReviewAmount(payment.reviewDetails.receivedAmountKobo)}
               </p>
+            </div>
+          ) : null}
+          {financialSummary?.hasOverpayment ? (
+            <div className="mt-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+              <p className="font-semibold">Overpayment detected</p>
+              <p className="mt-1">
+                Customer payments exceed the invoice total by{" "}
+                {formatMoney(financialSummary.overpaymentKobo)}.
+              </p>
+              {canRefundOverpayment ? (
+                <button
+                  className="mt-3 rounded-md bg-orange-800 px-3 py-2 text-sm font-semibold text-white"
+                  onClick={() => setRefundDialogOpen(true)}
+                  type="button"
+                >
+                  Resolve overpayment
+                </button>
+              ) : null}
             </div>
           ) : null}
           <dl className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -194,8 +271,20 @@ export function PaymentDetailContent({
                 <InvoiceStatusBadge status={invoice.status} />
               </div>
               <DetailItem label="Total" value={formatMoney(invoice.totalKobo)} />
-              <DetailItem label="Paid" value={formatMoney(invoice.amountPaidKobo)} />
-              <DetailItem label="Balance" value={formatMoney(invoice.balanceDueKobo)} />
+              <DetailItem
+                label="Received"
+                value={formatMoney(financialSummary?.netReceivedKobo ?? invoice.amountPaidKobo)}
+              />
+              <DetailItem
+                label="Balance"
+                value={formatMoney(financialSummary?.balanceDueKobo ?? invoice.balanceDueKobo)}
+              />
+              {financialSummary?.hasOverpayment ? (
+                <DetailItem
+                  label="Overpayment"
+                  value={formatMoney(financialSummary.overpaymentKobo)}
+                />
+              ) : null}
             </div>
           ) : (
             <p className="mt-3 text-sm text-slate-600">No invoice is linked to this payment.</p>
@@ -248,6 +337,50 @@ export function PaymentDetailContent({
       </section>
 
       <StatusPanel message={response.receiptPlaceholder} />
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="text-lg font-semibold text-slate-950">Refunds</h2>
+        {refunds.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-600">No refunds are linked to this payment.</p>
+        ) : (
+          <div className="mt-4 divide-y divide-slate-100">
+            {refunds.map((refund) => (
+              <article className="py-3 text-sm" key={refund.id}>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-slate-950">{formatMoney(refund.amountKobo)}</p>
+                    <p className="text-slate-600">
+                      {refund.status.replaceAll("_", " ")} • {refund.reason}
+                    </p>
+                  </div>
+                  <span className="text-slate-500">{formatDateTime(refund.createdAt)}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <ConfirmDialog
+        confirmLabel="Refund excess"
+        description={`Paystack will process a refund for ${formatMoney(financialSummary?.overpaymentKobo ?? 0)}. Invoice paid totals will update only after Paystack confirms the refund is processed.`}
+        isLoading={isRefunding}
+        loadingLabel="Sending refund..."
+        onCancel={() => setRefundDialogOpen(false)}
+        onConfirm={() => void handleRefundExcess()}
+        open={refundDialogOpen}
+        title="Resolve overpayment"
+      >
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Reason</span>
+          <textarea
+            className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2"
+            onChange={(event) => setRefundReason(event.target.value)}
+            placeholder="Duplicate customer payment"
+            value={refundReason}
+          />
+        </label>
+      </ConfirmDialog>
     </section>
   );
 }
@@ -296,7 +429,14 @@ function getAttemptPanelTone(payment: PaymentDetailResponse["payment"]) {
 }
 
 function shouldShowDetailReconciliation(payment: PaymentDetailResponse["payment"]) {
-  return ["matched", "review_required", "superseded"].includes(payment.reconciliationState);
+  return [
+    "matched",
+    "overpaid",
+    "resolution_in_progress",
+    "resolved",
+    "review_required",
+    "superseded"
+  ].includes(payment.reconciliationState);
 }
 
 function formatReviewAmount(value: number | null) {

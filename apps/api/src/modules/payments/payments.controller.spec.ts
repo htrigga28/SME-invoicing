@@ -15,6 +15,7 @@ describe("PaymentsController", () => {
 
   it("delegates raw body and signature to the payment service", () => {
     const service = {
+      createPaymentRefund: jest.fn(),
       getPayment: jest.fn(),
       getPaymentSummary: jest.fn(),
       listPayments: jest.fn(),
@@ -31,6 +32,7 @@ describe("PaymentsController", () => {
 
   it("rejects requests when raw body support is unavailable", () => {
     const service = {
+      createPaymentRefund: jest.fn(),
       getPayment: jest.fn(),
       getPaymentSummary: jest.fn(),
       listPayments: jest.fn(),
@@ -57,12 +59,16 @@ describe("PaymentsController", () => {
       Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.getPayment)
     ).toBeDefined();
     expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.createRefund)
+    ).toBeDefined();
+    expect(
       Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.processPaystackWebhook)
     ).toBeUndefined();
   });
 
   it("delegates internal payment reads to the service", () => {
     const service = {
+      createPaymentRefund: jest.fn(),
       getPayment: jest.fn(),
       getPaymentSummary: jest.fn(),
       listPayments: jest.fn(),
@@ -76,10 +82,20 @@ describe("PaymentsController", () => {
     controller.getPaymentSummary(context as never, { dateFrom: "2026-06-01" });
     controller.listReviewEvents(context as never, { processed: true });
     controller.getPayment(context as never, "payment-1");
+    controller.createRefund(context as never, { userId: "user-1" } as never, "payment-1", {
+      amountKobo: 170000,
+      reason: "Duplicate payment"
+    });
 
     expect(service.listPayments).toHaveBeenCalledWith(context, { search: "ref" });
     expect(service.getPaymentSummary).toHaveBeenCalledWith(context, { dateFrom: "2026-06-01" });
     expect(service.listReviewEvents).toHaveBeenCalledWith(context, { processed: true });
     expect(service.getPayment).toHaveBeenCalledWith(context, "payment-1");
+    expect(service.createPaymentRefund).toHaveBeenCalledWith(
+      context,
+      { userId: "user-1" },
+      "payment-1",
+      { amountKobo: 170000, reason: "Duplicate payment" }
+    );
   });
 });

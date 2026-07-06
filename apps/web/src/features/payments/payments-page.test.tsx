@@ -22,8 +22,12 @@ const payment = {
   supersededReason: null,
   reviewDetails: null,
   reviewReason: null,
+  reviewResolution: null,
+  reviewState: "none",
   currency: "NGN",
   amountKobo: 97500,
+  netContributionKobo: 97500,
+  processedRefundedKobo: 0,
   paidAt: "2026-06-30T10:00:00.000Z",
   failedAt: null,
   abandonedAt: null,
@@ -52,6 +56,13 @@ const payment = {
     currentStatus: "disabled",
     isCurrentActiveAccount: false,
     isHistorical: true
+  },
+  refundSummary: {
+    count: 0,
+    pendingKobo: 0,
+    processedKobo: 0,
+    needsAttentionCount: 0,
+    failedCount: 0
   },
   latestEventSummary: {
     eventType: "charge.success",

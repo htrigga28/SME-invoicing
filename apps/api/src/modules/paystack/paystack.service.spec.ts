@@ -188,4 +188,64 @@ describe("PaystackService", () => {
       }
     });
   });
+
+  it("creates a refund with Paystack using a safe normalized payload", async () => {
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        status: true,
+        message: "Refund has been queued",
+        data: {
+          id: "refund-123",
+          status: "pending",
+          amount: 170000,
+          currency: "NGN",
+          transaction: {
+            reference: "SME-INV000001-ABC123"
+          },
+          authorization: {
+            authorization_code: "AUTH_secret"
+          }
+        }
+      })
+    } as never);
+    const service = new PaystackService({
+      get: jest.fn((key: string) =>
+        key === "PAYSTACK_SECRET_KEY" ? "sk_test_secret" : "https://api.paystack.co"
+      )
+    } as never);
+
+    await expect(
+      service.createRefund({
+        transactionReference: "SME-INV000001-ABC123",
+        amountKobo: 170000,
+        currency: "NGN",
+        customerNote: "Duplicate payment",
+        merchantNote: "Duplicate payment"
+      })
+    ).resolves.toEqual({
+      providerRefundId: "refund-123",
+      status: "pending",
+      amountKobo: 170000,
+      currency: "NGN",
+      transactionReference: "SME-INV000001-ABC123"
+    });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("https://api.paystack.co/refund");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: {
+        Authorization: "Bearer sk_test_secret",
+        "Content-Type": "application/json"
+      }
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      transaction: "SME-INV000001-ABC123",
+      amount: 170000,
+      currency: "NGN",
+      customer_note: "Duplicate payment",
+      merchant_note: "Duplicate payment"
+    });
+  });
 });

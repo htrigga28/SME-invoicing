@@ -10,7 +10,8 @@ import type {
   Invoice,
   OrganisationPaymentAccount,
   Payment,
-  PaymentEvent
+  PaymentEvent,
+  PaymentRefund
 } from "../../database/schema";
 import { PaymentsService } from "./payments.service";
 
@@ -134,6 +135,30 @@ function createPaymentEvent(overrides: Partial<PaymentEvent> = {}): PaymentEvent
   };
 }
 
+function createPaymentRefund(overrides: Partial<PaymentRefund> = {}): PaymentRefund {
+  return {
+    id: "refund-1",
+    organisationId: "org-1",
+    paymentId: "payment-1",
+    provider: "paystack",
+    providerRefundId: "refund-provider-1",
+    amountKobo: 1000,
+    currency: "NGN",
+    status: "pending",
+    reason: "Refund overpayment",
+    customerNote: "Refund overpayment",
+    merchantNote: "Refund overpayment",
+    initiatedByUserId: "user-1",
+    processedAt: null,
+    failedAt: null,
+    needsAttentionAt: null,
+    providerMetadataRedacted: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
 const context = {
   activeOrganisation: { id: "org-1" },
   user: { id: "user-1" },
@@ -181,6 +206,7 @@ function createPaymentRelation(
     events?: PaymentEvent[];
     invoice?: Partial<Invoice>;
     payment?: Partial<Payment>;
+    refunds?: PaymentRefund[];
     settlementAccount?: ReturnType<typeof createSettlementAccount> | null;
   } = {}
 ) {
@@ -189,13 +215,15 @@ function createPaymentRelation(
     invoice: createInvoice(overrides.invoice),
     customer: createCustomer(),
     settlementAccount: overrides.settlementAccount ?? createSettlementAccount(),
-    events: overrides.events ?? [createPaymentEvent({ processed: true, processedAt: now })]
+    events: overrides.events ?? [createPaymentEvent({ processed: true, processedAt: now })],
+    refunds: overrides.refunds ?? []
   };
 }
 
 function setup() {
   const transaction = jest.fn(async (callback: (tx: unknown) => Promise<void>) => callback({}));
   const paystackService = {
+    createRefund: jest.fn(),
     verifyTransaction: jest.fn()
   };
   const service = new PaymentsService(
@@ -378,12 +406,29 @@ describe("PaymentsService read APIs", () => {
         payment: { id: "payment-1", status: "successful" }
       }),
       createPaymentRelation({
-        payment: { id: "payment-2", initializedAt: new Date() },
+        payment: {
+          id: "payment-2",
+          invoiceId: "invoice-2",
+          amountKobo: 870000,
+          initializedAt: new Date()
+        },
+        invoice: {
+          id: "invoice-2",
+          totalKobo: 870000,
+          balanceDueKobo: 870000
+        },
         events: [
           createPaymentEvent({
             id: "event-2",
             paymentId: "payment-2",
-            errorMessage: "Payment amount did not match the pending payment."
+            errorMessage: "Payment amount did not match the pending payment.",
+            payloadRedacted: {
+              event: "charge.success",
+              data: {
+                amount: 860000,
+                currency: "NGN"
+              }
+            }
           })
         ]
       })
@@ -754,12 +799,29 @@ describe("PaymentsService read APIs", () => {
         payment: { id: "payment-1", status: "successful" }
       }),
       createPaymentRelation({
-        payment: { id: "payment-2", initializedAt: new Date() },
+        payment: {
+          id: "payment-2",
+          invoiceId: "invoice-2",
+          amountKobo: 870000,
+          initializedAt: new Date()
+        },
+        invoice: {
+          id: "invoice-2",
+          totalKobo: 870000,
+          balanceDueKobo: 870000
+        },
         events: [
           createPaymentEvent({
             id: "event-2",
             paymentId: "payment-2",
-            errorMessage: "Payment amount did not match the pending payment."
+            errorMessage: "Payment amount did not match the pending payment.",
+            payloadRedacted: {
+              event: "charge.success",
+              data: {
+                amount: 860000,
+                currency: "NGN"
+              }
+            }
           })
         ]
       })
@@ -778,6 +840,7 @@ describe("PaymentsService read APIs", () => {
     const { service } = setup();
     const internals = service as unknown as {
       findPaymentsWithRelations: jest.Mock;
+      getInvoiceFinancialSummary: jest.Mock;
     };
     internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
       createPaymentRelation({
@@ -790,6 +853,17 @@ describe("PaymentsService read APIs", () => {
         ]
       })
     ]);
+    internals.getInvoiceFinancialSummary = jest.fn().mockResolvedValue({
+      appliedToInvoiceKobo: 0,
+      balanceDueKobo: 97500,
+      grossSuccessfulKobo: 0,
+      hasOverpayment: false,
+      netReceivedKobo: 0,
+      overpaymentKobo: 0,
+      paymentCount: 1,
+      processedRefundsKobo: 0,
+      successfulPaymentCount: 0
+    });
 
     const response = await service.getPayment(context as never, "payment-1");
 
@@ -806,6 +880,7 @@ describe("PaymentsService read APIs", () => {
     const { service } = setup();
     const internals = service as unknown as {
       findPaymentsWithRelations: jest.Mock;
+      getInvoiceFinancialSummary: jest.Mock;
     };
     internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
       createPaymentRelation({
@@ -816,6 +891,17 @@ describe("PaymentsService read APIs", () => {
         }
       })
     ]);
+    internals.getInvoiceFinancialSummary = jest.fn().mockResolvedValue({
+      appliedToInvoiceKobo: 0,
+      balanceDueKobo: 97500,
+      grossSuccessfulKobo: 0,
+      hasOverpayment: false,
+      netReceivedKobo: 0,
+      overpaymentKobo: 0,
+      paymentCount: 1,
+      processedRefundsKobo: 0,
+      successfulPaymentCount: 0
+    });
 
     const response = await service.getPayment(context as never, "payment-1");
 
@@ -903,6 +989,146 @@ describe("PaymentsService read APIs", () => {
   });
 });
 
+describe("PaymentsService refunds", () => {
+  function createRefundTx() {
+    const pendingRefund = createPaymentRefund({
+      id: "refund-pending",
+      amountKobo: 170000,
+      status: "pending"
+    });
+    const updatedRefund = createPaymentRefund({
+      id: "refund-pending",
+      amountKobo: 170000,
+      providerRefundId: "refund-provider-1",
+      status: "pending"
+    });
+    const insertReturning = jest.fn().mockResolvedValue([pendingRefund]);
+    const insertValues = jest.fn(() => ({ returning: insertReturning }));
+    const updateReturning = jest.fn().mockResolvedValue([updatedRefund]);
+    const updateWhere = jest.fn(() => ({ returning: updateReturning }));
+    const updateSet = jest.fn(() => ({ where: updateWhere }));
+    const tx = {
+      insert: jest.fn(() => ({ values: insertValues })),
+      update: jest.fn(() => ({ set: updateSet }))
+    };
+
+    return {
+      insertValues,
+      pendingRefund,
+      tx,
+      updatedRefund,
+      updateSet
+    };
+  }
+
+  it("initiates an overpayment refund through Paystack and stores safe refund state", async () => {
+    const { paystackService, service, transaction } = setup();
+    const refundTx = createRefundTx();
+    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+    paystackService.createRefund.mockResolvedValue({
+      providerRefundId: "refund-provider-1",
+      status: "pending",
+      amountKobo: 170000,
+      currency: "NGN",
+      transactionReference: "SME-INV000001-ABC123"
+    });
+    const internals = service as unknown as {
+      calculateInvoiceFinancialSummaryForId: jest.Mock;
+      createAuditLog: jest.Mock;
+      getRefundablePaymentState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: {
+        appliedToInvoiceKobo: 170000,
+        balanceDueKobo: 0,
+        grossSuccessfulKobo: 340000,
+        hasOverpayment: true,
+        netReceivedKobo: 340000,
+        overpaymentKobo: 170000,
+        paymentCount: 2,
+        processedRefundsKobo: 0,
+        successfulPaymentCount: 2
+      },
+      remainingRefundableKobo: 170000
+    });
+    internals.calculateInvoiceFinancialSummaryForId = jest.fn().mockResolvedValue({
+      invoice: createInvoice({ status: "paid", balanceDueKobo: 0 }),
+      financialSummary: {
+        appliedToInvoiceKobo: 170000,
+        balanceDueKobo: 0,
+        grossSuccessfulKobo: 340000,
+        hasOverpayment: true,
+        netReceivedKobo: 340000,
+        overpaymentKobo: 170000,
+        paymentCount: 2,
+        processedRefundsKobo: 0,
+        successfulPaymentCount: 2
+      }
+    });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+
+    const response = await service.createPaymentRefund(
+      context as never,
+      { userId: "user-1" } as never,
+      "payment-1",
+      { amountKobo: 170000, reason: "Duplicate payment" }
+    );
+
+    expect(paystackService.createRefund).toHaveBeenCalledWith({
+      transactionReference: "SME-INV000001-ABC123",
+      amountKobo: 170000,
+      currency: "NGN",
+      customerNote: "Duplicate payment",
+      merchantNote: "Duplicate payment"
+    });
+    expect(refundTx.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountKobo: 170000,
+        reason: "Duplicate payment",
+        status: "pending"
+      })
+    );
+    expect(refundTx.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerRefundId: "refund-provider-1",
+        status: "pending",
+        providerMetadataRedacted: expect.objectContaining({
+          transactionReference: "SME-INV000001-ABC123"
+        })
+      })
+    );
+    expect(response.refund).toMatchObject({
+      id: "refund-pending",
+      status: "pending",
+      amountKobo: 170000
+    });
+    expect(JSON.stringify(response)).not.toContain("sk_test");
+  });
+
+  it("rejects refund amounts above the invoice overpayment before calling Paystack", async () => {
+    const { paystackService, service } = setup();
+    const internals = service as unknown as {
+      getRefundablePaymentState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: {
+        overpaymentKobo: 1000
+      },
+      remainingRefundableKobo: 170000
+    });
+
+    await expect(
+      service.createPaymentRefund(context as never, { userId: "user-1" } as never, "payment-1", {
+        amountKobo: 170000,
+        reason: "Duplicate payment"
+      })
+    ).rejects.toThrow("Refund amount cannot exceed the invoice overpayment.");
+    expect(paystackService.createRefund).not.toHaveBeenCalled();
+  });
+});
+
 describe("PaymentsService reconciliation helpers", () => {
   function createTx() {
     const updateWhere = jest.fn().mockResolvedValue(undefined);
@@ -918,46 +1144,41 @@ describe("PaymentsService reconciliation helpers", () => {
     };
   }
 
-  it("marks a fully paid invoice as paid and writes a status event", async () => {
+  it("calculates full payment financial truth as paid with zero balance", () => {
     const { service } = setup();
-    const { tx, updateSet, insertValues } = createTx();
     const internals = service as unknown as {
-      createAuditLog: jest.Mock;
-      reconcileInvoice: (
-        tx: unknown,
+      buildFinancialSummary: (
         invoice: Invoice,
-        payment: Payment,
-        eventId: string,
-        paidAt: Date
-      ) => Promise<void>;
-      sumSuccessfulPayments: jest.Mock;
+        invoicePayments: Payment[],
+        refunds: PaymentRefund[]
+      ) => {
+        balanceDueKobo: number;
+        grossSuccessfulKobo: number;
+        netReceivedKobo: number;
+        overpaymentKobo: number;
+      };
+      nextInvoiceStatusFromFinancialSummary: (
+        invoice: Invoice,
+        financialSummary: {
+          balanceDueKobo: number;
+          netReceivedKobo: number;
+        }
+      ) => Invoice["status"];
     };
-    internals.sumSuccessfulPayments = jest.fn().mockResolvedValue(97500);
-    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
-
-    await internals.reconcileInvoice(
-      tx,
-      createInvoice(),
-      createPayment(),
-      "event-1",
-      new Date("2026-06-30T10:00:00.000Z")
+    const invoice = createInvoice();
+    const summary = internals.buildFinancialSummary(
+      invoice,
+      [createPayment({ status: "successful", amountKobo: 97500 })],
+      []
     );
 
-    expect(updateSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amountPaidKobo: 97500,
-        balanceDueKobo: 0,
-        status: "paid",
-        paidAt: new Date("2026-06-30T10:00:00.000Z")
-      })
-    );
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fromStatus: "sent",
-        toStatus: "paid",
-        reason: "payment_webhook_reconciled"
-      })
-    );
+    expect(summary).toMatchObject({
+      grossSuccessfulKobo: 97500,
+      netReceivedKobo: 97500,
+      balanceDueKobo: 0,
+      overpaymentKobo: 0
+    });
+    expect(internals.nextInvoiceStatusFromFinancialSummary(invoice, summary)).toBe("paid");
   });
 
   it("preserves the initialized provider subaccount code when marking payment successful", async () => {
@@ -990,47 +1211,111 @@ describe("PaymentsService reconciliation helpers", () => {
     );
   });
 
-  it("marks a partially paid invoice as partially_paid", async () => {
+  it("calculates partial payment financial truth as partially paid", () => {
     const { service } = setup();
-    const { tx, updateSet } = createTx();
     const internals = service as unknown as {
-      createAuditLog: jest.Mock;
-      reconcileInvoice: (
-        tx: unknown,
+      buildFinancialSummary: (
         invoice: Invoice,
-        payment: Payment,
-        eventId: string,
-        paidAt: Date
-      ) => Promise<void>;
-      sumSuccessfulPayments: jest.Mock;
+        invoicePayments: Payment[],
+        refunds: PaymentRefund[]
+      ) => {
+        balanceDueKobo: number;
+        netReceivedKobo: number;
+      };
+      nextInvoiceStatusFromFinancialSummary: (
+        invoice: Invoice,
+        financialSummary: {
+          balanceDueKobo: number;
+          netReceivedKobo: number;
+        }
+      ) => Invoice["status"];
     };
-    internals.sumSuccessfulPayments = jest.fn().mockResolvedValue(50000);
-    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    const invoice = createInvoice();
+    const summary = internals.buildFinancialSummary(
+      invoice,
+      [createPayment({ status: "successful", amountKobo: 50000 })],
+      []
+    );
 
-    await internals.reconcileInvoice(tx, createInvoice(), createPayment(), "event-1", now);
-
-    expect(updateSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amountPaidKobo: 50000,
-        balanceDueKobo: 47500,
-        status: "partially_paid"
-      })
+    expect(summary).toMatchObject({
+      netReceivedKobo: 50000,
+      balanceDueKobo: 47500
+    });
+    expect(internals.nextInvoiceStatusFromFinancialSummary(invoice, summary)).toBe(
+      "partially_paid"
     );
   });
 
-  it("calculates paid and partially paid status deterministically", async () => {
+  it("calculates overpayment and processed refunds from persisted records", () => {
     const { service } = setup();
     const internals = service as unknown as {
-      nextInvoiceStatus: (
+      buildFinancialSummary: (
         invoice: Invoice,
-        amountPaidKobo: number,
-        balanceDueKobo: number
+        invoicePayments: Payment[],
+        refunds: PaymentRefund[]
+      ) => {
+        appliedToInvoiceKobo: number;
+        balanceDueKobo: number;
+        grossSuccessfulKobo: number;
+        netReceivedKobo: number;
+        overpaymentKobo: number;
+        processedRefundsKobo: number;
+      };
+      nextInvoiceStatusFromFinancialSummary: (
+        invoice: Invoice,
+        financialSummary: {
+          balanceDueKobo: number;
+          netReceivedKobo: number;
+        }
       ) => Invoice["status"];
     };
+    const invoice = createInvoice({ totalKobo: 170000 });
+    const firstPayment = createPayment({
+      id: "payment-1",
+      status: "successful",
+      amountKobo: 170000
+    });
+    const secondPayment = createPayment({
+      id: "payment-2",
+      status: "successful",
+      amountKobo: 170000
+    });
 
-    expect(internals.nextInvoiceStatus(createInvoice({ status: "sent" }), 97500, 0)).toBe("paid");
-    expect(internals.nextInvoiceStatus(createInvoice({ status: "sent" }), 50000, 47500)).toBe(
-      "partially_paid"
+    const overpaidSummary = internals.buildFinancialSummary(
+      invoice,
+      [firstPayment, secondPayment],
+      []
     );
+
+    expect(overpaidSummary).toMatchObject({
+      grossSuccessfulKobo: 340000,
+      processedRefundsKobo: 0,
+      netReceivedKobo: 340000,
+      appliedToInvoiceKobo: 170000,
+      overpaymentKobo: 170000,
+      balanceDueKobo: 0
+    });
+    expect(internals.nextInvoiceStatusFromFinancialSummary(invoice, overpaidSummary)).toBe("paid");
+
+    const refundedSummary = internals.buildFinancialSummary(
+      invoice,
+      [firstPayment, secondPayment],
+      [
+        createPaymentRefund({
+          paymentId: "payment-2",
+          status: "processed",
+          amountKobo: 170000
+        })
+      ]
+    );
+
+    expect(refundedSummary).toMatchObject({
+      grossSuccessfulKobo: 340000,
+      processedRefundsKobo: 170000,
+      netReceivedKobo: 170000,
+      overpaymentKobo: 0,
+      balanceDueKobo: 0
+    });
+    expect(internals.nextInvoiceStatusFromFinancialSummary(invoice, refundedSummary)).toBe("paid");
   });
 });

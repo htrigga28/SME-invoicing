@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   Inject,
+  Body,
   Param,
   Post,
   Query,
@@ -18,6 +19,9 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import type { AuthenticatedUser } from "../../common/types/request-context";
+import { CreatePaymentRefundDto } from "./dto/create-payment-refund.dto";
 import { ListPaymentEventsQueryDto } from "./dto/list-payment-events-query.dto";
 import { ListPaymentsQueryDto } from "./dto/list-payments-query.dto";
 import { PaymentSummaryQueryDto } from "./dto/payment-summary-query.dto";
@@ -75,6 +79,20 @@ export class PaymentsController {
   @ApiOperation({ summary: "Get payment reconciliation detail" })
   getPayment(@CurrentOrganisation() context: ActiveOrganisationContext, @Param("id") id: string) {
     return this.paymentsService.getPayment(context, id);
+  }
+
+  @Post(":id/refunds")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("owner", "admin")
+  @ApiOperation({ summary: "Initiate a Paystack refund for an overpayment" })
+  createRefund(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Body() input: CreatePaymentRefundDto
+  ) {
+    return this.paymentsService.createPaymentRefund(context, user, id, input);
   }
 
   @Post("paystack/webhook")

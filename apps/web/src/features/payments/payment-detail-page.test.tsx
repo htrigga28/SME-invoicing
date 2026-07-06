@@ -1,13 +1,21 @@
 import React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PaymentDetailContent } from "./payment-detail-page";
-import { getPayment } from "./payments-api";
+import { createPaymentRefund, getPayment } from "./payments-api";
 import type { PaymentDetailResponse } from "./types";
 
 vi.mock("./payments-api", () => ({
+  createPaymentRefund: vi.fn(),
   getPayment: vi.fn()
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn()
+  }
 }));
 
 const paymentDetailResponse: PaymentDetailResponse = {
@@ -22,8 +30,12 @@ const paymentDetailResponse: PaymentDetailResponse = {
     supersededReason: null,
     reviewDetails: null,
     reviewReason: null,
+    reviewResolution: null,
+    reviewState: "none",
     currency: "NGN",
     amountKobo: 97500,
+    netContributionKobo: 97500,
+    processedRefundedKobo: 0,
     paidAt: "2026-06-30T10:00:00.000Z",
     failedAt: null,
     abandonedAt: null,
@@ -60,6 +72,17 @@ const paymentDetailResponse: PaymentDetailResponse = {
     isCurrentActiveAccount: false,
     isHistorical: true
   },
+  financialSummary: {
+    grossSuccessfulKobo: 97500,
+    processedRefundsKobo: 0,
+    netReceivedKobo: 97500,
+    appliedToInvoiceKobo: 97500,
+    overpaymentKobo: 0,
+    balanceDueKobo: 0,
+    paymentCount: 1,
+    successfulPaymentCount: 1,
+    hasOverpayment: false
+  },
   events: [
     {
       id: "event-1",
@@ -71,11 +94,26 @@ const paymentDetailResponse: PaymentDetailResponse = {
       createdAt: "2026-06-30T10:00:00.000Z"
     }
   ],
+  refunds: [],
   receiptPlaceholder: "Receipts will be available after T014."
 };
 
 beforeEach(() => {
   vi.mocked(getPayment).mockResolvedValue(paymentDetailResponse);
+  vi.mocked(createPaymentRefund).mockResolvedValue({
+    refund: {
+      id: "refund-1",
+      amountKobo: 1000,
+      currency: "NGN",
+      status: "pending",
+      reason: "Duplicate payment",
+      createdAt: "2026-06-30T10:00:00.000Z",
+      processedAt: null,
+      failedAt: null,
+      needsAttentionAt: null
+    },
+    financialSummary: paymentDetailResponse.financialSummary!
+  });
 });
 
 afterEach(() => {
@@ -85,7 +123,7 @@ afterEach(() => {
 
 describe("PaymentDetailContent", () => {
   it("renders linked invoice, customer, settlement account, event timeline, and receipt placeholder", async () => {
-    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" />);
+    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" role="owner" />);
 
     expect(await screen.findByText("PAYSTACK_DEMO_INV000011_SUCCESSFUL")).toBeInTheDocument();
     expect(screen.getByText("United Bank for Africa • ****9090")).toBeInTheDocument();
@@ -117,7 +155,7 @@ describe("PaymentDetailContent", () => {
       }
     });
 
-    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" />);
+    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" role="owner" />);
 
     expect((await screen.findAllByText("Superseded")).length).toBeGreaterThan(0);
     expect(
@@ -137,10 +175,64 @@ describe("PaymentDetailContent", () => {
       }
     });
 
-    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" />);
+    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" role="owner" />);
 
     expect(await screen.findByText("Stale pending")).toBeInTheDocument();
     expect(screen.queryByText("Pending")).not.toBeInTheDocument();
     expect(screen.getAllByText("Stale pending")).toHaveLength(1);
+  });
+
+  it("lets owners initiate an overpayment refund from the confirmation dialog", async () => {
+    const overpaidResponse = {
+      ...paymentDetailResponse,
+      payment: {
+        ...paymentDetailResponse.payment,
+        amountKobo: 170000
+      },
+      financialSummary: {
+        ...paymentDetailResponse.financialSummary!,
+        grossSuccessfulKobo: 340000,
+        netReceivedKobo: 340000,
+        appliedToInvoiceKobo: 170000,
+        overpaymentKobo: 170000,
+        hasOverpayment: true,
+        paymentCount: 2,
+        successfulPaymentCount: 2
+      }
+    };
+    vi.mocked(getPayment)
+      .mockResolvedValueOnce(overpaidResponse)
+      .mockResolvedValueOnce({
+        ...overpaidResponse,
+        refunds: [
+          {
+            id: "refund-1",
+            amountKobo: 170000,
+            currency: "NGN",
+            status: "pending",
+            reason: "Duplicate payment",
+            createdAt: "2026-06-30T10:00:00.000Z",
+            processedAt: null,
+            failedAt: null,
+            needsAttentionAt: null
+          }
+        ]
+      });
+
+    render(<PaymentDetailContent accessToken="token" paymentId="payment-1" role="owner" />);
+
+    fireEvent.click(await screen.findByText("Resolve overpayment"));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Duplicate payment" }
+    });
+    fireEvent.click(screen.getByText("Refund excess"));
+
+    await waitFor(() => {
+      expect(createPaymentRefund).toHaveBeenCalledWith("token", "payment-1", {
+        amountKobo: 170000,
+        reason: "Duplicate payment"
+      });
+    });
+    expect(await screen.findByText(/pending • Duplicate payment/i)).toBeInTheDocument();
   });
 });

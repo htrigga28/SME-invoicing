@@ -450,7 +450,14 @@ function PaymentCard({ payment, view }: { payment: PaymentListItem; view: Paymen
 }
 
 function shouldShowReconciliation(payment: PaymentListItem) {
-  return ["matched", "review_required", "superseded"].includes(payment.reconciliationState);
+  return [
+    "matched",
+    "overpaid",
+    "resolution_in_progress",
+    "resolved",
+    "review_required",
+    "superseded"
+  ].includes(payment.reconciliationState);
 }
 
 function PaginationControls({

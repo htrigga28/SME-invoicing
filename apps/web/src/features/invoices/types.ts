@@ -2,6 +2,7 @@ import type { InvoiceStatus } from "@sme-invoicing/shared";
 import type { PaymentStatus, ReconciliationState } from "@sme-invoicing/shared";
 
 import type { Customer, Pagination } from "@/features/customers/types";
+import type { FinancialSummary } from "@/features/payments/types";
 
 export type InvoiceLineItem = {
   id: string;
@@ -53,6 +54,7 @@ export type InvoiceDetailResponse = {
   invoice: Invoice;
   lineItems: InvoiceLineItem[];
   statusEvents: InvoiceStatusEvent[];
+  financialSummary: FinancialSummary;
   payments: {
     id: string;
     provider: string;

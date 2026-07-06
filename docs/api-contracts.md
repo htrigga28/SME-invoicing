@@ -350,10 +350,24 @@ Public invoice `paymentSummary` examples:
 | `GET /payments/summary` | Required | Owner/Admin/Accountant/Viewer | Query: `dateFrom`, `dateTo` | `{ totals, statusBreakdown, recentPayments }` |
 | `GET /payments/events/review` | Required | Owner/Admin/Accountant/Viewer | Query: `page`, `limit`, `eventType`, `processed` | `{ events, pagination }` |
 | `GET /payments/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ payment, invoice, customer, settlementAccount, events }` |
+| `POST /payments/:id/refunds` | Required | Owner/Admin | `{ amountKobo, reason }` | `{ refund, financialSummary }` |
 
-T013 payment/reconciliation endpoints are read-only. They do not create manual payments, mutate reconciliation state, issue refunds, export CSV files, or generate receipts.
+T013 payment/reconciliation views are read-oriented. The only T013 payment mutation is the minimum Owner/Admin overpayment-refund request workflow. T013 does not create manual payments, manually mutate reconciliation state, export CSV files, or generate receipts.
 
 Payment records are Paystack checkout/payment attempts. The default Payments page is reconciliation-focused, not raw attempt history.
+
+Invoice financial fields are derived from persisted payment/refund truth:
+
+```text
+grossSuccessfulKobo = sum(successful payments)
+processedRefundsKobo = sum(processed refunds for those payments)
+netReceivedKobo = max(grossSuccessfulKobo - processedRefundsKobo, 0)
+appliedToInvoiceKobo = min(netReceivedKobo, invoice.total_kobo)
+overpaymentKobo = max(netReceivedKobo - invoice.total_kobo, 0)
+balanceDueKobo = max(invoice.total_kobo - netReceivedKobo, 0)
+```
+
+`invoice.amount_paid_kobo` stores `netReceivedKobo`, so it can exceed `invoice.total_kobo` when an invoice is overpaid. `invoice.balance_due_kobo` must never be negative.
 
 `GET /payments` supports `view`:
 
@@ -374,10 +388,14 @@ Payment records are Paystack checkout/payment attempts. The default Payments pag
       "status": "successful",
       "attemptState": "successful",
       "reconciliationState": "matched",
+      "reviewState": "none",
+      "reviewResolution": null,
       "isSuperseded": false,
       "supersededReason": null,
       "currency": "NGN",
       "amountKobo": 97500,
+      "netContributionKobo": 97500,
+      "processedRefundedKobo": 0,
       "paidAt": "2026-06-30T10:00:00.000Z",
       "failedAt": null,
       "abandonedAt": null,
@@ -407,6 +425,13 @@ Payment records are Paystack checkout/payment attempts. The default Payments pag
         "isCurrentActiveAccount": false,
         "isHistorical": true
       },
+      "refundSummary": {
+        "count": 0,
+        "pendingKobo": 0,
+        "processedKobo": 0,
+        "needsAttentionCount": 0,
+        "failedCount": 0
+      },
       "latestEventSummary": {
         "eventType": "charge.success",
         "processed": true,
@@ -426,11 +451,15 @@ Payment records are Paystack checkout/payment attempts. The default Payments pag
 
 Attempt state is computed in service logic. Allowed values are `successful`, `active_pending`, `stale_pending`, `failed_attempt`, `abandoned_attempt`, `refunded_attempt`, `superseded`, `review_required`, and `unknown`.
 
-Reconciliation state is computed in service logic. Allowed values are `matched`, `pending_confirmation`, `stale_pending`, `failed`, `abandoned`, `refunded`, `superseded`, `review_required`, and `unknown`.
+Reconciliation state is computed in service logic. Allowed values are `matched`, `pending_confirmation`, `stale_pending`, `failed`, `abandoned`, `refunded`, `superseded`, `review_required`, `overpaid`, `resolution_in_progress`, `resolved`, and `unknown`.
+
+Review state is computed in service logic as `none`, `open`, `resolution_in_progress`, or `resolved`. Review resolution can be `resolved_by_later_payment`, `superseded`, `refund_pending`, `refund_processed`, `provider_resolved`, or `null`.
 
 Superseded attempts are retained for audit/support but no longer affect invoice balance. Examples include pending/failed/abandoned retries after another successful payment has already paid the invoice, or attempts for invoices that no longer accept payment.
 
-Normal failed or abandoned checkout attempts are not `review_required` unless there is a true reconciliation problem such as amount mismatch, currency mismatch, unknown reference, cancelled/void invoice payment, overpayment, processing error, missing expected subaccount trace, or safely inferable settlement mismatch.
+Normal failed or abandoned checkout attempts are not `review_required` unless there is a true reconciliation problem such as amount mismatch, currency mismatch, unknown reference, cancelled/void invoice payment, overpayment, refund failure/provider attention, processing error, missing expected subaccount trace on a successful payment, or safely inferable settlement mismatch.
+
+An old non-success amount mismatch, failed attempt, abandoned attempt, or pending retry can be resolved by a later successful payment when the old attempt did not move money and the invoice is now financially settled. The record remains visible in `view=all_attempts` with resolved/superseded context but is removed from active Needs Review.
 
 Settlement account responses are safe summaries derived by matching `payments.provider_subaccount_code` to an organisation payment account. The API does not expose `provider_subaccount_code`, full bank account numbers, raw webhook payloads, raw Paystack responses, organisation IDs, token hashes, or secrets.
 
@@ -453,9 +482,42 @@ Amount mismatch checks compare Paystack subunit amounts directly against `paymen
       "createdAt": "2026-06-30T10:00:00.000Z"
     }
   ],
+  "refunds": [
+    {
+      "id": "uuid",
+      "amountKobo": 170000,
+      "currency": "NGN",
+      "status": "pending",
+      "reason": "Duplicate customer payment",
+      "createdAt": "2026-07-06T10:00:00.000Z",
+      "processedAt": null
+    }
+  ],
+  "financialSummary": {
+    "grossSuccessfulKobo": 340000,
+    "processedRefundsKobo": 0,
+    "netReceivedKobo": 340000,
+    "appliedToInvoiceKobo": 170000,
+    "overpaymentKobo": 170000,
+    "balanceDueKobo": 0,
+    "paymentCount": 2,
+    "successfulPaymentCount": 2,
+    "hasOverpayment": true
+  },
   "receiptPlaceholder": "Receipts will be available after T014."
 }
 ```
+
+`POST /payments/:id/refunds` rules:
+
+- Owner/Admin only. Accountant/Viewer remain read-only.
+- Payment must belong to the active organisation and must be `successful`.
+- The backend recalculates invoice financial state before validating the refund.
+- Refund amount must be positive, must not exceed the invoice overpayment, and must not exceed the selected payment's remaining refundable amount.
+- Backend creates a local refund record, calls Paystack Create Refund server-side with the original transaction reference, then stores normalized safe provider status.
+- Refund initiation does not reduce `amount_paid_kobo`. Only a processed refund event reduces net received.
+- Paystack refund statuses map to `pending`, `processing`, `needs_attention`, `processed`, and `failed`.
+- Responses must not expose raw Paystack refund responses, secrets, `provider_subaccount_code`, card/authorization data, or customer bank details.
 
 `GET /payments/events/review` only returns organisation-scoped events that have safe review signals such as processing errors or unprocessed state. Events with null `organisation_id` are excluded unless they can be safely scoped through a linked payment reference.
 
@@ -469,11 +531,13 @@ Webhook endpoint rules:
 - Must not verify against `JSON.stringify(req.body)`.
 - Parses JSON only after signature verification succeeds.
 - Handles `charge.success` in T009.
+- Handles refund events `refund.pending`, `refund.processing`, `refund.needs-attention`, `refund.failed`, and `refund.processed`.
 - The `charge.success` webhook and server-side Verify Transaction fallback share the same idempotent successful-payment reconciliation service.
 - Stores a redacted payment event before or during processing.
 - Matches `data.reference` to an existing Paystack payment reference.
 - Validates amount and `NGN` currency before marking payment successful.
 - Recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status after successful validation.
+- Recalculates invoice financial state after `refund.processed`. Pending/processing refunds leave net received unchanged; failed or needs-attention refunds keep overpayment review open.
 - Returns `{ received: true }` for processed, ignored, duplicate, mismatch, or unknown-reference events with valid signatures.
 - Rejects missing or invalid signatures safely.
 - Receipt generation remains T014 and is not performed by the webhook in T009.

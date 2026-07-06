@@ -143,9 +143,12 @@ pnpm db:migrate
 pnpm db:studio
 pnpm db:test:migrate
 pnpm db:seed
+pnpm payments:reconcile-invoices
 ```
 
 `pnpm db:push` is available for local development experiments only. Migrations remain the source of truth.
+
+`pnpm payments:reconcile-invoices` recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status from persisted payment/refund truth. It is safe to run after local manual Paystack testing or seeded data changes.
 
 ## Demo Login
 
@@ -210,10 +213,11 @@ Manual local test flow:
 7. Switch to All attempts to inspect historical failed/pending/abandoned checkout attempts kept for audit/support.
 8. Switch to Needs review to inspect true reconciliation problems only.
 9. Open a payment detail page and confirm the linked invoice, customer, masked settlement account, attempt lifecycle, and safe event timeline render.
-10. Open an invoice detail page with linked payments and confirm the read-only Payments section is visible.
-11. Use pagination after switching filters/views and confirm Previous/Next remains visible when matching records exist.
+10. For an overpaid payment, confirm Owner/Admin can open the Resolve overpayment dialog, enter a reason, and send a Paystack refund request. Accountant/Viewer should see read-only refund state.
+11. Open an invoice detail page with linked payments and confirm the Payments section shows financial summary, refunds, and overpayment warning when applicable.
+12. Use pagination after switching filters/views and confirm Previous/Next remains visible when matching records exist.
 
-The Payments module is read-only in T013. It separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and does not create receipts, manually reconcile payments, issue refunds, export CSV files, or expose raw webhook payloads. Receipts are planned for T014.
+The Payments module separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and exposes one T013 mutation: Owner/Admin can request a Paystack refund for invoice overpayments. It does not create receipts, manually reconcile payments, export CSV files, or expose raw webhook payloads. Receipts are planned for T014.
 
 ## Local Paystack Webhook Testing
 
@@ -237,6 +241,15 @@ Manual Paystack confirmation check:
 6. Confirm the payment becomes successful and the invoice paid/balance/status fields update.
 7. If webhook delivery is unavailable locally, confirm the callback verification fallback updates the same payment without exposing raw Paystack data.
 
+Manual overpayment/refund check:
+
+1. Create or locate an invoice with two successful payments whose net total exceeds the invoice total.
+2. Run `pnpm payments:reconcile-invoices` if local invoice fields are stale after manual webhook/verification testing.
+3. Open `/payments` and confirm the invoice appears in Needs review as an overpayment, not overdue or partially paid.
+4. Open the payment detail page as Owner/Admin and initiate a refund for the excess amount.
+5. Confirm the refund shows pending/processing until Paystack sends a processed refund event.
+6. Simulate or receive `refund.processed` and confirm the invoice financial summary recalculates from successful payments minus processed refunds.
+
 ## Auth Session Trade-Off
 
 The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps the MVP simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
@@ -247,7 +260,7 @@ T009 adds Paystack webhook reconciliation for confirmed payments. It intentional
 
 Payment Setup and organisation subaccount support now gate public payment initialization at runtime. Public invoice viewing still works without Payment Setup.
 
-The Payments module provides read-only reconciliation visibility for Paystack references, invoice/customer matches, safe webhook event summaries, and masked settlement payout accounts. Receipt generation remains T014.
+The Payments module provides reconciliation visibility for Paystack references, invoice/customer matches, safe webhook/refund event summaries, masked settlement payout accounts, and Owner/Admin overpayment refund requests. Receipt generation remains T014.
 
 Implemented so far:
 
@@ -273,6 +286,6 @@ Implemented so far:
 - Paystack webhook signature verification, redacted payment events, idempotent `charge.success` processing, and invoice paid/balance recalculation.
 - Organisation Payment Setup with Paystack bank resolution, account confirmation, subaccount creation, and masked payout account storage.
 - Subaccount-aware public invoice payment initialization that requires active Payment Setup.
-- Payments and Reconciliation pages with read-only payment lists, detail views, safe event timelines, settlement account summaries, and seeded demo payment history.
+- Payments and Reconciliation pages with payment lists, detail views, safe event timelines, settlement account summaries, overpayment detection, Paystack excess-refund requests, and seeded demo payment history.
 
 Next planned implementation task: T014 Receipts.

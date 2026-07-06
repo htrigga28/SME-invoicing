@@ -22,6 +22,48 @@ export type PaymentReviewDetails = {
   receivedAmountKobo: number | null;
 } | null;
 
+export type PaymentReviewState = "none" | "open" | "resolution_in_progress" | "resolved";
+
+export type PaymentReviewResolution =
+  | "provider_resolved"
+  | "refund_pending"
+  | "refund_processed"
+  | "resolved_by_later_payment"
+  | "superseded"
+  | null;
+
+export type FinancialSummary = {
+  grossSuccessfulKobo: number;
+  processedRefundsKobo: number;
+  netReceivedKobo: number;
+  appliedToInvoiceKobo: number;
+  overpaymentKobo: number;
+  balanceDueKobo: number;
+  paymentCount: number;
+  successfulPaymentCount: number;
+  hasOverpayment: boolean;
+};
+
+export type PaymentRefund = {
+  id: string;
+  amountKobo: number;
+  currency: string;
+  status: "failed" | "needs_attention" | "pending" | "processed" | "processing";
+  reason: string;
+  createdAt: string;
+  processedAt: string | null;
+  failedAt: string | null;
+  needsAttentionAt: string | null;
+};
+
+export type PaymentRefundSummary = {
+  count: number;
+  pendingKobo: number;
+  processedKobo: number;
+  needsAttentionCount: number;
+  failedCount: number;
+};
+
 export type PaymentEventSummary = {
   id: string;
   eventType: string;
@@ -43,8 +85,12 @@ export type PaymentListItem = {
   supersededReason: string | null;
   reviewDetails: PaymentReviewDetails;
   reviewReason: string | null;
+  reviewResolution: PaymentReviewResolution;
+  reviewState: PaymentReviewState;
   currency: string;
   amountKobo: number;
+  netContributionKobo: number;
+  processedRefundedKobo: number;
   paidAt: string | null;
   failedAt: string | null;
   abandonedAt: string | null;
@@ -57,6 +103,7 @@ export type PaymentListItem = {
   customer: Pick<Customer, "email" | "id" | "name"> | null;
   settlementAccount: PaymentSettlementAccount | null;
   settlementAccountContext: SettlementAccountContext;
+  refundSummary: PaymentRefundSummary;
   latestEventSummary: Omit<PaymentEventSummary, "id" | "processedAt" | "providerReference"> | null;
 };
 
@@ -76,8 +123,12 @@ export type PaymentDetailPayment = {
   supersededReason: string | null;
   reviewDetails: PaymentReviewDetails;
   reviewReason: string | null;
+  reviewResolution: PaymentReviewResolution;
+  reviewState: PaymentReviewState;
   currency: string;
   amountKobo: number;
+  netContributionKobo: number;
+  processedRefundedKobo: number;
   paidAt: string | null;
   failedAt: string | null;
   abandonedAt: string | null;
@@ -148,6 +199,8 @@ export type PaymentDetailResponse = {
   customer: Pick<Customer, "email" | "id" | "name" | "phone"> | null;
   settlementAccount: PaymentSettlementAccount | null;
   settlementAccountContext: SettlementAccountContext;
+  financialSummary: FinancialSummary | null;
   events: PaymentEventSummary[];
+  refunds: PaymentRefund[];
   receiptPlaceholder: string;
 };

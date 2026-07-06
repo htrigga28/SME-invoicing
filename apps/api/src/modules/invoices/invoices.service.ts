@@ -48,6 +48,7 @@ import {
   type Payment
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { PaymentsService } from "../payments/payments.service";
 import { PaystackService } from "../paystack/paystack.service";
 import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
 import type { InvoiceLineItemDto } from "./dto/invoice-line-item.dto";
@@ -164,7 +165,8 @@ export class InvoicesService {
     @Inject(DatabaseService) private readonly databaseService: DatabaseService,
     @Inject(AuditLogService) private readonly auditLogService: AuditLogService,
     @Inject(ConfigService) private readonly configService: ConfigService,
-    @Inject(PaystackService) private readonly paystackService: PaystackService
+    @Inject(PaystackService) private readonly paystackService: PaystackService,
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService
   ) {}
 
   async listInvoices(context: ActiveOrganisationContext, query: ListInvoicesQueryDto) {
@@ -323,10 +325,11 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
-    const [lineItems, statusEvents, invoicePayments] = await Promise.all([
+    const [lineItems, statusEvents, invoicePayments, financialSummary] = await Promise.all([
       this.findLineItems(context.activeOrganisation.id, invoiceId),
       this.findStatusEvents(context.activeOrganisation.id, invoiceId),
-      this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId)
+      this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId),
+      this.paymentsService.getInvoiceFinancialSummary(context.activeOrganisation.id, invoiceId)
     ]);
 
     const paymentAccount = await this.findPaymentAvailabilityAccount(context.activeOrganisation.id);
@@ -340,6 +343,7 @@ export class InvoicesService {
       lineItems: lineItems.map((lineItem) => this.toSafeLineItem(lineItem)),
       statusEvents: statusEvents.map((event) => this.toSafeStatusEvent(event)),
       payments: invoicePayments,
+      financialSummary,
       publicUrl: invoiceWithCustomer.invoice.publicAccessEnabled
         ? this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
         : null,
@@ -1043,9 +1047,8 @@ export class InvoicesService {
     events: { errorMessage: string | null }[]
   ) {
     if (
-      events.some((event) => event.errorMessage) ||
-      !payment.providerSubaccountCode ||
-      !settlementAccount
+      payment.status === "successful" &&
+      (!payment.providerSubaccountCode || !settlementAccount)
     ) {
       return "review_required";
     }
@@ -1055,6 +1058,10 @@ export class InvoicesService {
     }
 
     if (payment.status === "successful") {
+      if (events.some((event) => event.errorMessage)) {
+        return "review_required";
+      }
+
       return "matched";
     }
 

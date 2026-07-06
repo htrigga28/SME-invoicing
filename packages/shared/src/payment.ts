@@ -8,6 +8,9 @@ export const RECONCILIATION_STATES = [
   "abandoned",
   "refunded",
   "superseded",
+  "overpaid",
+  "resolution_in_progress",
+  "resolved",
   "review_required",
   "unknown"
 ] as const;
@@ -44,6 +47,9 @@ export const RECONCILIATION_STATE_LABELS: Record<ReconciliationState, string> = 
   abandoned: "Abandoned",
   refunded: "Refunded",
   superseded: "Superseded",
+  overpaid: "Overpayment review",
+  resolution_in_progress: "Resolution in progress",
+  resolved: "Resolved",
   review_required: "Review required",
   unknown: "Unknown"
 };

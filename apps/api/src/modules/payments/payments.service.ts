@@ -10,7 +10,7 @@ import {
   UnauthorizedException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import type { AppDatabase } from "../../database/database.service";
@@ -22,13 +22,17 @@ import {
   invoices,
   organisationPaymentAccounts,
   paymentEvents,
+  paymentRefunds,
   payments,
   type Customer,
   type Invoice,
   type OrganisationPaymentAccount,
   type Payment,
-  type PaymentEvent
+  type PaymentEvent,
+  type PaymentRefund
 } from "../../database/schema";
+import type { AuthenticatedUser } from "../../common/types/request-context";
+import type { CreatePaymentRefundDto } from "./dto/create-payment-refund.dto";
 import type { ListPaymentEventsQueryDto } from "./dto/list-payment-events-query.dto";
 import type {
   AttemptState,
@@ -37,7 +41,11 @@ import type {
   ReconciliationState
 } from "./dto/list-payments-query.dto";
 import type { PaymentSummaryQueryDto } from "./dto/payment-summary-query.dto";
-import { PaystackService, type PaystackVerifyResponse } from "../paystack/paystack.service";
+import {
+  PaystackService,
+  type PaystackCreateRefundResponse,
+  type PaystackVerifyResponse
+} from "../paystack/paystack.service";
 
 type PaystackWebhookPayload = {
   event?: unknown;
@@ -52,10 +60,15 @@ type PaystackWebhookPayload = {
     channel?: unknown;
     paid_at?: unknown;
     created_at?: unknown;
+    customer_note?: unknown;
+    merchant_note?: unknown;
     customer?: {
       email?: unknown;
     };
     metadata?: unknown;
+    transaction?: {
+      reference?: unknown;
+    };
   };
 };
 
@@ -91,6 +104,7 @@ type PaymentWithRelations = {
   events: PaymentEvent[];
   invoice: Invoice | null;
   payment: Payment;
+  refunds: PaymentRefund[];
   settlementAccount: OrganisationPaymentAccount | null;
 };
 
@@ -113,19 +127,44 @@ type ReviewDetails = {
   receivedAmountKobo: number | null;
 };
 
+type ReviewState = "none" | "open" | "resolution_in_progress" | "resolved";
+
+type ReviewResolution =
+  | "provider_resolved"
+  | "refund_pending"
+  | "refund_processed"
+  | "resolved_by_later_payment"
+  | "superseded"
+  | null;
+
 type PaymentClassification = {
   attemptState: AttemptState;
   isSuperseded: boolean;
   reconciliationState: ReconciliationState;
   reviewDetails: ReviewDetails | null;
   reviewReason: string | null;
+  reviewResolution: ReviewResolution;
+  reviewState: ReviewState;
   supersededReason: string | null;
 };
 
 type InvoicePaymentContext = {
+  financialSummary: FinancialSummary | null;
   effectiveBalanceKobo: number;
   newestUnresolvedPendingId: string | null;
   successfulPaymentTotalKobo: number;
+};
+
+type FinancialSummary = {
+  appliedToInvoiceKobo: number;
+  balanceDueKobo: number;
+  grossSuccessfulKobo: number;
+  hasOverpayment: boolean;
+  netReceivedKobo: number;
+  overpaymentKobo: number;
+  paymentCount: number;
+  processedRefundsKobo: number;
+  successfulPaymentCount: number;
 };
 
 type NormalizedSuccessfulPaystackPayment = {
@@ -148,6 +187,13 @@ type ReconciliationResult = {
 
 const paystackProvider = "paystack";
 const supportedChargeSuccessEvent = "charge.success";
+const refundEventTypes = [
+  "refund.pending",
+  "refund.processing",
+  "refund.needs-attention",
+  "refund.failed",
+  "refund.processed"
+];
 const stalePendingThresholdMs = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -217,9 +263,13 @@ export class PaymentsService {
         isSuperseded: classification.isSuperseded,
         supersededReason: classification.supersededReason,
         reviewReason: classification.reviewReason,
+        reviewState: classification.reviewState,
+        reviewResolution: classification.reviewResolution,
         reviewDetails: classification.reviewDetails,
         currency: row.payment.currency,
         amountKobo: row.payment.amountKobo,
+        netContributionKobo: this.netPaymentContribution(row),
+        processedRefundedKobo: this.processedRefundedKobo(row.refunds),
         paidAt: row.payment.paidAt,
         failedAt: row.payment.failedAt,
         abandonedAt: row.payment.abandonedAt,
@@ -252,6 +302,10 @@ export class PaymentsService {
       settlementAccount: this.toSafeSettlementAccount(row.settlementAccount),
       settlementAccountContext: this.toSettlementAccountContext(row.settlementAccount),
       events: row.events.map((event) => this.toSafePaymentEvent(event)),
+      refunds: row.refunds.map((refund) => this.toSafeRefund(refund)),
+      financialSummary: row.invoice
+        ? await this.getInvoiceFinancialSummary(row.invoice.organisationId, row.invoice.id)
+        : null,
       receiptPlaceholder: "Receipts will be available after T014."
     };
   }
@@ -372,6 +426,7 @@ export class PaymentsService {
         events: [row.event],
         invoice: row.invoice,
         payment: row.payment,
+        refunds: [],
         settlementAccount: null
       });
     });
@@ -392,6 +447,179 @@ export class PaymentsService {
         customerName: row.customer?.name ?? null
       })),
       pagination: this.toPaginationResponse(pagination, reviewRows.length)
+    };
+  }
+
+  async getInvoiceFinancialSummary(
+    organisationId: string,
+    invoiceId: string
+  ): Promise<FinancialSummary> {
+    const invoice = await this.findInvoice(this.databaseService.db, invoiceId);
+
+    if (!invoice || invoice.organisationId !== organisationId) {
+      throw new NotFoundException("Invoice was not found.");
+    }
+
+    return this.calculateInvoiceFinancialSummary(this.databaseService.db, invoice);
+  }
+
+  async createPaymentRefund(
+    context: ActiveOrganisationContext,
+    user: AuthenticatedUser,
+    paymentId: string,
+    input: CreatePaymentRefundDto
+  ) {
+    const reason = input.reason.trim();
+
+    if (!reason) {
+      throw new BadRequestException("Refund reason is required.");
+    }
+
+    const { financialSummary, payment, remainingRefundableKobo } =
+      await this.getRefundablePaymentState(context.activeOrganisation.id, paymentId);
+
+    if (financialSummary.overpaymentKobo <= 0) {
+      throw new UnprocessableEntityException(
+        "This invoice does not currently have an overpayment."
+      );
+    }
+
+    if (input.amountKobo > financialSummary.overpaymentKobo) {
+      throw new UnprocessableEntityException(
+        "Refund amount cannot exceed the invoice overpayment."
+      );
+    }
+
+    if (input.amountKobo > remainingRefundableKobo) {
+      throw new UnprocessableEntityException(
+        "Refund amount cannot exceed the selected payment's refundable amount."
+      );
+    }
+
+    const pendingRefund = await this.databaseService.db.transaction(async (tx) => {
+      const [refund] = await tx
+        .insert(paymentRefunds)
+        .values({
+          organisationId: payment.organisationId,
+          paymentId: payment.id,
+          provider: paystackProvider,
+          amountKobo: input.amountKobo,
+          currency: payment.currency,
+          status: "pending",
+          reason,
+          customerNote: reason,
+          merchantNote: reason,
+          initiatedByUserId: user.userId
+        })
+        .returning();
+
+      if (!refund) {
+        throw new Error("Refund could not be stored.");
+      }
+
+      return refund;
+    });
+
+    let providerRefund: PaystackCreateRefundResponse;
+
+    try {
+      providerRefund = await this.paystackService.createRefund({
+        transactionReference: payment.providerReference,
+        amountKobo: input.amountKobo,
+        currency: "NGN",
+        customerNote: reason,
+        merchantNote: reason
+      });
+    } catch (error) {
+      await this.databaseService.db.transaction(async (tx) => {
+        await tx
+          .update(paymentRefunds)
+          .set({
+            status: "failed",
+            failedAt: new Date(),
+            providerMetadataRedacted: {
+              transactionReference: payment.providerReference,
+              amountKobo: input.amountKobo,
+              currency: payment.currency,
+              providerSubmissionFailed: true
+            },
+            updatedAt: new Date()
+          })
+          .where(eq(paymentRefunds.id, pendingRefund.id));
+
+        await this.createAuditLog(tx as AppDatabase, {
+          organisationId: payment.organisationId,
+          actorUserId: user.userId,
+          action: "payment_refund_submission_failed",
+          entityType: "payment_refund",
+          entityId: pendingRefund.id,
+          metadataRedacted: {
+            paymentId: payment.id,
+            providerReference: payment.providerReference,
+            amountKobo: input.amountKobo
+          }
+        });
+      });
+
+      throw error;
+    }
+
+    const refundStatus = this.toRefundStatus(providerRefund.status);
+
+    const result = await this.databaseService.db.transaction(async (tx) => {
+      const [refund] = await tx
+        .update(paymentRefunds)
+        .set({
+          providerRefundId: providerRefund.providerRefundId,
+          status: refundStatus,
+          processedAt: refundStatus === "processed" ? new Date() : null,
+          failedAt: refundStatus === "failed" ? new Date() : null,
+          needsAttentionAt: refundStatus === "needs_attention" ? new Date() : null,
+          providerMetadataRedacted: {
+            providerRefundId: providerRefund.providerRefundId,
+            providerStatus: providerRefund.status,
+            transactionReference: providerRefund.transactionReference,
+            amountKobo: providerRefund.amountKobo,
+            currency: providerRefund.currency
+          },
+          updatedAt: new Date()
+        })
+        .where(eq(paymentRefunds.id, pendingRefund.id))
+        .returning();
+
+      if (!refund) {
+        throw new Error("Refund could not be updated.");
+      }
+
+      const recalculated =
+        refundStatus === "processed"
+          ? await this.recalculateInvoiceFinancialState(tx as AppDatabase, payment.invoiceId, {
+              actorUserId: user.userId,
+              reason: "payment_refund_processed",
+              refundId: refund.id
+            })
+          : await this.calculateInvoiceFinancialSummaryForId(tx as AppDatabase, payment.invoiceId);
+
+      await this.createAuditLog(tx as AppDatabase, {
+        organisationId: payment.organisationId,
+        actorUserId: user.userId,
+        action: "payment_refund_initiated",
+        entityType: "payment_refund",
+        entityId: refund.id,
+        metadataRedacted: {
+          paymentId: payment.id,
+          providerReference: payment.providerReference,
+          amountKobo: refund.amountKobo,
+          status: refund.status
+        }
+      });
+
+      return { refund, financialSummary: recalculated.financialSummary };
+    });
+
+    return {
+      refund: this.toSafeRefund(result.refund),
+      financialSummary: result.financialSummary
     };
   }
 
@@ -550,11 +778,16 @@ export class PaymentsService {
       .where(and(...conditions))
       .orderBy(desc(payments.createdAt));
 
-    const eventsByPaymentId = await this.findEventsForPayments(rows.map((row) => row.payment.id));
+    const paymentIds = rows.map((row) => row.payment.id);
+    const [eventsByPaymentId, refundsByPaymentId] = await Promise.all([
+      this.findEventsForPayments(paymentIds),
+      this.findRefundsForPayments(paymentIds)
+    ]);
 
     return rows.map((row) => ({
       ...row,
-      events: eventsByPaymentId.get(row.payment.id) ?? []
+      events: eventsByPaymentId.get(row.payment.id) ?? [],
+      refunds: refundsByPaymentId.get(row.payment.id) ?? []
     }));
   }
 
@@ -582,6 +815,64 @@ export class PaymentsService {
     }
 
     return eventsByPaymentId;
+  }
+
+  private async findRefundsForPayments(paymentIds: string[]) {
+    const refundsByPaymentId = new Map<string, PaymentRefund[]>();
+
+    if (paymentIds.length === 0) {
+      return refundsByPaymentId;
+    }
+
+    const refunds = await this.databaseService.db
+      .select()
+      .from(paymentRefunds)
+      .where(inArray(paymentRefunds.paymentId, paymentIds))
+      .orderBy(desc(paymentRefunds.createdAt));
+
+    for (const refund of refunds) {
+      const current = refundsByPaymentId.get(refund.paymentId) ?? [];
+      current.push(refund);
+      refundsByPaymentId.set(refund.paymentId, current);
+    }
+
+    return refundsByPaymentId;
+  }
+
+  private async getRefundablePaymentState(organisationId: string, paymentId: string) {
+    const [payment] = await this.databaseService.db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.organisationId, organisationId), eq(payments.id, paymentId)))
+      .limit(1);
+
+    if (!payment) {
+      throw new NotFoundException("Payment was not found.");
+    }
+
+    if (payment.status !== "successful") {
+      throw new UnprocessableEntityException("Only successful payments can be refunded.");
+    }
+
+    const recalculated = await this.databaseService.db.transaction((tx) =>
+      this.recalculateInvoiceFinancialState(tx as AppDatabase, payment.invoiceId, {
+        reason: "payment_refund_precheck"
+      })
+    );
+    const refunds = await this.databaseService.db
+      .select()
+      .from(paymentRefunds)
+      .where(eq(paymentRefunds.paymentId, payment.id));
+    const remainingRefundableKobo = Math.max(
+      payment.amountKobo - this.requestedRefundedKobo(refunds),
+      0
+    );
+
+    return {
+      payment,
+      financialSummary: recalculated.financialSummary,
+      remainingRefundableKobo
+    };
   }
 
   private computePaymentClassifications(
@@ -612,16 +903,27 @@ export class PaymentsService {
       const successfulPaymentTotalKobo = invoiceRows
         .filter((row) => row.payment.status === "successful")
         .reduce((total, row) => total + row.payment.amountKobo, 0);
-      const effectiveBalanceKobo = Math.max(
-        (invoice?.totalKobo ?? 0) - successfulPaymentTotalKobo,
+      const processedRefundsKobo = invoiceRows.reduce(
+        (total, row) => total + this.processedRefundedKobo(row.refunds),
         0
       );
+      const financialSummary = invoice
+        ? this.buildFinancialSummary(
+            invoice,
+            invoiceRows.map((row) => row.payment),
+            invoiceRows.flatMap((row) => row.refunds)
+          )
+        : null;
+      const effectiveBalanceKobo =
+        financialSummary?.balanceDueKobo ??
+        Math.max((invoice?.totalKobo ?? 0) - successfulPaymentTotalKobo + processedRefundsKobo, 0);
       const newestUnresolvedPendingId =
         this.sortNewestAttempts(invoiceRows.filter((row) => row.payment.status === "pending"))[0]
           ?.payment.id ?? null;
 
       contexts.set(invoiceId, {
         effectiveBalanceKobo,
+        financialSummary,
         newestUnresolvedPendingId,
         successfulPaymentTotalKobo
       });
@@ -639,11 +941,13 @@ export class PaymentsService {
     if (reviewIssue) {
       return {
         attemptState: "review_required",
-        reconciliationState: "review_required",
+        reconciliationState: reviewIssue.reconciliationState,
         isSuperseded: false,
         supersededReason: null,
         reviewDetails: reviewIssue.details,
-        reviewReason: reviewIssue.reason
+        reviewReason: reviewIssue.reason,
+        reviewResolution: reviewIssue.reviewResolution,
+        reviewState: reviewIssue.reviewState
       };
     }
 
@@ -656,7 +960,9 @@ export class PaymentsService {
         isSuperseded: true,
         supersededReason,
         reviewDetails: null,
-        reviewReason: null
+        reviewReason: null,
+        reviewResolution: "superseded",
+        reviewState: "resolved"
       };
     }
 
@@ -667,7 +973,9 @@ export class PaymentsService {
         isSuperseded: false,
         supersededReason: null,
         reviewDetails: null,
-        reviewReason: null
+        reviewReason: null,
+        reviewResolution: null,
+        reviewState: "none"
       };
     }
 
@@ -681,7 +989,9 @@ export class PaymentsService {
         isSuperseded: false,
         supersededReason: null,
         reviewDetails: null,
-        reviewReason: null
+        reviewReason: null,
+        reviewResolution: null,
+        reviewState: "none"
       };
     }
 
@@ -692,7 +1002,9 @@ export class PaymentsService {
         isSuperseded: false,
         supersededReason: null,
         reviewDetails: null,
-        reviewReason: null
+        reviewReason: null,
+        reviewResolution: null,
+        reviewState: "none"
       };
     }
 
@@ -703,7 +1015,9 @@ export class PaymentsService {
         isSuperseded: false,
         supersededReason: null,
         reviewDetails: null,
-        reviewReason: null
+        reviewReason: null,
+        reviewResolution: null,
+        reviewState: "none"
       };
     }
 
@@ -714,7 +1028,9 @@ export class PaymentsService {
         isSuperseded: false,
         supersededReason: null,
         reviewDetails: null,
-        reviewReason: null
+        reviewReason: null,
+        reviewResolution: null,
+        reviewState: "none"
       };
     }
 
@@ -724,79 +1040,189 @@ export class PaymentsService {
   private getUnresolvedReviewIssue(
     row: PaymentWithRelations,
     invoiceContext: InvoicePaymentContext | null
-  ): { details: ReviewDetails | null; reason: string } | null {
+  ): {
+    details: ReviewDetails | null;
+    reason: string;
+    reconciliationState: ReconciliationState;
+    reviewResolution: ReviewResolution;
+    reviewState: ReviewState;
+  } | null {
     if (!row.invoice) {
-      return {
-        details: null,
-        reason: "Linked invoice could not be found for this payment attempt."
-      };
+      return this.openReview("Linked invoice could not be found for this payment attempt.");
     }
 
     if (!row.customer) {
-      return {
-        details: null,
-        reason: "Linked customer could not be found for this payment attempt."
-      };
+      return this.openReview("Linked customer could not be found for this payment attempt.");
     }
 
     if (row.invoice.organisationId !== row.payment.organisationId) {
-      return { details: null, reason: "Linked invoice does not belong to this organisation." };
+      return this.openReview("Linked invoice does not belong to this organisation.");
     }
 
     if (row.customer.organisationId !== row.payment.organisationId) {
-      return { details: null, reason: "Linked customer does not belong to this organisation." };
+      return this.openReview("Linked customer does not belong to this organisation.");
     }
 
     if (!row.payment.providerReference) {
-      return { details: null, reason: "Provider reference is missing." };
+      return this.openReview("Provider reference is missing.");
     }
 
     if (
       row.payment.status === "successful" &&
       (row.invoice.status === "cancelled" || row.invoice.status === "void")
     ) {
-      return {
-        details: null,
-        reason: "Successful payment is linked to an invoice that no longer accepts payment."
-      };
+      return this.openReview(
+        "Successful payment is linked to an invoice that no longer accepts payment."
+      );
     }
 
     if (this.paymentShouldHaveSubaccount(row.payment) && !row.payment.providerSubaccountCode) {
-      return { details: null, reason: "Settlement subaccount trace is missing." };
-    }
-
-    if (row.payment.providerSubaccountCode && !row.settlementAccount) {
-      return {
-        details: null,
-        reason: "Settlement subaccount does not match a stored payout account."
-      };
+      return this.openReview("Settlement subaccount trace is missing.");
     }
 
     if (
       row.payment.status === "successful" &&
-      invoiceContext &&
-      invoiceContext.successfulPaymentTotalKobo > row.invoice.totalKobo
+      row.payment.providerSubaccountCode &&
+      !row.settlementAccount
     ) {
-      return {
-        details: {
+      return this.openReview("Settlement subaccount does not match a stored payout account.");
+    }
+
+    if (row.payment.status === "successful" && invoiceContext?.financialSummary?.hasOverpayment) {
+      const pendingRefund = row.refunds.find((refund) =>
+        ["pending", "processing", "needs_attention"].includes(refund.status)
+      );
+
+      if (invoiceContext.financialSummary.overpaymentKobo === 0) {
+        return null;
+      }
+
+      return this.openReview(
+        `Successful payments exceed the invoice total by ${invoiceContext.financialSummary.overpaymentKobo} kobo.`,
+        {
           currency: row.payment.currency,
           expectedAmountKobo: row.invoice.totalKobo,
-          receivedAmountKobo: invoiceContext.successfulPaymentTotalKobo
+          receivedAmountKobo: invoiceContext.financialSummary.netReceivedKobo
         },
-        reason: "Successful payments exceed the invoice total."
-      };
+        pendingRefund ? "resolution_in_progress" : "open",
+        pendingRefund ? "refund_pending" : null,
+        pendingRefund ? "resolution_in_progress" : "overpaid"
+      );
     }
 
     const reviewEvent = row.events.find((event) => this.isUnresolvedReviewEvent(event, row));
 
     if (reviewEvent?.errorMessage) {
+      if (this.isResolvedByLaterSuccessfulPayment(row, invoiceContext)) {
+        return null;
+      }
+
       return {
         details: this.getReviewDetails(reviewEvent, row.payment),
-        reason: reviewEvent.errorMessage
+        reason: reviewEvent.errorMessage,
+        reconciliationState: "review_required",
+        reviewResolution: null,
+        reviewState: "open"
       };
     }
 
     return null;
+  }
+
+  private openReview(
+    reason: string,
+    details: ReviewDetails | null = null,
+    reviewState: ReviewState = "open",
+    reviewResolution: ReviewResolution = null,
+    reconciliationState: ReconciliationState = "review_required"
+  ) {
+    return {
+      details,
+      reason,
+      reconciliationState,
+      reviewResolution,
+      reviewState
+    };
+  }
+
+  private isResolvedByLaterSuccessfulPayment(
+    row: PaymentWithRelations,
+    invoiceContext: InvoicePaymentContext | null
+  ) {
+    if (!invoiceContext?.financialSummary || row.payment.status === "successful") {
+      return false;
+    }
+
+    return (
+      invoiceContext.financialSummary.netReceivedKobo >= (row.invoice?.totalKobo ?? 0) &&
+      row.events.some((event) => event.errorMessage)
+    );
+  }
+
+  private buildFinancialSummary(
+    invoice: Invoice,
+    invoicePayments: Payment[],
+    refunds: PaymentRefund[]
+  ): FinancialSummary {
+    const successfulPayments = invoicePayments.filter((payment) => payment.status === "successful");
+    const successfulPaymentIds = new Set(successfulPayments.map((payment) => payment.id));
+    const grossSuccessfulKobo = successfulPayments.reduce(
+      (total, payment) => total + payment.amountKobo,
+      0
+    );
+    const processedRefundsKobo = refunds
+      .filter(
+        (refund) => refund.status === "processed" && successfulPaymentIds.has(refund.paymentId)
+      )
+      .reduce((total, refund) => total + refund.amountKobo, 0);
+    const netReceivedKobo = Math.max(grossSuccessfulKobo - processedRefundsKobo, 0);
+    const appliedToInvoiceKobo = Math.min(netReceivedKobo, invoice.totalKobo);
+    const overpaymentKobo = Math.max(netReceivedKobo - invoice.totalKobo, 0);
+    const balanceDueKobo = Math.max(invoice.totalKobo - netReceivedKobo, 0);
+
+    return {
+      grossSuccessfulKobo,
+      processedRefundsKobo,
+      netReceivedKobo,
+      appliedToInvoiceKobo,
+      overpaymentKobo,
+      balanceDueKobo,
+      paymentCount: invoicePayments.length,
+      successfulPaymentCount: successfulPayments.length,
+      hasOverpayment: overpaymentKobo > 0
+    };
+  }
+
+  private processedRefundedKobo(refunds: PaymentRefund[]) {
+    return refunds
+      .filter((refund) => refund.status === "processed")
+      .reduce((total, refund) => total + refund.amountKobo, 0);
+  }
+
+  private requestedRefundedKobo(refunds: PaymentRefund[]) {
+    return refunds
+      .filter((refund) => refund.status !== "failed")
+      .reduce((total, refund) => total + refund.amountKobo, 0);
+  }
+
+  private netPaymentContribution(row: PaymentWithRelations) {
+    if (row.payment.status !== "successful") {
+      return 0;
+    }
+
+    return Math.max(row.payment.amountKobo - this.processedRefundedKobo(row.refunds), 0);
+  }
+
+  private toRefundSummary(refunds: PaymentRefund[]) {
+    return {
+      count: refunds.length,
+      pendingKobo: refunds
+        .filter((refund) => refund.status === "pending" || refund.status === "processing")
+        .reduce((total, refund) => total + refund.amountKobo, 0),
+      processedKobo: this.processedRefundedKobo(refunds),
+      needsAttentionCount: refunds.filter((refund) => refund.status === "needs_attention").length,
+      failedCount: refunds.filter((refund) => refund.status === "failed").length
+    };
   }
 
   private getSupersededReason(
@@ -871,6 +1297,14 @@ export class PaymentsService {
     const normalized = event.errorMessage?.toLowerCase() ?? "";
 
     if (normalized.includes("amount did not match")) {
+      if (
+        row.payment.status !== "successful" &&
+        row.invoice &&
+        (row.invoice.status === "paid" || row.invoice.balanceDueKobo <= 0)
+      ) {
+        return false;
+      }
+
       const receivedAmountKobo = this.eventAmountKobo(event);
       return receivedAmountKobo === null || receivedAmountKobo !== row.payment.amountKobo;
     }
@@ -977,7 +1411,9 @@ export class PaymentsService {
       isSuperseded: false,
       supersededReason: null,
       reviewDetails: null,
-      reviewReason: null
+      reviewReason: null,
+      reviewResolution: null,
+      reviewState: "none"
     };
   }
 
@@ -1070,8 +1506,12 @@ export class PaymentsService {
       supersededReason: classification.supersededReason,
       reviewDetails: classification.reviewDetails,
       reviewReason: classification.reviewReason,
+      reviewState: classification.reviewState,
+      reviewResolution: classification.reviewResolution,
       currency: row.payment.currency,
       amountKobo: row.payment.amountKobo,
+      netContributionKobo: this.netPaymentContribution(row),
+      processedRefundedKobo: this.processedRefundedKobo(row.refunds),
       paidAt: row.payment.paidAt,
       failedAt: row.payment.failedAt,
       abandonedAt: row.payment.abandonedAt,
@@ -1096,6 +1536,7 @@ export class PaymentsService {
         : null,
       settlementAccount: this.toSafeSettlementAccount(row.settlementAccount),
       settlementAccountContext: this.toSettlementAccountContext(row.settlementAccount),
+      refundSummary: this.toRefundSummary(row.refunds),
       latestEventSummary: latestEvent
         ? {
             eventType: latestEvent.eventType,
@@ -1116,6 +1557,20 @@ export class PaymentsService {
       processedAt: event.processedAt,
       errorMessage: event.errorMessage,
       createdAt: event.createdAt
+    };
+  }
+
+  private toSafeRefund(refund: PaymentRefund) {
+    return {
+      id: refund.id,
+      amountKobo: refund.amountKobo,
+      currency: refund.currency,
+      status: refund.status,
+      reason: refund.reason,
+      createdAt: refund.createdAt,
+      processedAt: refund.processedAt,
+      failedAt: refund.failedAt,
+      needsAttentionAt: refund.needsAttentionAt
     };
   }
 
@@ -1189,6 +1644,48 @@ export class PaymentsService {
     }
 
     return "pending" as const;
+  }
+
+  private toRefundStatus(status: string): PaymentRefund["status"] {
+    const normalized = status.toLowerCase().replaceAll("-", "_");
+
+    if (normalized === "success" || normalized === "successful" || normalized === "processed") {
+      return "processed";
+    }
+
+    if (normalized === "processing") {
+      return "processing";
+    }
+
+    if (normalized === "needs_attention") {
+      return "needs_attention";
+    }
+
+    if (normalized === "failed" || normalized === "failure") {
+      return "failed";
+    }
+
+    return "pending";
+  }
+
+  private toRefundStatusFromEvent(eventType: string): PaymentRefund["status"] {
+    if (eventType === "refund.processed") {
+      return "processed";
+    }
+
+    if (eventType === "refund.processing") {
+      return "processing";
+    }
+
+    if (eventType === "refund.needs-attention") {
+      return "needs_attention";
+    }
+
+    if (eventType === "refund.failed") {
+      return "failed";
+    }
+
+    return "pending";
   }
 
   private async markPaymentAttemptTerminal(
@@ -1295,7 +1792,9 @@ export class PaymentsService {
       throw new BadRequestException("Invalid Paystack webhook event.");
     }
 
-    const providerReference = this.safeString(payload.data?.reference, 120);
+    const providerReference =
+      this.safeString(payload.data?.reference, 120) ??
+      this.safeString(payload.data?.transaction?.reference, 120);
     const providerEventId =
       this.safeString(payload.id, 120) ?? this.safeString(payload.data?.id, 120);
 
@@ -1328,6 +1827,11 @@ export class PaymentsService {
         matchedPayment: true,
         result: "duplicate"
       });
+      return;
+    }
+
+    if (refundEventTypes.includes(webhook.eventType)) {
+      await this.processRefundWebhook(tx, event, webhook);
       return;
     }
 
@@ -1435,6 +1939,79 @@ export class PaymentsService {
       providerStatus: this.safeString(webhook.payload.data?.status, 80),
       reference: webhook.providerReference,
       source: "webhook"
+    });
+  }
+
+  private async processRefundWebhook(
+    tx: AppDatabase,
+    event: PaymentEvent,
+    webhook: NormalizedWebhook
+  ) {
+    const providerRefundId = this.safeString(webhook.payload.data?.id, 120);
+    const providerReference = webhook.providerReference;
+    const refund = await this.findRefundForWebhook(tx, providerRefundId, providerReference);
+
+    if (!refund) {
+      await this.markEventProcessed(tx, event.id, {
+        errorMessage: "Unknown refund reference."
+      });
+      this.logWebhookResult(webhook, {
+        matchedPayment: false,
+        result: "review_required"
+      });
+      return;
+    }
+
+    const refundStatus = this.toRefundStatusFromEvent(webhook.eventType);
+    const now = new Date();
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.id, refund.paymentId))
+      .limit(1);
+
+    await tx
+      .update(paymentRefunds)
+      .set({
+        status: refundStatus,
+        providerRefundId: refund.providerRefundId ?? providerRefundId,
+        processedAt:
+          refundStatus === "processed" ? (refund.processedAt ?? now) : refund.processedAt,
+        failedAt: refundStatus === "failed" ? (refund.failedAt ?? now) : refund.failedAt,
+        needsAttentionAt:
+          refundStatus === "needs_attention"
+            ? (refund.needsAttentionAt ?? now)
+            : refund.needsAttentionAt,
+        providerMetadataRedacted: {
+          providerRefundId: providerRefundId ?? refund.providerRefundId,
+          providerStatus: this.safeString(webhook.payload.data?.status, 80),
+          eventType: webhook.eventType,
+          transactionReference: providerReference,
+          amountKobo: this.numberValue(webhook.payload.data?.amount),
+          currency: this.safeString(webhook.payload.data?.currency, 3)
+        },
+        updatedAt: now
+      })
+      .where(eq(paymentRefunds.id, refund.id));
+
+    if (payment) {
+      await this.linkEventToPayment(tx, event.id, payment);
+    }
+
+    if (payment && refundStatus === "processed") {
+      await this.recalculateInvoiceFinancialState(tx, payment.invoiceId, {
+        eventId: event.id,
+        paymentId: payment.id,
+        providerReference: payment.providerReference,
+        reason: "payment_refund_processed",
+        refundId: refund.id
+      });
+    }
+
+    await this.markEventProcessed(tx, event.id);
+    this.logWebhookResult(webhook, {
+      matchedPayment: Boolean(payment),
+      result: "processed"
     });
   }
 
@@ -1567,6 +2144,17 @@ export class PaymentsService {
     }
 
     if (payment.status === "successful") {
+      await this.recalculateInvoiceFinancialState(tx, invoice.id, {
+        eventId: event?.id ?? null,
+        paymentId: payment.id,
+        providerReference: payment.providerReference,
+        paidAt: input.paidAt,
+        reason:
+          input.source === "webhook"
+            ? "payment_webhook_duplicate_repaired"
+            : "payment_verification_duplicate_repaired"
+      });
+
       if (event) {
         await this.markEventProcessed(tx, event.id, {
           errorMessage: "Payment was already successful."
@@ -1594,6 +2182,14 @@ export class PaymentsService {
 
     await this.markPaymentSuccessful(tx, payment, input);
 
+    const recalculated = await this.recalculateInvoiceFinancialState(tx, invoice.id, {
+      eventId: event?.id ?? null,
+      paymentId: payment.id,
+      providerReference: payment.providerReference,
+      paidAt: input.paidAt,
+      reason: input.source === "webhook" ? "payment_webhook_reconciled" : "payment_verified"
+    });
+
     if (["cancelled", "void"].includes(invoice.status)) {
       if (event) {
         await this.markEventProcessed(tx, event.id);
@@ -1619,7 +2215,21 @@ export class PaymentsService {
       return { invoiceUpdated: false, status: "successful" };
     }
 
-    await this.reconcileInvoice(tx, invoice, payment, event?.id ?? null, input.paidAt);
+    await this.createAuditLog(tx, {
+      organisationId: invoice.organisationId,
+      action: "payment_succeeded",
+      entityType: "payment",
+      entityId: payment.id,
+      metadataRedacted: {
+        eventId: event?.id,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        providerReference: payment.providerReference,
+        amountPaidKobo: recalculated.financialSummary.netReceivedKobo,
+        balanceDueKobo: recalculated.financialSummary.balanceDueKobo,
+        overpaymentKobo: recalculated.financialSummary.overpaymentKobo
+      }
+    });
 
     if (event) {
       await this.markEventProcessed(tx, event.id);
@@ -1646,6 +2256,48 @@ export class PaymentsService {
       .limit(1);
 
     return payment;
+  }
+
+  private async findRefundForWebhook(
+    tx: AppDatabase,
+    providerRefundId: string | null,
+    providerReference: string | null
+  ) {
+    if (providerRefundId) {
+      const [refund] = await tx
+        .select()
+        .from(paymentRefunds)
+        .where(
+          and(
+            eq(paymentRefunds.provider, paystackProvider),
+            eq(paymentRefunds.providerRefundId, providerRefundId)
+          )
+        )
+        .limit(1);
+
+      if (refund) {
+        return refund;
+      }
+    }
+
+    if (!providerReference) {
+      return null;
+    }
+
+    const [row] = await tx
+      .select({ refund: paymentRefunds })
+      .from(paymentRefunds)
+      .innerJoin(payments, eq(payments.id, paymentRefunds.paymentId))
+      .where(
+        and(
+          eq(paymentRefunds.provider, paystackProvider),
+          eq(payments.providerReference, providerReference)
+        )
+      )
+      .orderBy(desc(paymentRefunds.createdAt))
+      .limit(1);
+
+    return row?.refund ?? null;
   }
 
   private async findPaymentEvent(tx: AppDatabase, eventId: string) {
@@ -1709,54 +2361,13 @@ export class PaymentsService {
     eventId: string | null,
     paidAt: Date
   ) {
-    const amountPaidKobo = await this.sumSuccessfulPayments(tx, invoice.id);
-    const balanceDueKobo = Math.max(invoice.totalKobo - amountPaidKobo, 0);
-    const nextStatus = this.nextInvoiceStatus(invoice, amountPaidKobo, balanceDueKobo);
-    const overpaymentReview = amountPaidKobo > invoice.totalKobo;
-    const statusChanged = nextStatus !== invoice.status;
-    const invoicePaidAt = nextStatus === "paid" ? (invoice.paidAt ?? paidAt) : invoice.paidAt;
-
-    await tx
-      .update(invoices)
-      .set({
-        amountPaidKobo,
-        balanceDueKobo,
-        status: nextStatus,
-        paidAt: invoicePaidAt,
-        updatedAt: new Date()
-      })
-      .where(eq(invoices.id, invoice.id));
-
-    if (statusChanged) {
-      await tx.insert(invoiceStatusEvents).values({
-        organisationId: invoice.organisationId,
-        invoiceId: invoice.id,
-        fromStatus: invoice.status,
-        toStatus: nextStatus,
-        reason: "payment_webhook_reconciled",
-        actorUserId: null,
-        metadataRedacted: {
-          eventId,
-          paymentId: payment.id,
-          providerReference: payment.providerReference,
-          amountPaidKobo,
-          balanceDueKobo
-        }
-      });
-
-      await this.createAuditLog(tx, {
-        organisationId: invoice.organisationId,
-        action: "invoice_status_updated",
-        entityType: "invoice",
-        entityId: invoice.id,
-        metadataRedacted: {
-          eventId,
-          fromStatus: invoice.status,
-          toStatus: nextStatus,
-          invoiceNumber: invoice.invoiceNumber
-        }
-      });
-    }
+    const { financialSummary } = await this.recalculateInvoiceFinancialState(tx, invoice.id, {
+      eventId,
+      paymentId: payment.id,
+      providerReference: payment.providerReference,
+      paidAt,
+      reason: "payment_reconciled"
+    });
 
     await this.createAuditLog(tx, {
       organisationId: invoice.organisationId,
@@ -1768,38 +2379,155 @@ export class PaymentsService {
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         providerReference: payment.providerReference,
-        amountPaidKobo,
-        balanceDueKobo,
-        overpaymentReview
+        amountPaidKobo: financialSummary.netReceivedKobo,
+        balanceDueKobo: financialSummary.balanceDueKobo,
+        overpaymentKobo: financialSummary.overpaymentKobo
       }
     });
   }
 
-  private async sumSuccessfulPayments(tx: AppDatabase, invoiceId: string) {
-    const [row] = await tx
-      .select({
-        total: sql<number>`coalesce(sum(${payments.amountKobo}), 0)`
-      })
-      .from(payments)
-      .where(and(eq(payments.invoiceId, invoiceId), eq(payments.status, "successful")));
+  private async calculateInvoiceFinancialSummaryForId(tx: AppDatabase, invoiceId: string) {
+    const invoice = await this.findInvoice(tx, invoiceId);
 
-    return Number(row?.total ?? 0);
+    if (!invoice) {
+      throw new NotFoundException("Invoice was not found.");
+    }
+
+    return {
+      invoice,
+      financialSummary: await this.calculateInvoiceFinancialSummary(tx, invoice)
+    };
   }
 
-  private nextInvoiceStatus(
+  private async calculateInvoiceFinancialSummary(tx: AppDatabase, invoice: Invoice) {
+    const invoicePayments = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.invoiceId, invoice.id));
+    const paymentIds = invoicePayments.map((payment) => payment.id);
+    const refunds = paymentIds.length
+      ? await tx.select().from(paymentRefunds).where(inArray(paymentRefunds.paymentId, paymentIds))
+      : [];
+
+    return this.buildFinancialSummary(invoice, invoicePayments, refunds);
+  }
+
+  async recalculateInvoiceFinancialState(
+    tx: AppDatabase,
+    invoiceId: string,
+    input: {
+      actorUserId?: string | null;
+      eventId?: string | null;
+      paidAt?: Date;
+      paymentId?: string | null;
+      providerReference?: string | null;
+      reason: string;
+      refundId?: string | null;
+    }
+  ) {
+    const invoice = await this.findInvoice(tx, invoiceId);
+
+    if (!invoice) {
+      throw new NotFoundException("Invoice was not found.");
+    }
+
+    const financialSummary = await this.calculateInvoiceFinancialSummary(tx, invoice);
+    const nextStatus = this.nextInvoiceStatusFromFinancialSummary(invoice, financialSummary);
+    const statusChanged = nextStatus !== invoice.status;
+    const invoicePaidAt =
+      nextStatus === "paid" && !invoice.paidAt
+        ? (input.paidAt ?? (await this.findEarliestSuccessfulPaidAt(tx, invoice.id)) ?? new Date())
+        : invoice.paidAt;
+
+    const [updatedInvoice] = await tx
+      .update(invoices)
+      .set({
+        amountPaidKobo: financialSummary.netReceivedKobo,
+        balanceDueKobo: financialSummary.balanceDueKobo,
+        status: nextStatus,
+        paidAt: invoicePaidAt,
+        updatedAt: new Date()
+      })
+      .where(eq(invoices.id, invoice.id))
+      .returning();
+
+    if (statusChanged) {
+      await tx.insert(invoiceStatusEvents).values({
+        organisationId: invoice.organisationId,
+        invoiceId: invoice.id,
+        fromStatus: invoice.status,
+        toStatus: nextStatus,
+        reason: input.reason,
+        actorUserId: input.actorUserId ?? null,
+        metadataRedacted: {
+          eventId: input.eventId,
+          paymentId: input.paymentId,
+          refundId: input.refundId,
+          providerReference: input.providerReference,
+          financialSummary
+        }
+      });
+
+      await this.createAuditLog(tx, {
+        organisationId: invoice.organisationId,
+        actorUserId: input.actorUserId ?? null,
+        action: "invoice_status_updated",
+        entityType: "invoice",
+        entityId: invoice.id,
+        metadataRedacted: {
+          eventId: input.eventId,
+          paymentId: input.paymentId,
+          refundId: input.refundId,
+          fromStatus: invoice.status,
+          toStatus: nextStatus,
+          invoiceNumber: invoice.invoiceNumber
+        }
+      });
+    }
+
+    return {
+      invoice: updatedInvoice ?? invoice,
+      financialSummary,
+      statusChanged
+    };
+  }
+
+  private nextInvoiceStatusFromFinancialSummary(
     invoice: Invoice,
-    amountPaidKobo: number,
-    balanceDueKobo: number
+    financialSummary: FinancialSummary
   ): Invoice["status"] {
-    if (amountPaidKobo >= invoice.totalKobo || balanceDueKobo === 0) {
+    if (invoice.status === "void" || invoice.status === "cancelled") {
+      return invoice.status;
+    }
+
+    if (financialSummary.netReceivedKobo >= invoice.totalKobo) {
       return "paid";
     }
 
-    if (amountPaidKobo > 0) {
+    if (financialSummary.netReceivedKobo > 0) {
       return "partially_paid";
     }
 
-    return this.isOverdue(invoice, balanceDueKobo) ? "overdue" : invoice.status;
+    if (this.isOverdue(invoice, financialSummary.balanceDueKobo)) {
+      return "overdue";
+    }
+
+    if (invoice.status === "partially_paid" || invoice.status === "overdue") {
+      return invoice.viewedAt ? "viewed" : "sent";
+    }
+
+    return invoice.status;
+  }
+
+  private async findEarliestSuccessfulPaidAt(tx: AppDatabase, invoiceId: string) {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.invoiceId, invoiceId), eq(payments.status, "successful")))
+      .orderBy(payments.paidAt)
+      .limit(1);
+
+    return payment?.paidAt ?? null;
   }
 
   private isOverdue(invoice: Invoice, balanceDueKobo: number) {
@@ -1858,6 +2586,7 @@ export class PaymentsService {
     tx: AppDatabase,
     input: {
       action: string;
+      actorUserId?: string | null;
       entityId?: string | null;
       entityType: string;
       metadataRedacted?: Record<string, unknown>;
@@ -1866,7 +2595,7 @@ export class PaymentsService {
   ) {
     await tx.insert(auditLogs).values({
       organisationId: input.organisationId ?? null,
-      actorUserId: null,
+      actorUserId: input.actorUserId ?? null,
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId ?? null,
@@ -1891,6 +2620,11 @@ export class PaymentsService {
         channel: this.safeString(payload.data?.channel, 80),
         paid_at: this.safeString(payload.data?.paid_at, 80),
         created_at: this.safeString(payload.data?.created_at, 80),
+        customer_note: this.safeString(payload.data?.customer_note, 240),
+        merchant_note: this.safeString(payload.data?.merchant_note, 240),
+        transaction: {
+          reference: this.safeString(payload.data?.transaction?.reference, 120)
+        },
         customer: {
           email: this.safeString(payload.data?.customer?.email, 320)
         },

@@ -79,7 +79,8 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Never trust `organisationId` from the frontend.
 - Payment Setup reads and mutations derive organisation scope from the authenticated active membership.
 - Payment Setup management is Owner/Admin only; Accountant/Viewer can view status only.
-- Payments and reconciliation views are read-only in T013 for Owner/Admin/Accountant/Viewer.
+- Payments and reconciliation views are readable in T013 for Owner/Admin/Accountant/Viewer.
+- Owner/Admin can initiate Paystack overpayment refund requests from payment detail. Accountant/Viewer remain read-only for refunds.
 - Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
 - Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
 - Archived customers remain readable but cannot be updated in the MVP.

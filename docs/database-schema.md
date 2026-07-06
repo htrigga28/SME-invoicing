@@ -193,8 +193,8 @@ Duplicate active customer emails are blocked within an organisation. Archived cu
 | discount_kobo | Invoice-level discount. |
 | tax_kobo | Invoice-level tax. |
 | total_kobo | Server-calculated. |
-| amount_paid_kobo | Recalculated from successful payments. |
-| balance_due_kobo | Recalculated from total minus amount paid. |
+| amount_paid_kobo | Derived from payment/refund truth as net received. May exceed `total_kobo` when overpaid. |
+| balance_due_kobo | Derived from invoice total minus net received, floored at zero. |
 | paid_at | Nullable. Set when invoice first becomes fully paid. |
 | sent_at | Nullable. |
 | viewed_at | Nullable. |
@@ -300,6 +300,44 @@ Subaccount traceability rules:
 
 T008 creates the `payments` table and stores pending Paystack initialization records. It does not create `payment_events`, receipts, or invoice balance updates.
 
+### payment_refunds
+
+Rows in `payment_refunds` represent Paystack refund requests against successful payment attempts. Refunds are asynchronous provider records; a pending/processing refund does not reduce invoice paid totals until Paystack confirms it as processed.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| payment_id | References payments. One payment can have multiple partial refunds. |
+| provider | `paystack`. |
+| provider_refund_id | Nullable Paystack refund identifier. |
+| amount_kobo | Integer kobo. |
+| currency | Defaults to `NGN`. |
+| status | `pending`, `processing`, `needs_attention`, `processed`, `failed`. |
+| reason | Required internal reason supplied by Owner/Admin. |
+| customer_note | Nullable safe note sent to Paystack. |
+| merchant_note | Nullable safe note sent to Paystack. |
+| initiated_by_user_id | Nullable user reference. |
+| processed_at | Nullable provider-processed timestamp. |
+| failed_at | Nullable provider-failed timestamp. |
+| needs_attention_at | Nullable provider-attention timestamp. |
+| provider_metadata_redacted | Safe provider metadata only; no raw response, secrets, card data, or bank details. |
+| created_at, updated_at | Timestamps. |
+
+Constraints and indexes:
+
+- Index on `payment_id`.
+- Index on `organisation_id + status`.
+- Unique on `provider + provider_refund_id` where `provider_refund_id is not null`.
+
+Refund rules:
+
+- Total requested non-failed refunds must not exceed the selected payment amount.
+- Manual T013 refunds are limited to invoice overpayment resolution.
+- Only processed refunds contribute to the derived invoice financial calculation.
+- Pending/processing/needs-attention/failed refunds remain visible for resolution tracking.
+- The app does not collect customer refund bank details in the MVP.
+
 ### payment_events
 
 | Column | Notes |
@@ -326,6 +364,13 @@ Constraints and idempotency:
 - Index on `organisation_id + processed` for the T013 review-events view.
 - Processing also checks existing processed `provider + provider_reference + event_type` events to prevent double-counting when Paystack does not provide a reliable event ID.
 - T013 exposes safe event summaries for reconciliation review only. Raw `payload_redacted` remains backend/internal data and is not returned by default.
+
+Payment/refund financial truth:
+
+- `payments.status = successful` contributes to gross received.
+- `payment_refunds.status = processed` subtracts from gross received.
+- Invoice `amount_paid_kobo`, `balance_due_kobo`, payment-derived status, and overpayment state are derived from those persisted records.
+- Attempt state, reconciliation state, review state, and review resolution are computed service fields and are not stored as columns.
 
 ### receipts
 

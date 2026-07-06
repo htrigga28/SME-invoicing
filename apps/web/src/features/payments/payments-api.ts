@@ -1,9 +1,11 @@
 import type { PaymentStatus, ReconciliationState } from "@sme-invoicing/shared";
 
-import { apiGet } from "@/lib/api";
+import { apiGet, apiRequest } from "@/lib/api";
 
 import type {
   PaymentDetailResponse,
+  PaymentRefund,
+  FinancialSummary,
   PaymentListResponse,
   PaymentReviewEventsResponse,
   PaymentSummaryResponse
@@ -31,6 +33,21 @@ export function getPayment(accessToken: string, paymentId: string) {
   return apiGet<PaymentDetailResponse>(`/payments/${encodeURIComponent(paymentId)}`, {
     accessToken
   });
+}
+
+export function createPaymentRefund(
+  accessToken: string,
+  paymentId: string,
+  input: { amountKobo: number; reason: string }
+) {
+  return apiRequest<{ refund: PaymentRefund; financialSummary: FinancialSummary }>(
+    `/payments/${encodeURIComponent(paymentId)}/refunds`,
+    {
+      accessToken,
+      method: "POST",
+      body: input
+    }
+  );
 }
 
 export function getPaymentSummary(

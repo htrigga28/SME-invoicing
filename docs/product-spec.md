@@ -29,7 +29,7 @@ The MVP includes:
 - Seed data.
 - Demo credentials.
 
-MVP reconciliation means matching successful Paystack payment references to invoices and clearly showing whether invoices are paid, partially paid, unpaid, failed, or overdue. It is not real bank statement reconciliation.
+MVP reconciliation means matching Paystack payment references to invoices, deriving invoice financial state from successful payments minus processed refunds, showing whether invoices are paid, partially paid, unpaid, failed, overdue, or overpaid, and surfacing true issues that need review. It is not real bank statement reconciliation.
 
 ## Non-Goals
 
@@ -38,6 +38,8 @@ MVP reconciliation means matching successful Paystack payment references to invo
 - Payroll.
 - Inventory management.
 - Real bank statement reconciliation.
+- Customer wallets, credit balances, and general ledger accounting.
+- Broad refund-management or chargeback-management workflows beyond overpayment excess refunds.
 - Multi-currency accounting beyond NGN.
 - Credit scoring.
 - Loan applications.
@@ -70,6 +72,7 @@ register
 -> payment initialization
 -> Paystack webhook
 -> invoice status update
+-> overpayment review/refund if needed
 -> receipt
 -> dashboard/export
 ```

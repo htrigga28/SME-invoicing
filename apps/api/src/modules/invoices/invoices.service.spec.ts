@@ -175,7 +175,8 @@ function setup(
     databaseService as never,
     {} as never,
     configService as never,
-    paystackService as never
+    paystackService as never,
+    { getInvoiceFinancialSummary: jest.fn() } as never
   );
   return service as unknown as ServiceInternals;
 }

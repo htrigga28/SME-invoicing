@@ -163,6 +163,7 @@ export function InvoiceDetailContent({
   const canVoid =
     canCancelVoid && ["draft", "sent", "viewed", "overdue", "cancelled"].includes(invoice.status);
   const canManagePaymentSetup = role === "owner" || role === "admin";
+  const financialSummary = response.financialSummary;
   const canSharePublicUrl =
     response.publicUrl &&
     invoice.publicAccessEnabled &&
@@ -291,6 +292,35 @@ export function InvoiceDetailContent({
 
           <div className="rounded-lg border border-slate-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-slate-950">Payments</h2>
+            {financialSummary.hasOverpayment ? (
+              <div className="mt-3 rounded-md border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+                <p className="font-semibold">Overpayment detected</p>
+                <p className="mt-1">
+                  Customer payments exceed this invoice by{" "}
+                  {formatMoney(financialSummary.overpaymentKobo)}.
+                </p>
+                <dl className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <SummaryRow
+                    label="Received"
+                    value={formatMoney(financialSummary.netReceivedKobo)}
+                  />
+                  <SummaryRow
+                    label="Invoice total"
+                    value={formatMoney(response.invoice.totalKobo)}
+                  />
+                  <SummaryRow
+                    label="Excess"
+                    strong
+                    value={formatMoney(financialSummary.overpaymentKobo)}
+                  />
+                </dl>
+                {role === "owner" || role === "admin" ? (
+                  <p className="mt-3 text-xs">
+                    Open a successful payment detail to refund the excess through Paystack.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {response.payments.length === 0 ? (
               <p className="mt-3 text-sm text-slate-600">
                 No payment records are linked to this invoice yet.
@@ -337,8 +367,27 @@ export function InvoiceDetailContent({
               <SummaryRow label="Subtotal" value={formatMoney(invoice.subtotalKobo)} />
               <SummaryRow label="Discount" value={formatMoney(invoice.discountKobo)} />
               <SummaryRow label="Tax" value={formatMoney(invoice.taxKobo)} />
-              <SummaryRow label="Amount paid" value={formatMoney(invoice.amountPaidKobo)} />
-              <SummaryRow label="Balance due" strong value={formatMoney(invoice.balanceDueKobo)} />
+              <SummaryRow
+                label={financialSummary.hasOverpayment ? "Amount received" : "Amount paid"}
+                value={formatMoney(financialSummary.netReceivedKobo)}
+              />
+              {financialSummary.hasOverpayment ? (
+                <>
+                  <SummaryRow
+                    label="Applied to invoice"
+                    value={formatMoney(financialSummary.appliedToInvoiceKobo)}
+                  />
+                  <SummaryRow
+                    label="Overpayment"
+                    value={formatMoney(financialSummary.overpaymentKobo)}
+                  />
+                </>
+              ) : null}
+              <SummaryRow
+                label="Balance due"
+                strong
+                value={formatMoney(financialSummary.balanceDueKobo)}
+              />
               <SummaryRow label="Total" strong value={formatMoney(invoice.totalKobo)} />
             </dl>
           </div>

@@ -9,8 +9,8 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | `draft` | Invoice created but not sent. |
 | `sent` | Invoice has been sent/shared or public link generated. |
 | `viewed` | Customer opened the public invoice page. |
-| `partially_paid` | Successful payments exist but total paid is less than invoice total. |
-| `paid` | Total successful payments are greater than or equal to invoice total. |
+| `partially_paid` | Net received is greater than zero but less than invoice total. |
+| `paid` | Net received is greater than or equal to invoice total. |
 | `overdue` | Due date has passed and balance due is greater than zero. |
 | `cancelled` | Invoice cancelled before payment completion. |
 | `void` | Invoice voided because of error but retained for records. |
@@ -23,7 +23,7 @@ Invoice totals must be calculated server-side. Never trust totals from the front
 | `successful` | Paystack webhook or server-side Paystack verification confirms payment success. |
 | `failed` | Paystack webhook confirms failure. |
 | `abandoned` | Payment was initialized but not completed after a defined time. |
-| `refunded` | Refund recorded. |
+| `refunded` | Historical payment status for refunded charges if explicitly used. Refund lifecycle is tracked in `payment_refunds`. |
 
 ## Invoice Transition Rules
 
@@ -60,17 +60,26 @@ Public view tracking rules:
 
 ## Amount Recalculation
 
-`amount_paid_kobo` is the sum of successful, non-refunded payments for the invoice.
+`amount_paid_kobo` is derived from persisted payment/refund records:
+
+```text
+grossSuccessfulKobo = sum(successful payments)
+processedRefundsKobo = sum(processed refunds for those payments)
+netReceivedKobo = max(grossSuccessfulKobo - processedRefundsKobo, 0)
+amount_paid_kobo = netReceivedKobo
+```
+
+`amount_paid_kobo` may exceed `total_kobo` when an invoice is overpaid.
 
 Failed, abandoned, pending, stale pending, and superseded retry attempts do not contribute to invoice paid totals.
 
 `balance_due_kobo` is:
 
 ```text
-max(total_kobo - amount_paid_kobo, 0)
+max(total_kobo - netReceivedKobo, 0)
 ```
 
-Recalculate both values after every successful, failed, refunded, duplicate-ignored, cancellation, or void-related payment event that could affect invoice state.
+Recalculate both values after every successful confirmation, duplicate successful confirmation, processed refund, and maintenance repair that could affect invoice state. Failed, abandoned, pending, and superseded attempts remain stored but do not contribute money.
 
 ## Overdue Calculation
 
@@ -94,7 +103,7 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - Initializing a payment must not mark an invoice `paid`, `partially_paid`, or update `amount_paid_kobo`/`balance_due_kobo`; verified provider confirmation is the source of truth for reconciliation.
 - A verified `charge.success` webhook can mark a matching payment `successful`.
 - A server-side Paystack Verify Transaction fallback can also mark a matching payment `successful` after validating that the returned reference, amount in kobo, and currency match the pending payment. The frontend callback itself is never proof of payment.
-- After a successful payment, invoice paid and balance amounts are recalculated from all successful payments for the invoice.
+- After a successful payment, invoice paid and balance amounts are recalculated from all successful payments minus processed refunds for the invoice.
 - Full payment marks the invoice `paid` and sets `paid_at` the first time it becomes fully paid.
 - Partial successful totals mark the invoice `partially_paid`.
 - If a previously overdue invoice is fully paid, it becomes `paid`.
@@ -136,17 +145,40 @@ Duplicate events must be idempotent:
 
 ## Overpayment
 
-If payment amount exceeds invoice balance:
+If net received exceeds invoice total:
 
-- Record the payment at the actual successful amount.
-- Set `amount_paid_kobo` to the full sum of successful payments.
+- Record successful payments at the actual provider-confirmed amount.
+- Set `amount_paid_kobo` to `netReceivedKobo`, even when that exceeds `total_kobo`.
 - Set `balance_due_kobo` to `0`.
 - Set invoice status to `paid`.
-- Flag the invoice/payment for overpayment review in audit metadata.
+- Flag the invoice/payment for overpayment review.
+- Needs Review should explain the excess amount and suggest refunding the excess.
+- Overpaid invoices must not remain `overdue` or `partially_paid`.
 
 ## Refunds and Future Adjustments
 
-`paid_at` is set when the invoice first becomes fully paid. If a paid invoice later changes because of a refund or future adjustment, the MVP should preserve the original `paid_at` and flag the case for future refund workflow work. Refunds are represented in `PaymentStatus` but are not fully implemented in the MVP.
+`payment_refunds` tracks refund lifecycle separately from the original charge status:
+
+- `pending` and `processing` refunds do not reduce `amount_paid_kobo`.
+- `needs_attention` keeps the overpayment review open and requires provider-side action.
+- `failed` keeps the overpayment review open.
+- `processed` refunds reduce net received and trigger invoice financial recalculation.
+- Processed refunds can resolve overpayment review when `overpaymentKobo` becomes zero.
+- A successful payment can remain `successful` while one or more refund records exist.
+
+`paid_at` is set when the invoice first becomes fully paid. If later processed refunds reduce net received below invoice total, the invoice status can become `partially_paid` or `overdue` according to the recalculated balance, but the original `paid_at` remains historical.
+
+## Review Resolution
+
+Review required means human or provider action is still needed. The following are not active review items by themselves:
+
+- Old failed attempts after the invoice is fully paid.
+- Old abandoned attempts after the invoice is fully paid.
+- Old pending retries superseded by a successful payment.
+- A non-success amount mismatch that did not move money and was later replaced by a successful payment.
+- Missing payout account match on historical failed/abandoned attempts.
+
+True active review examples include overpayment, amount/currency mismatch where money may have moved, unknown successful references, cancelled/void invoice payment arrival, successful payment settlement mismatch, refund failure, and refund needs-attention.
 
 ## Status Precedence
 

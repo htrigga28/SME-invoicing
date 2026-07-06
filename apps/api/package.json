@@ -15,7 +15,8 @@
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
     "db:test:migrate": "drizzle-kit migrate --config drizzle.test.config.ts",
-    "db:seed": "tsx src/database/seed.ts"
+    "db:seed": "tsx src/database/seed.ts",
+    "payments:reconcile-invoices": "tsx src/scripts/reconcile-invoices.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

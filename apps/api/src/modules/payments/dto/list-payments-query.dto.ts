@@ -19,6 +19,9 @@ export const reconciliationStates = [
   "abandoned",
   "refunded",
   "superseded",
+  "overpaid",
+  "resolution_in_progress",
+  "resolved",
   "review_required",
   "unknown"
 ] as const;

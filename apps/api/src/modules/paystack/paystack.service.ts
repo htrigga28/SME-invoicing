@@ -62,6 +62,36 @@ type PaystackVerifyApiResponse = {
   };
 };
 
+type PaystackCreateRefundInput = {
+  amountKobo: number;
+  currency: "NGN";
+  customerNote?: string | null;
+  merchantNote?: string | null;
+  transactionReference: string;
+};
+
+export type PaystackCreateRefundResponse = {
+  amountKobo: number;
+  currency: string;
+  providerRefundId: string | null;
+  status: string;
+  transactionReference: string | null;
+};
+
+type PaystackCreateRefundApiResponse = {
+  status: boolean;
+  message?: unknown;
+  data?: {
+    id?: unknown;
+    amount?: unknown;
+    currency?: unknown;
+    status?: unknown;
+    transaction?: {
+      reference?: unknown;
+    };
+  };
+};
+
 @Injectable()
 export class PaystackService {
   constructor(@Inject(ConfigService) private readonly configService: ConfigService) {}
@@ -174,6 +204,64 @@ export class PaystackService {
       paidAt: this.safeString(payload.data.paid_at, 80),
       channel: this.safeString(payload.data.channel, 80),
       gatewayResponse: this.safeString(payload.data.gateway_response, 500)
+    };
+  }
+
+  async createRefund(input: PaystackCreateRefundInput): Promise<PaystackCreateRefundResponse> {
+    const secretKey = this.configService.get<string>("PAYSTACK_SECRET_KEY");
+
+    if (!secretKey) {
+      throw new ServiceUnavailableException("Paystack is not configured.");
+    }
+
+    if (!Number.isInteger(input.amountKobo) || input.amountKobo <= 0) {
+      throw new BadRequestException("Refund amount must be a positive integer.");
+    }
+
+    const baseUrl =
+      this.configService.get<string>("PAYSTACK_BASE_URL") ?? "https://api.paystack.co";
+    let response: Response;
+
+    try {
+      response = await fetch(new URL("/refund", baseUrl), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          transaction: input.transactionReference,
+          amount: input.amountKobo,
+          currency: input.currency,
+          ...(input.customerNote ? { customer_note: input.customerNote } : {}),
+          ...(input.merchantNote ? { merchant_note: input.merchantNote } : {})
+        })
+      });
+    } catch {
+      throw new ServiceUnavailableException(
+        "Paystack is temporarily unavailable. Please try again later."
+      );
+    }
+
+    let payload: PaystackCreateRefundApiResponse | undefined;
+
+    try {
+      payload = (await response.json()) as PaystackCreateRefundApiResponse;
+    } catch {
+      payload = undefined;
+    }
+
+    if (!response.ok || !payload?.status || !payload.data?.status) {
+      throw this.toPaystackException(response.status, this.safeProviderMessage(payload?.message));
+    }
+
+    return {
+      providerRefundId: this.safeString(payload.data.id, 120),
+      status: this.safeString(payload.data.status, 80) ?? "pending",
+      amountKobo: this.numberValue(payload.data.amount),
+      currency: this.safeString(payload.data.currency, 3) ?? input.currency,
+      transactionReference:
+        this.safeString(payload.data.transaction?.reference, 120) ?? input.transactionReference
     };
   }
 

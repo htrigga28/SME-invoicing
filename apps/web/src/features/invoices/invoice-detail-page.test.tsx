@@ -71,6 +71,17 @@ const invoiceResponse = {
       createdAt: "2026-06-01T10:00:00.000Z"
     }
   ],
+  financialSummary: {
+    grossSuccessfulKobo: 0,
+    processedRefundsKobo: 0,
+    netReceivedKobo: 0,
+    appliedToInvoiceKobo: 0,
+    overpaymentKobo: 0,
+    balanceDueKobo: 97500,
+    paymentCount: 0,
+    successfulPaymentCount: 0,
+    hasOverpayment: false
+  },
   payments: [],
   publicUrl: "http://localhost:3000/invoice/public-token",
   paymentSummary: {
