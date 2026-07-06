@@ -217,7 +217,26 @@ Manual local test flow:
 11. Open an invoice detail page with linked payments and confirm the Payments section shows financial summary, refunds, and overpayment warning when applicable.
 12. Use pagination after switching filters/views and confirm Previous/Next remains visible when matching records exist.
 
-The Payments module separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and exposes one T013 mutation: Owner/Admin can request a Paystack refund for invoice overpayments. It does not create receipts, manually reconcile payments, export CSV files, or expose raw webhook payloads. Receipts are planned for T014.
+The Payments module separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and exposes one T013 mutation: Owner/Admin can request a Paystack refund for invoice overpayments. It does not manually reconcile payments, export CSV files, or expose raw webhook payloads.
+
+## Receipts
+
+T014 issues one immutable receipt for each provider-confirmed successful payment. Receipts snapshot business, customer, invoice number, payment reference, channel, paid date, and original payment amount. Processed refunds are shown as a derived refund summary; the original receipt amount is not rewritten.
+
+Backfill existing successful payments after migrations and seed data:
+
+```bash
+pnpm receipts:backfill
+```
+
+Manual receipt QA:
+
+1. Run `pnpm db:seed`, then `pnpm receipts:backfill`.
+2. Log in as any demo user and open `/receipts`.
+3. Confirm successful demo payments have `RCT-000001` style receipt numbers.
+4. Open a receipt detail page and confirm invoice, payment, customer, refund summary, public link, copy action, and print action render.
+5. Open the public `/receipt/:token` URL and confirm it loads without login or app navigation.
+6. Process or seed a refund and confirm the receipt still shows original payment amount plus refunded/net-retained summary.
 
 ## Local Paystack Webhook Testing
 
@@ -256,11 +275,11 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 ## Current Implementation Status
 
-T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement receipts, dashboard metrics, exports, email, PDF generation, or reminders.
+T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement dashboard metrics, exports, email, PDF generation, or reminders.
 
 Payment Setup and organisation subaccount support now gate public payment initialization at runtime. Public invoice viewing still works without Payment Setup.
 
-The Payments module provides reconciliation visibility for Paystack references, invoice/customer matches, safe webhook/refund event summaries, masked settlement payout accounts, and Owner/Admin overpayment refund requests. Receipt generation remains T014.
+The Payments module provides reconciliation visibility for Paystack references, invoice/customer matches, safe webhook/refund event summaries, masked settlement payout accounts, and Owner/Admin overpayment refund requests. The Receipts module generates immutable receipts for successful payments and exposes internal/public receipt pages.
 
 Implemented so far:
 
@@ -287,5 +306,6 @@ Implemented so far:
 - Organisation Payment Setup with Paystack bank resolution, account confirmation, subaccount creation, and masked payout account storage.
 - Subaccount-aware public invoice payment initialization that requires active Payment Setup.
 - Payments and Reconciliation pages with payment lists, detail views, safe event timelines, settlement account summaries, overpayment detection, Paystack excess-refund requests, and seeded demo payment history.
+- Receipts module with successful-payment receipt generation, refund-aware receipt summaries, public receipt pages, and `pnpm receipts:backfill`.
 
-Next planned implementation task: T014 Receipts.
+Next planned implementation task: T015 Dashboard Metrics.

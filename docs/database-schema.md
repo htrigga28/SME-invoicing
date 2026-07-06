@@ -378,17 +378,48 @@ Payment/refund financial truth:
 | --- | --- |
 | id | Primary key. |
 | organisation_id | References organisations. |
-| invoice_id | References invoices. |
 | payment_id | References payments. |
-| receipt_number | Organisation-scoped generated number. |
-| amount_kobo | Integer kobo. |
-| issued_at | Timestamp. |
+| invoice_id | References invoices. |
+| customer_id | References customers. |
+| receipt_number | Organisation-scoped generated number, for example `RCT-000001`. |
+| public_token | Globally unique unguessable token for `/receipt/:token`. |
+| public_access_enabled | Defaults true. |
+| currency | Receipt currency, currently `NGN`. |
+| amount_kobo | Original successful payment amount in kobo. Never changed by refunds. |
+| payment_provider | Snapshot provider such as `paystack`. |
+| payment_reference | Snapshot provider reference. |
+| payment_channel | Nullable snapshot payment channel. |
+| paid_at | Provider-confirmed payment timestamp. |
+| issued_at | Receipt issuance timestamp. |
+| business_name, business_email, business_phone, business_address | Business snapshot fields. |
+| customer_name, customer_email, customer_phone, customer_billing_address | Customer snapshot fields. |
+| invoice_number | Invoice number snapshot. |
 | created_at, updated_at | Timestamps. |
 
 Constraints:
 
 - Unique on `organisation_id + receipt_number`.
 - Unique on `payment_id`.
+- Unique on `public_token`.
+- Index `organisation_id`, `organisation_id + issued_at`, `organisation_id + customer_id`, `organisation_id + invoice_id`, and `payment_reference`.
+- Receipts do not store `provider_subaccount_code`, payout bank details, full bank account numbers, raw Paystack responses, or Paystack secrets.
+
+Receipt immutability:
+
+- One successful payment has one receipt.
+- One invoice can have multiple receipts through partial or duplicate successful payments.
+- Snapshot fields are not rewritten when business, customer, invoice, payout account, or refund records change.
+- Refund display is derived from `payment_refunds`, not stored by mutating the original receipt amount.
+
+### receipt_number_sequences
+
+| Column | Notes |
+| --- | --- |
+| organisation_id | Primary key and reference to organisations. |
+| next_number | Next organisation receipt number. |
+| updated_at | Timestamp. |
+
+Receipt number generation is server-side, organisation-scoped, and uses the same transactional upsert pattern as invoice numbering.
 
 ### audit_logs
 

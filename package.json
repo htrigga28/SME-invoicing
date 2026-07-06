@@ -16,6 +16,7 @@
     "db:test:migrate": "pnpm --filter @sme-invoicing/api db:test:migrate",
     "db:seed": "pnpm --filter @sme-invoicing/api db:seed",
     "payments:reconcile-invoices": "pnpm --filter @sme-invoicing/api payments:reconcile-invoices",
+    "receipts:backfill": "pnpm --filter @sme-invoicing/api receipts:backfill",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

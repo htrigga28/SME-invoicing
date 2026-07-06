@@ -31,6 +31,8 @@ The MVP includes:
 
 MVP reconciliation means matching Paystack payment references to invoices, deriving invoice financial state from successful payments minus processed refunds, showing whether invoices are paid, partially paid, unpaid, failed, overdue, or overpaid, and surfacing true issues that need review. It is not real bank statement reconciliation.
 
+MVP receipts are immutable proof-of-payment records generated from successful provider-confirmed payments. Refund information is displayed as a derived summary from processed refund records; the original receipt amount is not rewritten.
+
 ## Non-Goals
 
 - Full accounting system.

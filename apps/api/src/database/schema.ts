@@ -248,6 +248,20 @@ export const invoiceNumberSequences = pgTable(
   })
 );
 
+export const receiptNumberSequences = pgTable(
+  "receipt_number_sequences",
+  {
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    nextNumber: integer("next_number").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.organisationId] })
+  })
+);
+
 export const invoices = pgTable(
   "invoices",
   {
@@ -495,6 +509,67 @@ export const paymentRefunds = pgTable(
   })
 );
 
+export const receipts = pgTable(
+  "receipts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "restrict" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    receiptNumber: varchar("receipt_number", { length: 40 }).notNull(),
+    publicToken: text("public_token").notNull(),
+    publicAccessEnabled: boolean("public_access_enabled").notNull().default(true),
+    currency: varchar("currency", { length: 3 }).notNull().default("NGN"),
+    amountKobo: integer("amount_kobo").notNull(),
+    paymentProvider: varchar("payment_provider", { length: 40 }).notNull(),
+    paymentReference: varchar("payment_reference", { length: 120 }).notNull(),
+    paymentChannel: varchar("payment_channel", { length: 80 }),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    businessName: varchar("business_name", { length: 200 }).notNull(),
+    businessEmail: varchar("business_email", { length: 320 }),
+    businessPhone: varchar("business_phone", { length: 50 }),
+    businessAddress: text("business_address"),
+    customerName: varchar("customer_name", { length: 200 }).notNull(),
+    customerEmail: varchar("customer_email", { length: 320 }).notNull(),
+    customerPhone: varchar("customer_phone", { length: 50 }),
+    customerBillingAddress: text("customer_billing_address"),
+    invoiceNumber: varchar("invoice_number", { length: 40 }).notNull(),
+    ...timestamps
+  },
+  (table) => ({
+    organisationIndex: index("receipts_organisation_id_idx").on(table.organisationId),
+    organisationIssuedAtIndex: index("receipts_org_issued_at_idx").on(
+      table.organisationId,
+      table.issuedAt
+    ),
+    organisationCustomerIndex: index("receipts_org_customer_id_idx").on(
+      table.organisationId,
+      table.customerId
+    ),
+    organisationInvoiceIndex: index("receipts_org_invoice_id_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    paymentReferenceIndex: index("receipts_payment_reference_idx").on(table.paymentReference),
+    paymentUnique: uniqueIndex("receipts_payment_id_unique").on(table.paymentId),
+    organisationReceiptNumberUnique: uniqueIndex("receipts_org_receipt_number_unique").on(
+      table.organisationId,
+      table.receiptNumber
+    ),
+    publicTokenUnique: uniqueIndex("receipts_public_token_unique").on(table.publicToken)
+  })
+);
+
 export const refreshTokens = pgTable("refresh_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -533,7 +608,9 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   invoices: many(invoices),
   paymentEvents: many(paymentEvents),
   paymentRefunds: many(paymentRefunds),
+  receipts: many(receipts),
   invoiceNumberSequence: one(invoiceNumberSequences),
+  receiptNumberSequence: one(receiptNumberSequences),
   businessProfile: one(businessProfiles),
   auditLogs: many(auditLogs)
 }));
@@ -599,6 +676,13 @@ export const invoiceNumberSequencesRelations = relations(invoiceNumberSequences,
   })
 }));
 
+export const receiptNumberSequencesRelations = relations(receiptNumberSequences, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [receiptNumberSequences.organisationId],
+    references: [organisations.id]
+  })
+}));
+
 export const invoicesRelations = relations(invoices, ({ many, one }) => ({
   organisation: one(organisations, {
     fields: [invoices.organisationId],
@@ -614,7 +698,8 @@ export const invoicesRelations = relations(invoices, ({ many, one }) => ({
   }),
   lineItems: many(invoiceLineItems),
   statusEvents: many(invoiceStatusEvents),
-  payments: many(payments)
+  payments: many(payments),
+  receipts: many(receipts)
 }));
 
 export const invoiceLineItemsRelations = relations(invoiceLineItems, ({ one }) => ({
@@ -657,7 +742,8 @@ export const paymentsRelations = relations(payments, ({ many, one }) => ({
     references: [customers.id]
   }),
   events: many(paymentEvents),
-  refunds: many(paymentRefunds)
+  refunds: many(paymentRefunds),
+  receipt: one(receipts)
 }));
 
 export const paymentEventsRelations = relations(paymentEvents, ({ one }) => ({
@@ -683,6 +769,25 @@ export const paymentRefundsRelations = relations(paymentRefunds, ({ one }) => ({
   initiatedBy: one(users, {
     fields: [paymentRefunds.initiatedByUserId],
     references: [users.id]
+  })
+}));
+
+export const receiptsRelations = relations(receipts, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [receipts.organisationId],
+    references: [organisations.id]
+  }),
+  payment: one(payments, {
+    fields: [receipts.paymentId],
+    references: [payments.id]
+  }),
+  invoice: one(invoices, {
+    fields: [receipts.invoiceId],
+    references: [invoices.id]
+  }),
+  customer: one(customers, {
+    fields: [receipts.customerId],
+    references: [customers.id]
   })
 }));
 
@@ -719,5 +824,8 @@ export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type PaymentRefund = typeof paymentRefunds.$inferSelect;
+export type Receipt = typeof receipts.$inferSelect;
+export type NewReceipt = typeof receipts.$inferInsert;
+export type ReceiptNumberSequence = typeof receiptNumberSequences.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;

@@ -95,7 +95,8 @@ const paymentDetailResponse: PaymentDetailResponse = {
     }
   ],
   refunds: [],
-  receiptPlaceholder: "Receipts will be available after T014."
+  receipt: null,
+  receiptPlaceholder: "No receipt has been issued for this payment yet."
 };
 
 beforeEach(() => {
@@ -122,7 +123,7 @@ afterEach(() => {
 });
 
 describe("PaymentDetailContent", () => {
-  it("renders linked invoice, customer, settlement account, event timeline, and receipt placeholder", async () => {
+  it("renders linked invoice, customer, settlement account, event timeline, and receipt state", async () => {
     render(<PaymentDetailContent accessToken="token" paymentId="payment-1" role="owner" />);
 
     expect(await screen.findByText("PAYSTACK_DEMO_INV000011_SUCCESSFUL")).toBeInTheDocument();
@@ -135,7 +136,9 @@ describe("PaymentDetailContent", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Historical account")).toBeInTheDocument();
     expect(screen.getByText("Paystack status")).toBeInTheDocument();
-    expect(screen.getByText("Receipts will be available after T014.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No receipt has been issued for this payment yet.")
+    ).toBeInTheDocument();
     expect(screen.queryByText(/ACCT_/)).not.toBeInTheDocument();
   });
 

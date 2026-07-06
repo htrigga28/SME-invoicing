@@ -96,7 +96,7 @@ Overdue status is deterministic and can be recalculated by a scheduled job, read
 - Partial payments are allowed in the MVP.
 - Each successful payment is recorded independently.
 - The invoice remains `partially_paid` until successful payment totals meet or exceed `total_kobo`.
-- Receipt generation starts in T014; T013 only shows the linked payment history and receipt placeholder.
+- T014 issues one immutable receipt for each provider-confirmed successful payment.
 - Public partial payment entry is not exposed in MVP.
 - Public payment initialization charges the current server-calculated `balance_due_kobo`.
 - Public payment initialization must use the active organisation `provider_subaccount_code`.
@@ -132,7 +132,7 @@ If a payment webhook arrives for a cancelled or void invoice:
 - Record or update the payment status based on Paystack truth.
 - Do not move the invoice to `paid` automatically.
 - Write an audit log requiring manual review.
-- Do not generate a normal receipt unless the product explicitly accepts the payment as valid.
+- T014 still issues a receipt because provider-confirmed money moved. Keep the reconciliation review flag so the business can handle the cancelled/void invoice anomaly separately.
 
 ## Duplicate Webhook Events
 
@@ -140,7 +140,7 @@ Duplicate events must be idempotent:
 
 - Store the duplicate safely or mark it as duplicate.
 - Do not double-count payment amounts.
-- Do not generate duplicate receipts after T014.
+- Do not generate duplicate receipts. `receipts.payment_id` is unique and receipt creation is idempotent.
 - Do not write repeated status transitions unless useful as safe audit metadata.
 
 ## Overpayment

@@ -75,6 +75,11 @@ export type InvoiceDetailResponse = {
       accountNumberLast4: string;
       status: "pending_confirmation" | "active" | "verification_delayed" | "disabled";
     } | null;
+    receipt: {
+      id: string;
+      receiptNumber: string;
+      issuedAt: string;
+    } | null;
   }[];
   publicUrl: string | null;
   paymentSummary:

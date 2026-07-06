@@ -49,11 +49,11 @@ describe("authenticated navigation", () => {
     );
   });
 
-  it("marks payments as available and keeps later modules as coming soon placeholders", () => {
+  it("marks payments and receipts as available and keeps later modules as coming soon placeholders", () => {
     expect(getNavigationItems("viewer")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ href: "/payments", status: "available" }),
-        expect.objectContaining({ href: "/receipts", status: "coming-soon", task: "T014" }),
+        expect.objectContaining({ href: "/receipts", status: "available" }),
         expect.objectContaining({ href: "/exports", status: "coming-soon", task: "T016" })
       ])
     );

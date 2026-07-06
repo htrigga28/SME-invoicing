@@ -202,5 +202,11 @@ export type PaymentDetailResponse = {
   financialSummary: FinancialSummary | null;
   events: PaymentEventSummary[];
   refunds: PaymentRefund[];
-  receiptPlaceholder: string;
+  receipt: {
+    id: string;
+    receiptNumber: string;
+    publicUrl: string;
+    issuedAt: string;
+  } | null;
+  receiptPlaceholder: string | null;
 };

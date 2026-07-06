@@ -19,6 +19,7 @@ import {
   organisations,
   paymentEvents,
   payments,
+  receipts,
   users
 } from "./schema";
 
@@ -644,6 +645,15 @@ async function main() {
       throw new Error("Demo historical payment account could not be seeded.");
     }
 
+    await db
+      .delete(receipts)
+      .where(
+        and(
+          eq(receipts.organisationId, organisation.id),
+          eq(receipts.paymentProvider, "paystack"),
+          sql`${receipts.paymentReference} like 'PAYSTACK_DEMO_%'`
+        )
+      );
     await db
       .delete(paymentEvents)
       .where(

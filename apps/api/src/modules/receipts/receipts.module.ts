@@ -5,24 +5,22 @@ import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { DatabaseModule } from "../../database/database.module";
 import { AuthRepository } from "../auth/auth.repository";
-import { PaystackModule } from "../paystack/paystack.module";
 import { TokenService } from "../auth/token.service";
-import { ReceiptsModule } from "../receipts/receipts.module";
 import { TenantContextService } from "../tenant/tenant-context.service";
-import { PaymentsController } from "./payments.controller";
-import { PaymentsService } from "./payments.service";
+import { PublicReceiptsController, ReceiptsController } from "./receipts.controller";
+import { ReceiptsService } from "./receipts.service";
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, PaystackModule, ReceiptsModule],
-  controllers: [PaymentsController],
+  imports: [ConfigModule, DatabaseModule],
+  controllers: [ReceiptsController, PublicReceiptsController],
   providers: [
     AuthRepository,
     JwtAuthGuard,
-    PaymentsService,
+    ReceiptsService,
     RolesGuard,
     TenantContextService,
     TokenService
   ],
-  exports: [PaymentsService]
+  exports: [ReceiptsService]
 })
-export class PaymentsModule {}
+export class ReceiptsModule {}

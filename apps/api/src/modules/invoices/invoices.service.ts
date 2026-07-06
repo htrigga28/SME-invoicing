@@ -39,13 +39,15 @@ import {
   organisations,
   paymentEvents,
   payments,
+  receipts,
   type BusinessProfile,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
   type InvoiceStatusEvent,
   type OrganisationPaymentAccount,
-  type Payment
+  type Payment,
+  type Receipt
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import { PaymentsService } from "../payments/payments.service";
@@ -969,7 +971,8 @@ export class InvoicesService {
     const rows = await this.databaseService.db
       .select({
         payment: payments,
-        settlementAccount: organisationPaymentAccounts
+        settlementAccount: organisationPaymentAccounts,
+        receipt: receipts
       })
       .from(payments)
       .leftJoin(
@@ -980,6 +983,7 @@ export class InvoicesService {
           eq(organisationPaymentAccounts.providerSubaccountCode, payments.providerSubaccountCode)
         )
       )
+      .leftJoin(receipts, eq(receipts.paymentId, payments.id))
       .where(and(eq(payments.organisationId, organisationId), eq(payments.invoiceId, invoiceId)))
       .orderBy(desc(payments.createdAt));
     const paymentIds = rows.map((row) => row.payment.id);
@@ -1006,6 +1010,7 @@ export class InvoicesService {
       this.toInvoicePaymentHistoryItem(
         row.payment,
         row.settlementAccount,
+        row.receipt,
         eventsByPaymentId.get(row.payment.id) ?? []
       )
     );
@@ -1014,6 +1019,7 @@ export class InvoicesService {
   private toInvoicePaymentHistoryItem(
     payment: Payment,
     settlementAccount: OrganisationPaymentAccount | null,
+    receipt: Receipt | null,
     events: { errorMessage: string | null }[]
   ) {
     return {
@@ -1036,6 +1042,13 @@ export class InvoicesService {
             accountName: settlementAccount.accountName,
             accountNumberLast4: settlementAccount.accountNumberLast4,
             status: settlementAccount.status
+          }
+        : null,
+      receipt: receipt
+        ? {
+            id: receipt.id,
+            receiptNumber: receipt.receiptNumber,
+            issuedAt: receipt.issuedAt
           }
         : null
     };

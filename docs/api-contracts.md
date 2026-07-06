@@ -504,7 +504,13 @@ Amount mismatch checks compare Paystack subunit amounts directly against `paymen
     "successfulPaymentCount": 2,
     "hasOverpayment": true
   },
-  "receiptPlaceholder": "Receipts will be available after T014."
+  "receipt": {
+    "id": "uuid",
+    "receiptNumber": "RCT-000001",
+    "publicUrl": "https://app.example/receipt/public-token",
+    "issuedAt": "2026-06-30T10:01:00.000Z"
+  },
+  "receiptPlaceholder": null
 }
 ```
 
@@ -540,17 +546,61 @@ Webhook endpoint rules:
 - Recalculates invoice financial state after `refund.processed`. Pending/processing refunds leave net received unchanged; failed or needs-attention refunds keep overpayment review open.
 - Returns `{ received: true }` for processed, ignored, duplicate, mismatch, or unknown-reference events with valid signatures.
 - Rejects missing or invalid signatures safely.
-- Receipt generation remains T014 and is not performed by the webhook in T009.
+- T014 generates one immutable receipt for each provider-confirmed successful payment through the shared webhook/Verify Transaction reconciliation path.
 
 ## Receipts
 
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
-| `GET /receipts` | Required | Owner/Admin/Accountant/Viewer | Query: customer, invoice, dates | `{ receipts, pagination }` |
-| `GET /receipts/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ receipt, payment, invoice, customer }` |
-| `GET /invoices/:id/receipts` | Required | Owner/Admin/Accountant/Viewer | None | `{ receipts }` |
+| `GET /receipts` | Required | Owner/Admin/Accountant/Viewer | Query: search, customerId, invoiceId, refundState, dateFrom, dateTo, page, limit | `{ receipts, pagination }` |
+| `GET /receipts/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ receipt }` |
+| `GET /public/receipts/:token` | Public | None | None | `{ receipt }` |
 
-Tenant rule: receipts must be scoped by current organisation and linked invoice/payment ownership.
+Tenant rule: internal receipts must be scoped by current organisation and linked invoice/payment ownership. Public receipt lookup uses only the unguessable `public_token` and requires `public_access_enabled = true`.
+
+`GET /receipts` response items include safe receipt list data:
+
+```json
+{
+  "id": "uuid",
+  "receiptNumber": "RCT-000001",
+  "amountKobo": 100000,
+  "currency": "NGN",
+  "issuedAt": "2026-06-30T10:01:00.000Z",
+  "paidAt": "2026-06-30T10:00:00.000Z",
+  "paymentReference": "PAYSTACK_REF",
+  "paymentProvider": "paystack",
+  "invoice": {
+    "id": "uuid",
+    "invoiceNumber": "INV-000001",
+    "status": "paid"
+  },
+  "customer": {
+    "id": "uuid",
+    "name": "Lagos Bright Prints",
+    "email": "accounts@example.com"
+  },
+  "refundSummary": {
+    "originalAmountKobo": 100000,
+    "processedRefundedKobo": 0,
+    "netRetainedKobo": 100000,
+    "refundState": "none",
+    "hasRefundInProgress": false
+  }
+}
+```
+
+`GET /receipts/:id` returns immutable snapshot fields, safe linked invoice/payment/customer IDs for internal navigation, safe refund history, and `publicUrl`. It must not expose `organisation_id`, `provider_subaccount_code`, payout account details, raw provider metadata, full account numbers, or secrets.
+
+`GET /public/receipts/:token` returns public-safe receipt snapshots only. It omits internal IDs, `public_token`, organisation IDs, provider subaccount codes, payout details, and raw provider/refund metadata.
+
+Receipt rules:
+
+- Receipt numbers are generated server-side and never accepted from the frontend.
+- Receipt creation is idempotent and guarded by unique `payment_id`.
+- Successful payments against cancelled/void invoices still receive receipts because provider-confirmed money moved; reconciliation review remains responsible for the anomaly.
+- Processed refunds reduce displayed net retained amount but never rewrite `receipt.amount_kobo`.
+- Pending/processing/needs-attention refunds set `hasRefundInProgress` and do not reduce net retained amount.
 
 ## Dashboard, Exports, Audit Logs
 
