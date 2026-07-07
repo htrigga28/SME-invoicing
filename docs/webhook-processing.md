@@ -2,7 +2,7 @@
 
 Paystack webhook handling must be secure, idempotent, and safe when Paystack retries events.
 
-T008 creates pending Paystack payment records during checkout initialization. T012 makes that initialization organisation-subaccount-aware by storing the Paystack `provider_subaccount_code` used for checkout. T009/T013 treat verified webhooks and server-side verification as provider truth for changing payment status, invoice balances, invoice status, and refund state. Receipts remain T014.
+T008 creates pending Paystack payment records during checkout initialization. T012 makes that initialization organisation-subaccount-aware by storing the Paystack `provider_subaccount_code` used for checkout. T009/T013 treat verified webhooks and server-side verification as provider truth for changing payment status, invoice balances, invoice status, and refund state. T014 adds receipt generation after successful reconciliation.
 
 ## Required Rules
 
@@ -38,7 +38,7 @@ T008 creates pending Paystack payment records during checkout initialization. T0
 11. Write audit log.
 12. Mark event processed.
 
-Receipt generation starts in T014 and is intentionally skipped in T009.
+T014 generates receipts after successful payment reconciliation through the shared webhook/verification path.
 
 ## Signature Verification
 
@@ -116,7 +116,7 @@ For local development, Paystack cannot deliver webhooks to a localhost-only URL.
 | Currency mismatch | Mark event for review, do not mark invoice paid. |
 | Invoice already paid | Store event, do not over-credit silently; flag for review if amount is new. |
 | Invoice cancelled/void | Store payment truth, do not move invoice to paid automatically, write audit log. |
-| Partial payment | Update invoice to `partially_paid`; receipt generation is T014. |
+| Partial payment | Update invoice to `partially_paid`; T014 issues a separate receipt for the successful partial payment. |
 | Overpayment | Mark invoice `paid`, balance `0`, and show Needs Review until excess is resolved. |
 | Refund pending/processing | Store refund state; do not reduce invoice paid totals yet. |
 | Refund needs attention | Keep review open and show safe provider-action-required state. |
@@ -127,7 +127,16 @@ For local development, Paystack cannot deliver webhooks to a localhost-only URL.
 
 ## Receipt Generation
 
-Receipt generation is intentionally out of scope for T009. T014 should generate one receipt per successful payment and enforce uniqueness on `payment_id`.
+T014 receipt generation runs after a successful payment is persisted and invoice financial state is recalculated in the shared successful-payment reconciler used by both `charge.success` webhooks and server-side Verify Transaction fallback.
+
+Receipt rules:
+
+- Generate one immutable receipt per successful payment.
+- Enforce uniqueness on `receipts.payment_id`.
+- Duplicate webhook and repeated verification processing must not create duplicate receipts.
+- Successful payments against cancelled or void invoices still receive receipts because money moved; the reconciliation review state remains responsible for the invoice anomaly.
+- Receipt creation must not mutate payment status, invoice financial truth, or refund status.
+- If a historical successful payment has no receipt, run `pnpm receipts:backfill` to create the missing receipt idempotently.
 
 ## Audit Logging
 

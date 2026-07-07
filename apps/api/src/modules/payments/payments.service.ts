@@ -24,12 +24,14 @@ import {
   paymentEvents,
   paymentRefunds,
   payments,
+  receipts,
   type Customer,
   type Invoice,
   type OrganisationPaymentAccount,
   type Payment,
   type PaymentEvent,
-  type PaymentRefund
+  type PaymentRefund,
+  type Receipt
 } from "../../database/schema";
 import type { AuthenticatedUser } from "../../common/types/request-context";
 import type { CreatePaymentRefundDto } from "./dto/create-payment-refund.dto";
@@ -46,6 +48,7 @@ import {
   type PaystackCreateRefundResponse,
   type PaystackVerifyResponse
 } from "../paystack/paystack.service";
+import { ReceiptsService } from "../receipts/receipts.service";
 
 type PaystackWebhookPayload = {
   event?: unknown;
@@ -104,6 +107,7 @@ type PaymentWithRelations = {
   events: PaymentEvent[];
   invoice: Invoice | null;
   payment: Payment;
+  receipt: Receipt | null;
   refunds: PaymentRefund[];
   settlementAccount: OrganisationPaymentAccount | null;
 };
@@ -203,7 +207,8 @@ export class PaymentsService {
   constructor(
     @Inject(DatabaseService) private readonly databaseService: DatabaseService,
     @Inject(ConfigService) private readonly configService: ConfigService,
-    @Inject(PaystackService) private readonly paystackService: PaystackService
+    @Inject(PaystackService) private readonly paystackService: PaystackService,
+    @Inject(ReceiptsService) private readonly receiptsService: ReceiptsService
   ) {}
 
   async listPayments(context: ActiveOrganisationContext, query: ListPaymentsQueryDto) {
@@ -303,10 +308,18 @@ export class PaymentsService {
       settlementAccountContext: this.toSettlementAccountContext(row.settlementAccount),
       events: row.events.map((event) => this.toSafePaymentEvent(event)),
       refunds: row.refunds.map((refund) => this.toSafeRefund(refund)),
+      receipt: row.receipt
+        ? {
+            id: row.receipt.id,
+            receiptNumber: row.receipt.receiptNumber,
+            publicUrl: this.createPublicReceiptUrl(row.receipt.publicToken),
+            issuedAt: row.receipt.issuedAt
+          }
+        : null,
       financialSummary: row.invoice
         ? await this.getInvoiceFinancialSummary(row.invoice.organisationId, row.invoice.id)
         : null,
-      receiptPlaceholder: "Receipts will be available after T014."
+      receiptPlaceholder: row.receipt ? null : "No receipt has been issued for this payment yet."
     };
   }
 
@@ -426,6 +439,7 @@ export class PaymentsService {
         events: [row.event],
         invoice: row.invoice,
         payment: row.payment,
+        receipt: null,
         refunds: [],
         settlementAccount: null
       });
@@ -750,7 +764,8 @@ export class PaymentsService {
         payment: payments,
         invoice: invoices,
         customer: customers,
-        settlementAccount: organisationPaymentAccounts
+        settlementAccount: organisationPaymentAccounts,
+        receipt: receipts
       })
       .from(payments)
       .leftJoin(
@@ -775,6 +790,7 @@ export class PaymentsService {
           eq(organisationPaymentAccounts.providerSubaccountCode, payments.providerSubaccountCode)
         )
       )
+      .leftJoin(receipts, eq(receipts.paymentId, payments.id))
       .where(and(...conditions))
       .orderBy(desc(payments.createdAt));
 
@@ -1688,6 +1704,14 @@ export class PaymentsService {
     return "pending";
   }
 
+  private createPublicReceiptUrl(publicToken: string) {
+    const frontendUrl = (
+      this.configService.get<string>("FRONTEND_APP_URL") ?? "http://localhost:3000"
+    ).replace(/\/$/, "");
+
+    return `${frontendUrl}/receipt/${publicToken}`;
+  }
+
   private async markPaymentAttemptTerminal(
     payment: Payment,
     status: "abandoned" | "failed",
@@ -2154,6 +2178,7 @@ export class PaymentsService {
             ? "payment_webhook_duplicate_repaired"
             : "payment_verification_duplicate_repaired"
       });
+      await this.receiptsService.ensureReceiptForSuccessfulPayment(tx, payment.id);
 
       if (event) {
         await this.markEventProcessed(tx, event.id, {
@@ -2189,6 +2214,7 @@ export class PaymentsService {
       paidAt: input.paidAt,
       reason: input.source === "webhook" ? "payment_webhook_reconciled" : "payment_verified"
     });
+    await this.receiptsService.ensureReceiptForSuccessfulPayment(tx, payment.id);
 
     if (["cancelled", "void"].includes(invoice.status)) {
       if (event) {

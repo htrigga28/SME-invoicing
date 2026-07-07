@@ -146,7 +146,7 @@ describe("InvoiceDetailContent public URL", () => {
     expect(screen.getByText("30 Jun 2026")).toBeInTheDocument();
   });
 
-  it("renders linked payment history without receipts", async () => {
+  it("renders linked payment history with receipt links when available", async () => {
     vi.mocked(getInvoice).mockResolvedValueOnce({
       ...invoiceResponse,
       payments: [
@@ -169,6 +169,11 @@ describe("InvoiceDetailContent public URL", () => {
             accountName: "Akin & Co Creative Services",
             accountNumberLast4: "9090",
             status: "disabled"
+          },
+          receipt: {
+            id: "receipt-1",
+            receiptNumber: "RCT-000001",
+            issuedAt: "2026-06-30T10:01:00.000Z"
           }
         }
       ]
@@ -178,9 +183,7 @@ describe("InvoiceDetailContent public URL", () => {
 
     expect(await screen.findByText("PAYSTACK_DEMO_INV000007_SUCCESSFUL")).toBeInTheDocument();
     expect(screen.getByText("NGN 975.00 • United Bank for Africa • ****9090")).toBeInTheDocument();
-    expect(
-      screen.getByText("Receipt generation will be available after T014.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("RCT-000001")).toBeInTheDocument();
   });
 
   it("shows a Payment Setup CTA to owners when online payments are not active", async () => {

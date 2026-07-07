@@ -109,8 +109,30 @@ export function DetailLink({ children, href }: { children: ReactNode; href: stri
   );
 }
 
-export function formatDateTime(value: string | null) {
-  if (!value) {
+export function formatDateTime(value: unknown) {
+  if (value === null || value === undefined) {
+    return "Not recorded";
+  }
+
+  if (typeof value === "string" && value.trim() === "") {
+    return "Not recorded";
+  }
+
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return "Not recorded";
+  }
+
+  if (
+    typeof value !== "string" &&
+    typeof value !== "number" &&
+    !(value instanceof Date)
+  ) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
     return "Not recorded";
   }
 
@@ -120,7 +142,7 @@ export function formatDateTime(value: string | null) {
     minute: "2-digit",
     month: "short",
     year: "numeric"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatMoney(kobo: number) {

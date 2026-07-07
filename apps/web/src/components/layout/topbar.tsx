@@ -24,7 +24,7 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
   const items = getNavigationItems(me.membership.role);
 
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="border-b border-slate-200 bg-white print:hidden">
       <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-slate-950">{businessName}</p>

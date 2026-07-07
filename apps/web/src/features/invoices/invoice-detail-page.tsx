@@ -344,6 +344,17 @@ export function InvoiceDetailContent({
                         <p className="mt-1 text-xs text-slate-500">
                           {formatPaymentDateTime(payment.paidAt ?? payment.createdAt)}
                         </p>
+                        {payment.receipt ? (
+                          <p className="mt-2 text-xs">
+                            Receipt:{" "}
+                            <Link
+                              className="font-medium text-teal-800"
+                              href={`/receipts/${payment.receipt.id}`}
+                            >
+                              {payment.receipt.receiptNumber}
+                            </Link>
+                          </p>
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <PaymentStatusBadge status={payment.status} />
@@ -354,9 +365,6 @@ export function InvoiceDetailContent({
                 ))}
               </div>
             )}
-            <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              Receipt generation will be available after T014.
-            </p>
           </div>
         </div>
 

@@ -148,6 +148,7 @@ export function PaymentDetailContent({
     financialSummary,
     invoice,
     payment,
+    receipt,
     refunds,
     settlementAccount,
     settlementAccountContext
@@ -336,7 +337,24 @@ export function PaymentDetailContent({
         )}
       </section>
 
-      <StatusPanel message={response.receiptPlaceholder} />
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="text-lg font-semibold text-slate-950">Receipt</h2>
+        {receipt ? (
+          <div className="mt-4 space-y-3 text-sm">
+            <Link className="font-medium text-teal-800" href={`/receipts/${receipt.id}`}>
+              {receipt.receiptNumber}
+            </Link>
+            <p className="text-slate-600">Issued {formatDateTime(receipt.issuedAt)}</p>
+            <Link className="font-medium text-teal-800" href={receipt.publicUrl} target="_blank">
+              Open public receipt
+            </Link>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-slate-600">
+            {response.receiptPlaceholder ?? "No receipt is linked to this payment."}
+          </p>
+        )}
+      </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="text-lg font-semibold text-slate-950">Refunds</h2>

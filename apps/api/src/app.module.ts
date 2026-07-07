@@ -10,6 +10,7 @@ import { CustomersModule } from "./modules/customers/customers.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { PaymentSetupModule } from "./modules/payment-setup/payment-setup.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
+import { ReceiptsModule } from "./modules/receipts/receipts.module";
 import { TeamModule } from "./modules/team/team.module";
 
 @Module({
@@ -25,6 +26,7 @@ import { TeamModule } from "./modules/team/team.module";
     InvoicesModule,
     PaymentSetupModule,
     PaymentsModule,
+    ReceiptsModule,
     TeamModule
   ],
   controllers: [HealthController]

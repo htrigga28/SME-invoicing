@@ -10,6 +10,7 @@ import * as schema from "../database/schema";
 import { invoices, payments } from "../database/schema";
 import { PaystackService } from "../modules/paystack/paystack.service";
 import { PaymentsService } from "../modules/payments/payments.service";
+import { ReceiptsService } from "../modules/receipts/receipts.service";
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -22,10 +23,12 @@ async function main() {
   const db = drizzle(pool, { schema });
   const databaseService = { db } as unknown as DatabaseService;
   const configService = new ConfigService();
+  const receiptsService = new ReceiptsService(databaseService, configService);
   const paymentsService = new PaymentsService(
     databaseService,
     configService,
-    new PaystackService(configService)
+    new PaystackService(configService),
+    receiptsService
   );
 
   try {

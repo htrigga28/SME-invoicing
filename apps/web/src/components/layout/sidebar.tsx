@@ -15,7 +15,7 @@ export function Sidebar({ activePath, role }: SidebarProps) {
   const sections = getNavigationSections(role);
 
   return (
-    <aside className="hidden min-h-screen w-64 shrink-0 border-r border-slate-200 bg-white md:flex md:flex-col">
+    <aside className="hidden min-h-screen w-64 shrink-0 border-r border-slate-200 bg-white print:hidden md:flex md:flex-col">
       <div className="border-b border-slate-200 px-5 py-5">
         <p className="text-sm font-semibold text-slate-950">SME Invoicing</p>
         <p className="mt-1 text-xs text-slate-500">Operations workspace</p>

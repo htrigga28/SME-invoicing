@@ -226,15 +226,22 @@ function setup() {
     createRefund: jest.fn(),
     verifyTransaction: jest.fn()
   };
+  const receiptsService = {
+    ensureReceiptForSuccessfulPayment: jest.fn().mockResolvedValue({
+      created: true,
+      receipt: { id: "receipt-1" }
+    })
+  };
   const service = new PaymentsService(
     { db: { transaction } } as never,
     {
       get: jest.fn((key: string) => (key === "PAYSTACK_SECRET_KEY" ? secret : undefined))
     } as never,
-    paystackService as never
+    paystackService as never,
+    receiptsService as never
   );
 
-  return { service, paystackService, transaction };
+  return { receiptsService, service, paystackService, transaction };
 }
 
 describe("PaymentsService signature handling", () => {
@@ -284,7 +291,8 @@ describe("PaymentsService signature handling", () => {
     const service = new PaymentsService(
       { db: { transaction: jest.fn() } } as never,
       { get: jest.fn().mockReturnValue(undefined) } as never,
-      { verifyTransaction: jest.fn() } as never
+      { verifyTransaction: jest.fn() } as never,
+      { ensureReceiptForSuccessfulPayment: jest.fn() } as never
     );
     const rawBody = Buffer.from(JSON.stringify(createPayload()));
 
@@ -873,7 +881,8 @@ describe("PaymentsService read APIs", () => {
       })
     );
     expect(JSON.stringify(response)).not.toContain("ACCT_test_subaccount");
-    expect(response.receiptPlaceholder).toBe("Receipts will be available after T014.");
+    expect(response.receipt).toBeNull();
+    expect(response.receiptPlaceholder).toBe("No receipt has been issued for this payment yet.");
   });
 
   it("reports active exact settlement account context without exposing subaccount code", async () => {
