@@ -88,8 +88,30 @@ export function RefundStateBadge({ state }: { state: ReceiptRefundState }) {
   );
 }
 
-export function formatDateTime(value: string | null) {
-  if (!value) {
+export function formatDateTime(value: unknown) {
+  if (value === null || value === undefined) {
+    return "Not recorded";
+  }
+
+  if (typeof value === "string" && value.trim() === "") {
+    return "Not recorded";
+  }
+
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return "Not recorded";
+  }
+
+  if (
+    typeof value !== "string" &&
+    typeof value !== "number" &&
+    !(value instanceof Date)
+  ) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
     return "Not recorded";
   }
 
@@ -99,7 +121,7 @@ export function formatDateTime(value: string | null) {
     minute: "2-digit",
     month: "short",
     year: "numeric"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatMoney(kobo: number) {
@@ -108,9 +130,11 @@ export function formatMoney(kobo: number) {
 
 export function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 text-sm text-slate-900">{value}</dd>
+      <dd className="mt-1 min-w-0 break-words text-sm text-slate-900 [overflow-wrap:anywhere]">
+        {value}
+      </dd>
     </div>
   );
 }

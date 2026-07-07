@@ -98,14 +98,14 @@ export function PublicReceiptPage({ token }: { token: string }) {
           </header>
 
           <section className="grid gap-6 border-b border-slate-200 py-6 sm:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">From</h2>
               <p className="mt-2 font-semibold text-slate-950">{receipt.business.name}</p>
               <p className="mt-1 text-sm text-slate-600">{receipt.business.email}</p>
               <p className="text-sm text-slate-600">{receipt.business.phone}</p>
               <p className="mt-2 text-sm text-slate-600">{receipt.business.address}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">To</h2>
               <p className="mt-2 font-semibold text-slate-950">{receipt.customer.name}</p>
               <p className="mt-1 text-sm text-slate-600">{receipt.customer.email}</p>

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ReceiptDetailContent } from "./receipt-detail-page";
 import { getReceipt } from "./receipts-api";
+import { formatDateTime } from "./receipt-ui";
 import type { ReceiptDetailResponse } from "./types";
 
 vi.mock("sonner", () => ({
@@ -110,5 +111,25 @@ describe("ReceiptDetailContent", () => {
         "http://localhost:3000/receipt/public-token"
       )
     );
+  });
+
+  it("shows a fallback when a receipt date is invalid", async () => {
+    vi.mocked(getReceipt).mockResolvedValue({
+      ...receiptResponse,
+      receipt: {
+        ...receiptResponse.receipt,
+        issuedAt: "not-a-date"
+      }
+    });
+
+    render(<ReceiptDetailContent accessToken="token" receiptId="receipt-1" />);
+
+    expect(await screen.findByText("RCT-000001")).toBeInTheDocument();
+    expect(screen.getByText("Not recorded")).toBeInTheDocument();
+  });
+
+  it("accepts non-string date inputs without throwing", () => {
+    expect(() => formatDateTime(new Date("2026-06-30T10:01:00.000Z"))).not.toThrow();
+    expect(formatDateTime({})).toBe("Not recorded");
   });
 });

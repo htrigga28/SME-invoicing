@@ -123,7 +123,7 @@ export function ReceiptDetailContent({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-3xl font-semibold text-slate-950">
               {formatMoney(receipt.amountKobo)}
@@ -151,7 +151,7 @@ export function ReceiptDetailContent({
           </dl>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-slate-950">Public receipt</h2>
           <p className="mt-2 break-all text-sm text-slate-600">{receipt.publicUrl}</p>
           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
@@ -183,7 +183,7 @@ export function ReceiptDetailContent({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-slate-950">Business</h2>
           <dl className="mt-4 space-y-3">
             <DetailItem label="Name" value={receipt.business.name} />
@@ -193,7 +193,7 @@ export function ReceiptDetailContent({
           </dl>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-slate-950">Customer</h2>
           <dl className="mt-4 space-y-3">
             <DetailItem
@@ -201,7 +201,7 @@ export function ReceiptDetailContent({
               value={
                 receipt.customer.id ? (
                   <Link
-                    className="font-medium text-teal-800"
+                    className="font-medium text-teal-800 [overflow-wrap:anywhere]"
                     href={`/customers/${receipt.customer.id}`}
                   >
                     {receipt.customer.name}
@@ -220,7 +220,7 @@ export function ReceiptDetailContent({
           </dl>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
           <h2 className="text-lg font-semibold text-slate-950">Links</h2>
           <dl className="mt-4 space-y-3">
             <DetailItem
@@ -228,7 +228,7 @@ export function ReceiptDetailContent({
               value={
                 receipt.invoice.id ? (
                   <Link
-                    className="font-medium text-teal-800"
+                    className="font-medium text-teal-800 [overflow-wrap:anywhere]"
                     href={`/invoices/${receipt.invoice.id}`}
                   >
                     {receipt.invoice.invoiceNumber}
@@ -243,7 +243,7 @@ export function ReceiptDetailContent({
               value={
                 receipt.payment.id ? (
                   <Link
-                    className="font-medium text-teal-800"
+                    className="font-medium text-teal-800 [overflow-wrap:anywhere]"
                     href={`/payments/${receipt.payment.id}`}
                   >
                     {receipt.payment.providerReference}
