@@ -7,6 +7,7 @@ import { HealthController } from "./health.controller";
 import { AuthModule } from "./modules/auth/auth.module";
 import { BusinessProfileModule } from "./modules/business-profile/business-profile.module";
 import { CustomersModule } from "./modules/customers/customers.module";
+import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { PaymentSetupModule } from "./modules/payment-setup/payment-setup.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
@@ -23,6 +24,7 @@ import { TeamModule } from "./modules/team/team.module";
     AuthModule,
     BusinessProfileModule,
     CustomersModule,
+    DashboardModule,
     InvoicesModule,
     PaymentSetupModule,
     PaymentsModule,

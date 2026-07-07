@@ -56,6 +56,7 @@ import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
 import type { InvoiceLineItemDto } from "./dto/invoice-line-item.dto";
 import type { ListInvoicesQueryDto } from "./dto/list-invoices-query.dto";
 import type { UpdateInvoiceDto } from "./dto/update-invoice.dto";
+import { displayInvoiceStatus } from "./invoice-status";
 
 type PaginationInput = {
   page?: number;
@@ -137,28 +138,6 @@ function calculateInvoiceTotals(input: {
 
 function formatInvoiceNumber(sequenceNumber: number) {
   return `INV-${sequenceNumber.toString().padStart(6, "0")}`;
-}
-
-function shouldDisplayAsOverdue(input: {
-  balanceDueKobo: number;
-  dueDate: string;
-  status: InvoiceStatusValue;
-}) {
-  if (["draft", "paid", "cancelled", "void"].includes(input.status)) {
-    return false;
-  }
-
-  if (input.balanceDueKobo <= 0) {
-    return false;
-  }
-
-  const today = new Date();
-  const dueDate = new Date(`${input.dueDate}T00:00:00.000Z`);
-  const todayStart = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-  );
-
-  return dueDate < todayStart;
 }
 
 @Injectable()
@@ -1215,13 +1194,7 @@ export class InvoicesService {
   }
 
   private displayStatus(invoice: Invoice): InvoiceStatusValue {
-    return shouldDisplayAsOverdue({
-      balanceDueKobo: invoice.balanceDueKobo,
-      dueDate: invoice.dueDate,
-      status: invoice.status
-    })
-      ? "overdue"
-      : invoice.status;
+    return displayInvoiceStatus(invoice);
   }
 
   private toSafeInvoiceListItem(invoice: Invoice, customer: Customer) {

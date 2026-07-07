@@ -606,9 +606,13 @@ Receipt rules:
 
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
-| `GET /dashboard/summary` | Required | Owner/Admin/Accountant/Viewer | Query: date range | `{ totals, invoiceStatusBreakdown, recentInvoices, recentPayments, monthlyCollections }` |
+| `GET /dashboard/overview` | Required | Owner/Admin/Accountant/Viewer | Query: `dateFrom`, `dateTo`, `granularity=auto\|day\|week\|month` | `{ period, financialActivity, currentPosition, invoiceStatusBreakdown, outstandingAging, cashflowTrend, recentInvoices, recentPayments, recentReceipts, reviewIssues, paymentSetup }` |
 | `GET /exports/invoices.csv` | Required | Owner/Admin/Accountant | Query: status, dates, customer | CSV file |
 | `GET /audit-logs` | Required | Owner/Admin | Query: actor, action, entity, dates | `{ auditLogs, pagination }` |
+
+Dashboard overview derives organisation scope from the authenticated membership and never accepts `organisationId` from the frontend. Period financial activity uses successful `payments.paid_at`, processed `payment_refunds.processed_at`, and receipt `issued_at` within the selected range. Current operational position is not date-filtered and uses current invoice balances plus the same payment/reconciliation classification used by the Payments page.
+
+Dashboard cashflow grouping uses `Africa/Lagos` calendar buckets for display. Default range is the last 30 days, resolved as `dateTo = today` and `dateFrom = 29 days before dateTo`; ranges beyond 2 years are rejected.
 
 Dashboard and exports are blocked until business profile setup is complete.
 
