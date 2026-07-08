@@ -238,6 +238,25 @@ Manual receipt QA:
 5. Open the public `/receipt/:token` URL and confirm it loads without login or app navigation.
 6. Process or seed a refund and confirm the receipt still shows original payment amount plus refunded/net-retained summary.
 
+## Dashboard
+
+The internal dashboard is available at `/dashboard` for Owner, Admin, Accountant, and Viewer roles. It calls `GET /dashboard/overview` once and separates selected-period financial activity from current operational position.
+
+Dashboard metrics use payment/refund financial truth:
+
+- Gross collections are successful payments grouped by `paid_at`.
+- Processed refunds are processed refund records grouped by `processed_at`.
+- Net collections may be negative for a period when refunds exceed new collections.
+- Current outstanding, overdue, active pending confirmations, and review-required counts are current-state metrics and are not narrowed by the selected period.
+
+Manual dashboard QA:
+
+1. Run `pnpm db:seed`, then `pnpm receipts:backfill`.
+2. Log in as any demo user and open `/dashboard`.
+3. Confirm Net collected, Outstanding, Overdue, Review required, cashflow trend, invoice status, aging, recent invoices, payments, receipts, and review issues render.
+4. Switch between Last 7 days, Last 30 days, Last 90 days, and a custom range.
+5. Confirm Payment Setup shows a management CTA only for Owner/Admin when setup is incomplete or disabled.
+
 ## Local Paystack Webhook Testing
 
 Paystack cannot send a webhook to a localhost-only URL. In local development, use a publicly reachable tunnel such as ngrok and configure the Paystack Test Mode webhook URL as:
@@ -275,7 +294,7 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 ## Current Implementation Status
 
-T009 adds Paystack webhook reconciliation for confirmed payments. It intentionally does not implement dashboard metrics, exports, email, PDF generation, or reminders.
+T015 adds financial dashboard metrics and an operational dashboard overview. Exports, email, PDF generation, and reminders remain outside the current implementation.
 
 Payment Setup and organisation subaccount support now gate public payment initialization at runtime. Public invoice viewing still works without Payment Setup.
 
@@ -290,7 +309,7 @@ Implemented so far:
 - CI workflow for install, lint, typecheck, test, and build.
 - Auth endpoints for register, login, refresh, logout, and current user.
 - Business profile onboarding endpoints and UI.
-- Dashboard shell gated by onboarding status, with a Payment Setup CTA until online payments are active.
+- Dashboard overview with period financial activity, current operational position, Recharts visualizations, recent invoices/payments/receipts, review issues, and Payment Setup readiness.
 - Team invitation and member management endpoints.
 - Team settings and invitation acceptance UI.
 - Idempotent development seed data with demo users and invitation records.
@@ -308,4 +327,4 @@ Implemented so far:
 - Payments and Reconciliation pages with payment lists, detail views, safe event timelines, settlement account summaries, overpayment detection, Paystack excess-refund requests, and seeded demo payment history.
 - Receipts module with successful-payment receipt generation, refund-aware receipt summaries, public receipt pages, and `pnpm receipts:backfill`.
 
-Next planned implementation task: T015 Dashboard Metrics.
+Next planned implementation task: T016 Exports and Audit Logs.

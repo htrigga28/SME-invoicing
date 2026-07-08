@@ -1,0 +1,71 @@
+"use client";
+
+import React from "react";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  INVOICE_STATUS_LABELS,
+  formatKoboToNaira,
+  type InvoiceStatus
+} from "@sme-invoicing/shared";
+
+import type { DashboardOverviewResponse } from "../types";
+
+type StatusPoint = DashboardOverviewResponse["invoiceStatusBreakdown"][number];
+
+const statusColors: Record<InvoiceStatus, string> = {
+  draft: "#94a3b8",
+  sent: "#2563eb",
+  viewed: "#0891b2",
+  partially_paid: "#d97706",
+  paid: "#059669",
+  overdue: "#dc2626",
+  cancelled: "#64748b",
+  void: "#3f3f46"
+};
+
+export function InvoiceStatusChart({ data }: { data: StatusPoint[] }) {
+  const visibleData = data
+    .filter((item) => item.count > 0)
+    .map((item) => ({
+      ...item,
+      label: INVOICE_STATUS_LABELS[item.status]
+    }));
+
+  if (!visibleData.length) {
+    return (
+      <div className="flex h-[260px] items-center justify-center text-sm text-slate-500">
+        No invoices yet.
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer height={260} width="100%">
+      <PieChart>
+        <Pie
+          cx="50%"
+          cy="50%"
+          data={visibleData}
+          dataKey="count"
+          innerRadius={48}
+          nameKey="label"
+          outerRadius={84}
+          paddingAngle={2}
+        >
+          {visibleData.map((item) => (
+            <Cell fill={statusColors[item.status]} key={item.status} />
+          ))}
+        </Pie>
+        <Tooltip
+          formatter={(value, _name, item) => [
+            `${value} invoice${Number(value) === 1 ? "" : "s"} · ${formatKoboToNaira(
+              Number((item.payload as StatusPoint).balanceKobo)
+            )}`,
+            "Status"
+          ]}
+        />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}
