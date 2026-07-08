@@ -94,6 +94,39 @@ export async function apiGet<TResponse>(
   return apiRequest<TResponse>(path, { ...init, method: "GET" });
 }
 
+export async function apiDownload(
+  path: string,
+  init: Omit<ApiRequestOptions, "body"> = {}
+): Promise<{ blob: Blob; filename: string | null }> {
+  const { accessToken, ...requestInit } = init;
+  const headers = new Headers(init.headers);
+
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  const response = await fetch(new URL(path, getApiBaseUrl()), {
+    ...requestInit,
+    method: requestInit.method ?? "GET",
+    headers
+  });
+
+  if (!response.ok) {
+    const responseBody = await readApiErrorResponse(response);
+
+    throw new ApiRequestError(
+      extractApiErrorMessage(response.status, responseBody),
+      response.status,
+      responseBody
+    );
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: getDownloadFilename(response.headers.get("Content-Disposition"))
+  };
+}
+
 export function extractApiErrorMessage(status: number, responseBody?: ApiErrorPayload) {
   const message = getUsefulMessage(responseBody?.message);
 
@@ -151,4 +184,19 @@ function getUsefulMessage(value: unknown) {
   }
 
   return message;
+}
+
+function getDownloadFilename(contentDisposition: string | null) {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const encodedMatch = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
+
+  if (encodedMatch?.[1]) {
+    return decodeURIComponent(encodedMatch[1].replaceAll('"', ""));
+  }
+
+  const match = /filename="?([^";]+)"?/i.exec(contentDisposition);
+  return match?.[1] ?? null;
 }

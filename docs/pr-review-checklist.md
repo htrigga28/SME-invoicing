@@ -66,6 +66,9 @@ Use this checklist when reviewing every pull request. The goal is to keep task b
 - [ ] User input is validated before persistence.
 - [ ] Sensitive data is not exposed in public pages, logs, exports, or errors.
 - [ ] Authentication and authorization are enforced server-side.
+- [ ] CSV exports neutralize spreadsheet formulas and enforce the 10,000-row limit without silent truncation.
+- [ ] Export audit events contain only safe metadata and never file content or row data.
+- [ ] Audit-log APIs/UI expose only sanitized metadata summaries/details, not raw JSON payloads.
 
 ## Payment Setup Specific Checks
 

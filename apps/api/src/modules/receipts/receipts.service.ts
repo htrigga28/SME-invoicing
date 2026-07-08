@@ -75,6 +75,16 @@ export class ReceiptsService {
     };
   }
 
+  async listReceiptsForExport(
+    context: ActiveOrganisationContext,
+    query: Omit<ListReceiptsQueryDto, "limit" | "page">
+  ) {
+    const rows = await this.findReceiptRows(context.activeOrganisation.id, query);
+    return this.applyRefundStateFilter(rows, query.refundState).map((row) =>
+      this.toReceiptListItem(row)
+    );
+  }
+
   async getReceipt(context: ActiveOrganisationContext, receiptId: string) {
     const [row] = await this.findReceiptRows(context.activeOrganisation.id, { receiptId });
 
@@ -348,6 +358,7 @@ export class ReceiptsService {
       amountKobo: row.receipt.amountKobo,
       paymentReference: row.receipt.paymentReference,
       paymentProvider: row.receipt.paymentProvider,
+      paymentChannel: row.receipt.paymentChannel,
       paidAt: row.receipt.paidAt,
       issuedAt: row.receipt.issuedAt,
       invoice: row.invoice

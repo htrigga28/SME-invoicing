@@ -607,8 +607,13 @@ Receipt rules:
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
 | `GET /dashboard/overview` | Required | Owner/Admin/Accountant/Viewer | Query: `dateFrom`, `dateTo`, `granularity=auto\|day\|week\|month` | `{ period, financialActivity, currentPosition, invoiceStatusBreakdown, outstandingAging, cashflowTrend, recentInvoices, recentPayments, recentReceipts, reviewIssues, paymentSetup }` |
-| `GET /exports/invoices.csv` | Required | Owner/Admin/Accountant | Query: status, dates, customer | CSV file |
-| `GET /audit-logs` | Required | Owner/Admin | Query: actor, action, entity, dates | `{ auditLogs, pagination }` |
+| `GET /exports/customers.csv` | Required | Owner/Admin/Accountant | Query: `search`, `status=active\|archived\|all` | CSV file |
+| `GET /exports/invoices.csv` | Required | Owner/Admin/Accountant | Query: `search`, `status`, `customerId`, `issueDateFrom`, `issueDateTo`, `dueDateFrom`, `dueDateTo` | CSV file |
+| `GET /exports/payments.csv` | Required | Owner/Admin/Accountant | Query: `search`, `status`, `reconciliationState`, `view`, `dateFrom`, `dateTo`, `customerId`, `invoiceId` | CSV file |
+| `GET /exports/receipts.csv` | Required | Owner/Admin/Accountant | Query: `search`, `customerId`, `invoiceId`, `refundState`, `dateFrom`, `dateTo` | CSV file |
+| `GET /exports/audit-logs.csv` | Required | Owner/Admin | Query: `search`, `action`, `category`, `actorUserId`, `resourceType`, `dateFrom`, `dateTo` | CSV file |
+| `GET /audit-logs` | Required | Owner/Admin | Query: `search`, `action`, `category`, `actorUserId`, `resourceType`, `dateFrom`, `dateTo`, `page`, `limit` | `{ auditLogs, pagination }` |
+| `GET /audit-logs/:id` | Required | Owner/Admin | None | `{ auditLog }` |
 
 Dashboard overview derives organisation scope from the authenticated membership and never accepts `organisationId` from the frontend. Period financial activity uses successful `payments.paid_at`, processed `payment_refunds.processed_at`, and receipt `issued_at` within the selected range. Current operational position is not date-filtered and uses current invoice balances plus the same payment/reconciliation classification used by the Payments page.
 
@@ -616,4 +621,56 @@ Dashboard cashflow grouping uses `Africa/Lagos` calendar buckets for display. De
 
 Dashboard and exports are blocked until business profile setup is complete.
 
+CSV exports are generated synchronously and are not persisted. All export endpoints derive organisation scope from the authenticated membership and enforce backend RBAC. Viewer cannot export. Audit-log CSV export is Owner/Admin only; Accountant can export customers, invoices, payments, and receipts only.
+
+Export responses use `text/csv; charset=utf-8` and `Content-Disposition: attachment; filename="<dataset>-YYYY-MM-DD.csv"`. CSV output uses stable column ordering, CRLF line endings, RFC-style quote escaping, and spreadsheet formula-injection neutralization for cells beginning with dangerous formula characters after optional leading whitespace. Money columns export `currency` separately and use exact decimal NGN strings such as `1700.00`, not formatted display text.
+
+Synchronous exports have a hard 10,000-row limit. If the filtered result exceeds that limit, the API returns a business error: `This export contains more than 10,000 records. Narrow the filters and try again.` Exports must not silently truncate rows.
+
+Successful export generation writes one `export_generated` audit log after the export dataset has been selected. Audit metadata contains only `dataset`, a safe filter summary, `rowCount`, and `generatedAt`; it never stores file content or exported rows. Audit-log exports snapshot rows before writing their own export event so the export does not recursively include itself.
+
+CSV datasets:
+
+- Customers: `customer_name`, `email`, `phone`, `billing_address`, `status`, `created_at`, `updated_at`.
+- Invoices: `invoice_number`, `customer_name`, `customer_email`, `status`, `currency`, `issue_date`, `due_date`, `subtotal_ngn`, `discount_ngn`, `tax_ngn`, `total_ngn`, `amount_paid_ngn`, `balance_due_ngn`, `overpayment_ngn`, `sent_at`, `viewed_at`, `paid_at`, `cancelled_at`, `voided_at`, `created_at`.
+- Payments: `provider_reference`, `invoice_number`, `customer_name`, `customer_email`, `currency`, `amount_ngn`, `payment_status`, `primary_state`, `reconciliation_state`, `review_state`, `review_reason`, `paid_at`, `failed_at`, `abandoned_at`, `initialized_at`, `settlement_bank_name`, `settlement_account_name`, `settlement_account_last4`, `settlement_account_context`, `processed_refunded_ngn`, `net_payment_contribution_ngn`.
+- Receipts: `receipt_number`, `invoice_number`, `customer_name`, `customer_email`, `payment_reference`, `payment_provider`, `payment_channel`, `currency`, `original_payment_ngn`, `processed_refunded_ngn`, `net_retained_ngn`, `refund_state`, `paid_at`, `issued_at`.
+- Audit logs: `timestamp`, `actor`, `actor_email`, `action`, `category`, `resource_type`, `resource_identifier`, `metadata_summary`.
+
 Full audit logs are Owner/Admin only for MVP. Accountant operational history can be exposed later through entity-specific timelines, not the full audit log. Viewer cannot access audit logs.
+
+`GET /audit-logs` returns read-only, organisation-scoped events:
+
+```json
+{
+  "auditLogs": [
+    {
+      "id": "uuid",
+      "action": "invoice_sent",
+      "actionLabel": "Invoice Sent",
+      "category": "invoice",
+      "actor": {
+        "id": "uuid",
+        "name": "Demo Owner",
+        "email": "owner@demo.com"
+      },
+      "actorLabel": "Demo Owner (owner@demo.com)",
+      "resource": {
+        "type": "invoice",
+        "id": "uuid",
+        "label": "INV-000001"
+      },
+      "metadataSummary": "Invoice Number: INV-000001",
+      "createdAt": "2026-07-08T12:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 25,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+`GET /audit-logs/:id` includes the same safe event fields plus `metadataFields`, a concise list of redacted key/value rows. The API never returns arbitrary raw metadata JSON, password or token material, provider subaccount codes, full account numbers, public invoice/receipt tokens, raw webhook/provider/refund payloads, or organisation IDs. Safe masked fields such as `accountNumberLast4` may remain visible.

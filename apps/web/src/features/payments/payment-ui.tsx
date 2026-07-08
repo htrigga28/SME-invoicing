@@ -122,11 +122,7 @@ export function formatDateTime(value: unknown) {
     return "Not recorded";
   }
 
-  if (
-    typeof value !== "string" &&
-    typeof value !== "number" &&
-    !(value instanceof Date)
-  ) {
+  if (typeof value !== "string" && typeof value !== "number" && !(value instanceof Date)) {
     return "Not recorded";
   }
 
