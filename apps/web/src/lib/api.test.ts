@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiRequestError, apiRequest, extractApiErrorMessage, getApiBaseUrl } from "./api";
+import {
+  ApiRequestError,
+  apiDownload,
+  apiRequest,
+  extractApiErrorMessage,
+  getApiBaseUrl
+} from "./api";
 
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
 
@@ -69,5 +75,32 @@ describe("getApiBaseUrl", () => {
       "The payment provider is currently unavailable. Please try again later."
     );
     expect(extractApiErrorMessage(404)).toBe("The requested record could not be found.");
+  });
+
+  it("downloads blobs with auth headers and content-disposition filename", async () => {
+    const blob = new Blob(["csv"]);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: vi.fn().mockResolvedValue(blob),
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="invoices-2026-07-08.csv"'
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await apiDownload("/exports/invoices.csv", { accessToken: "token" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("http://localhost:4000/exports/invoices.csv"),
+      expect.objectContaining({
+        headers: expect.any(Headers)
+      })
+    );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer token");
+    expect(response).toEqual({
+      blob,
+      filename: "invoices-2026-07-08.csv"
+    });
   });
 });

@@ -243,6 +243,29 @@ export class PaymentsService {
     };
   }
 
+  async listPaymentsForExport(
+    context: ActiveOrganisationContext,
+    query: Omit<ListPaymentsQueryDto, "limit" | "page">
+  ) {
+    const rows = await this.findPaymentsWithRelations(context.activeOrganisation.id, query);
+    const contextRows = await this.findPaymentsWithRelations(context.activeOrganisation.id, {});
+    const classifications = this.computePaymentClassifications(rows, contextRows);
+    const view = query.view ?? "reconciliation";
+    const filteredByState = query.reconciliationState
+      ? rows.filter(
+          (row) =>
+            classifications.get(row.payment.id)?.reconciliationState === query.reconciliationState
+        )
+      : rows;
+
+    return this.applyPaymentView(filteredByState, classifications, view).map((row) =>
+      this.toPaymentListItem(
+        row,
+        classifications.get(row.payment.id) ?? this.unknownClassification()
+      )
+    );
+  }
+
   async getPayment(context: ActiveOrganisationContext, paymentId: string) {
     const [row] = await this.findPaymentsWithRelations(context.activeOrganisation.id, {
       paymentId

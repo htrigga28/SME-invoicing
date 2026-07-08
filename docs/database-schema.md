@@ -434,6 +434,8 @@ Receipt number generation is server-side, organisation-scoped, and uses the same
 | metadata_redacted | Safe metadata only. |
 | created_at | Timestamp. |
 
+Audit logs are append-only and read-only through the T016 UI. API and CSV export responses present sanitized metadata summaries/fields rather than arbitrary raw JSON. Sensitive keys such as password/token material, provider subaccount codes, public tokens, full account numbers, raw payloads, signatures, and organisation IDs must be excluded from audit-log responses and exports while safe masked fields such as `accountNumberLast4` may remain visible.
+
 ### files
 
 | Column | Notes |

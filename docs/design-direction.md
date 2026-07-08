@@ -43,8 +43,9 @@ Every primary workflow must be demoable in under 5 minutes.
 | Public invoice payment page | Present the invoice clearly, show balance due, and make Pay Now the primary action. Avoid internal admin data. |
 | Payments/reconciliation page | Show payment references, provider status, matched invoice, customer, amount, date, and reconciliation state. |
 | Receipts page | Show receipt number, invoice, customer, payment reference, amount, date, and downloadable/viewable detail. |
+| Exports page | Use focused export panels per dataset instead of one universal form. Keep filters compact and make download state explicit. |
 | Settings/team page | Keep business profile, members, invitations, and role management separate but easy to scan. |
-| Audit logs page | Use filters for actor, action, entity type, and date. Keep raw sensitive payloads out of the UI. |
+| Audit logs page | Use filters for actor, action, category, entity type, and date. Show concise metadata rows and keep raw sensitive payloads out of the UI. |
 
 ## Dashboard Content
 

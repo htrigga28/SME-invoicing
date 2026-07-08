@@ -27,6 +27,9 @@ Required coverage:
 - Duplicate payment reference handling.
 - Receipt generation.
 - CSV export filters.
+- CSV escaping, deterministic columns, exact money formatting, and spreadsheet formula-injection protection.
+- Export RBAC, tenant scope, row limits, and export audit logging.
+- Audit-log browsing RBAC, search/filter pagination, category mapping, and metadata redaction.
 
 ## Backend Test Notes
 
@@ -56,6 +59,8 @@ Required coverage:
 - Table tests should cover loading, empty, error, and populated states.
 - Public invoice tests should prove invalid tokens show a safe customer-facing error.
 - Role-based UI tests should confirm restricted actions are hidden or disabled, but backend tests remain the source of truth.
+- Export UI tests should mock blob downloads and assert success/error feedback without navigating away from the app.
+- Audit-log UI tests should assert safe metadata rows rather than raw JSON dumps.
 
 ## Playwright E2E Demo Flow
 

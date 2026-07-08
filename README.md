@@ -217,7 +217,7 @@ Manual local test flow:
 11. Open an invoice detail page with linked payments and confirm the Payments section shows financial summary, refunds, and overpayment warning when applicable.
 12. Use pagination after switching filters/views and confirm Previous/Next remains visible when matching records exist.
 
-The Payments module separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and exposes one T013 mutation: Owner/Admin can request a Paystack refund for invoice overpayments. It does not manually reconcile payments, export CSV files, or expose raw webhook payloads.
+The Payments module separates checkout attempts from reconciliation records, hides superseded retries from the default view, keeps all attempts available for audit/support, and exposes one T013 mutation: Owner/Admin can request a Paystack refund for invoice overpayments. It does not manually reconcile payments or expose raw webhook payloads; CSV downloads are handled by the T016 Exports module.
 
 ## Receipts
 
@@ -257,6 +257,36 @@ Manual dashboard QA:
 4. Switch between Last 7 days, Last 30 days, Last 90 days, and a custom range.
 5. Confirm Payment Setup shows a management CTA only for Owner/Admin when setup is incomplete or disabled.
 
+## Exports and Audit Logs
+
+The internal exports module is available at `/exports` for Owner, Admin, and Accountant roles. Viewer cannot access export navigation or backend export endpoints. The Audit Logs page is available at `/audit-logs` for Owner/Admin only.
+
+Supported CSV exports:
+
+- Customers: active, archived, or all customer contact records.
+- Invoices: invoice totals, balances, statuses, and lifecycle dates.
+- Payments: payment attempts, reconciliation/review state, masked settlement account details, processed refunds, and net payment contribution.
+- Receipts: immutable receipt records with processed refund/net-retained summaries.
+- Audit Logs: Owner/Admin-only operational history export.
+
+Export safety rules:
+
+- CSV files are generated synchronously and are not persisted or uploaded.
+- Each export is capped at 10,000 filtered rows. Larger exports return a friendly business error asking the user to narrow filters.
+- Spreadsheet formula injection is neutralized before CSV serialization.
+- Money exports use exact decimal NGN strings with currency in a separate column.
+- Exports never include `provider_subaccount_code`, full bank account numbers, public invoice/receipt tokens, raw webhook/provider/refund payloads, password or token material, or organisation IDs.
+- Every successful export writes one safe `export_generated` audit log with dataset, filters summary, row count, and generated timestamp.
+
+Manual export/audit QA:
+
+1. Run `pnpm db:seed`, then `pnpm receipts:backfill`.
+2. Login as Owner/Admin and open `/exports`.
+3. Download Customers, Invoices, Payments, Receipts, and Audit Logs CSV files.
+4. Login as Accountant and confirm Audit Logs export is hidden while the other exports work.
+5. Login as Viewer and confirm Exports and Audit Logs navigation are hidden and backend access is forbidden.
+6. Open `/audit-logs` as Owner/Admin, filter by category/action/date/search, open a detail row, and confirm metadata is shown as safe key/value rows rather than raw JSON.
+
 ## Local Paystack Webhook Testing
 
 Paystack cannot send a webhook to a localhost-only URL. In local development, use a publicly reachable tunnel such as ngrok and configure the Paystack Test Mode webhook URL as:
@@ -294,11 +324,11 @@ The frontend currently stores access and refresh tokens in `localStorage` for MV
 
 ## Current Implementation Status
 
-T015 adds financial dashboard metrics and an operational dashboard overview. Exports, email, PDF generation, and reminders remain outside the current implementation.
+T016 adds secure CSV exports and read-only audit log browsing. Email, PDF generation, scheduled/background exports, and reminders remain outside the current implementation.
 
 Payment Setup and organisation subaccount support now gate public payment initialization at runtime. Public invoice viewing still works without Payment Setup.
 
-The Payments module provides reconciliation visibility for Paystack references, invoice/customer matches, safe webhook/refund event summaries, masked settlement payout accounts, and Owner/Admin overpayment refund requests. The Receipts module generates immutable receipts for successful payments and exposes internal/public receipt pages.
+The Payments module provides reconciliation visibility for Paystack references, invoice/customer matches, safe webhook/refund event summaries, masked settlement payout accounts, and Owner/Admin overpayment refund requests. The Receipts module generates immutable receipts for successful payments and exposes internal/public receipt pages. The Exports module provides synchronous CSV downloads with spreadsheet-injection protection and export audit logging. The Audit Logs module exposes Owner/Admin read-only operational history with safe metadata summaries and details.
 
 Implemented so far:
 
@@ -326,5 +356,7 @@ Implemented so far:
 - Subaccount-aware public invoice payment initialization that requires active Payment Setup.
 - Payments and Reconciliation pages with payment lists, detail views, safe event timelines, settlement account summaries, overpayment detection, Paystack excess-refund requests, and seeded demo payment history.
 - Receipts module with successful-payment receipt generation, refund-aware receipt summaries, public receipt pages, and `pnpm receipts:backfill`.
+- Secure CSV exports for customers, invoices, payments, receipts, and Owner/Admin audit logs.
+- Read-only Audit Logs API/UI with search, filters, pagination, safe detail inspection, and metadata redaction.
 
-Next planned implementation task: T016 Exports and Audit Logs.
+Next planned implementation task: T017 UI Polish Pass.

@@ -81,6 +81,8 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Payment Setup management is Owner/Admin only; Accountant/Viewer can view status only.
 - Payments and reconciliation views are readable in T013 for Owner/Admin/Accountant/Viewer.
 - Owner/Admin can initiate Paystack overpayment refund requests from payment detail. Accountant/Viewer remain read-only for refunds.
+- Owner/Admin/Accountant can generate customer, invoice, payment, and receipt CSV exports. Only Owner/Admin can export audit logs.
+- Only Owner/Admin can browse full audit logs. Accountant operational history should stay entity-specific unless later scoped.
 - Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
 - Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
 - Archived customers remain readable but cannot be updated in the MVP.

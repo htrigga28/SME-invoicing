@@ -33,6 +33,10 @@ MVP reconciliation means matching Paystack payment references to invoices, deriv
 
 MVP receipts are immutable proof-of-payment records generated from successful provider-confirmed payments. Refund information is displayed as a derived summary from processed refund records; the original receipt amount is not rewritten.
 
+MVP exports are synchronous CSV downloads for organisation-scoped customers, invoices, payments, receipts, and Owner/Admin audit logs. Exported data must remain operationally useful without exposing public tokens, provider subaccount codes, raw provider payloads, full account numbers, or auth/token secrets. CSV cells are protected against spreadsheet formula injection, and successful exports create one safe audit event.
+
+MVP audit logs are append-only operational history. Owner/Admin users can browse and filter audit events and inspect safe metadata summaries. The UI and API must not expose arbitrary raw metadata JSON.
+
 ## Non-Goals
 
 - Full accounting system.

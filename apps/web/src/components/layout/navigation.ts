@@ -19,12 +19,16 @@ const mainRoutes: AppRoute[] = [
   { href: "/invoices", label: "Invoices", status: "available" },
   { href: "/payments", label: "Payments", status: "available" },
   { href: "/receipts", label: "Receipts", status: "available" },
-  { href: "/exports", label: "Exports", status: "coming-soon", task: "T016" },
+  {
+    href: "/exports",
+    label: "Exports",
+    status: "available",
+    allowedRoles: ["owner", "admin", "accountant"]
+  },
   {
     href: "/audit-logs",
     label: "Audit Logs",
-    status: "coming-soon",
-    task: "T016",
+    status: "available",
     allowedRoles: ["owner", "admin"]
   }
 ];

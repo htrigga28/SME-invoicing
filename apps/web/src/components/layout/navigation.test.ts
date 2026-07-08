@@ -49,12 +49,27 @@ describe("authenticated navigation", () => {
     );
   });
 
-  it("marks payments and receipts as available and keeps later modules as coming soon placeholders", () => {
+  it("shows exports to operational roles but hides exports from viewers", () => {
+    for (const role of ["owner", "admin", "accountant"] as const) {
+      expect(getNavigationItems(role)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ href: "/exports", status: "available" })])
+      );
+    }
+
     expect(getNavigationItems("viewer")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ href: "/payments", status: "available" }),
-        expect.objectContaining({ href: "/receipts", status: "available" }),
-        expect.objectContaining({ href: "/exports", status: "coming-soon", task: "T016" })
+        expect.objectContaining({ href: "/receipts", status: "available" })
+      ])
+    );
+    expect(getNavigationItems("viewer").map((item) => item.label)).not.toContain("Exports");
+  });
+
+  it("does not mark exports or audit logs as coming soon for permitted roles", () => {
+    expect(getNavigationItems("owner")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ href: "/exports", status: "available" }),
+        expect.objectContaining({ href: "/audit-logs", status: "available" })
       ])
     );
   });
