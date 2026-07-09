@@ -12,6 +12,11 @@ vi.mock("@/components/ui/toaster", () => ({
   AppToaster: MockAppToaster
 }));
 
+vi.mock("next/font/google", () => ({
+  Hanken_Grotesk: () => ({ variable: "font-hanken" }),
+  JetBrains_Mono: () => ({ variable: "font-jetbrains" })
+}));
+
 afterEach(() => {
   cleanup();
 });

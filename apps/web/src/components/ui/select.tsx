@@ -1,5 +1,9 @@
 import React, { forwardRef, type SelectHTMLAttributes } from "react";
 
+import { cn } from "@/lib/cn";
+
+import { controlClassName } from "./form";
+
 type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
   wrapperClassName?: string;
 };
@@ -9,9 +13,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   ref
 ) {
   return (
-    <span className={`relative block w-full ${wrapperClassName}`}>
+    <span className={cn("relative block w-full", wrapperClassName)}>
       <select
-        className={`w-full appearance-none rounded-md border border-slate-300 bg-white py-2 pl-3 pr-12 text-sm text-slate-950 shadow-sm focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500/25 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 ${className}`}
+        className={cn(controlClassName, "appearance-none py-2 pl-3 pr-12", className)}
         ref={ref}
         {...props}
       >
@@ -19,7 +23,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       </select>
       <svg
         aria-hidden="true"
-        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600"
+        className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]"
         data-testid="select-chevron"
         fill="none"
         viewBox="0 0 20 20"

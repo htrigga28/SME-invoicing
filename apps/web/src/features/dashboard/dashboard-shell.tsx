@@ -5,7 +5,11 @@ import React, { useEffect, useMemo, useState, type FormEvent, type ReactNode } f
 import { ATTEMPT_STATE_LABELS, RECONCILIATION_STATE_LABELS } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { LinkButton } from "@/components/ui/button";
+import { MetricCard as MetricSurface, SectionCard } from "@/components/ui/card";
+import { Alert } from "@/components/ui/feedback";
 import { compactPrimaryActionClassName, secondaryActionClassName } from "@/components/ui/styles";
+import { DisplayMetric, MetadataLabel } from "@/components/ui/typography";
 import type { Membership } from "@/features/auth/types";
 import { clearStoredSession } from "@/features/auth/session";
 import { canManagePaymentSetup } from "@/features/payment-setup/types";
@@ -310,23 +314,23 @@ function PaymentSetupPanel({
 
   if (setup.status === "active") {
     return (
-      <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+      <Alert tone="success">
         <p className="font-semibold">Online payments active</p>
         <p className="mt-1">
           {setup.bankName} payout account ending {setup.accountNumberLast4}.
         </p>
-      </section>
+      </Alert>
     );
   }
 
   if (setup.status === "verification_delayed") {
     return (
-      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <Alert tone="warning">
         <p className="font-semibold">Payment Setup verification delayed</p>
         <p className="mt-1">
           Online payments are not active yet. Customers can view invoices while setup is pending.
         </p>
-      </section>
+      </Alert>
     );
   }
 
@@ -334,7 +338,7 @@ function PaymentSetupPanel({
   const actionLabel = isDisabled ? "Reactivate payment setup" : "Set up online payments";
 
   return (
-    <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+    <Alert tone="warning">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-semibold">
@@ -347,12 +351,12 @@ function PaymentSetupPanel({
           </p>
         </div>
         {canManage ? (
-          <Link className={compactPrimaryActionClassName} href="/settings/payment-setup">
+          <LinkButton href="/settings/payment-setup" size="sm">
             {actionLabel}
-          </Link>
+          </LinkButton>
         ) : null}
       </div>
-    </section>
+    </Alert>
   );
 }
 
@@ -372,29 +376,33 @@ function MetricCard({
   value: string;
 }) {
   const toneClassName = {
-    danger: "text-red-700",
-    neutral: "text-slate-950",
-    warning: "text-amber-700"
+    danger: "text-[var(--danger)]",
+    neutral: "text-[var(--text-primary)]",
+    warning: "text-[var(--warning)]"
   }[tone];
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <h2 className="mt-2 text-sm font-medium text-slate-600">{title}</h2>
-      <p className={`mt-2 font-semibold ${toneClassName} ${emphasis ? "text-3xl" : "text-2xl"}`}>
-        {value}
-      </p>
-      {detail ? <p className="mt-2 text-sm text-slate-500">{detail}</p> : null}
-    </article>
+    <MetricSurface emphasis={emphasis}>
+      <MetadataLabel>{label}</MetadataLabel>
+      <h2 className="mt-2 text-sm font-medium text-[var(--text-secondary)]">{title}</h2>
+      {emphasis ? (
+        <DisplayMetric className={`mt-3 ${toneClassName}`}>{value}</DisplayMetric>
+      ) : (
+        <p className={`mt-3 font-mono text-2xl font-semibold tabular-nums ${toneClassName}`}>
+          {value}
+        </p>
+      )}
+      {detail ? <p className="mt-2 text-sm text-[var(--text-muted)]">{detail}</p> : null}
+    </MetricSurface>
   );
 }
 
 function ChartPanel({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <SectionCard>
       <SectionHeading title={title} />
       {children}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -530,14 +538,14 @@ function DataPanel({
   title: string;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <SectionCard>
       <SectionHeading title={title} />
       {children.length ? (
         <ul className="divide-y divide-slate-100">{children}</ul>
       ) : (
         <p className="py-6 text-sm text-slate-500">{emptyMessage}</p>
       )}
-    </section>
+    </SectionCard>
   );
 }
 

@@ -193,7 +193,8 @@ describe("PaymentSetupContent", () => {
 
     expect(await screen.findByText("Payout account")).toBeInTheDocument();
     expect(screen.getByText("Access Bank")).toBeInTheDocument();
-    expect(screen.getByText("7890")).toBeInTheDocument();
+    expect(screen.getByText("******7890")).toBeInTheDocument();
+    expect(screen.queryByText("1234567890")).not.toBeInTheDocument();
     expect(screen.queryByText("ACCT_test")).not.toBeInTheDocument();
   });
 

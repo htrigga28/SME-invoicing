@@ -2,6 +2,16 @@ import type { Membership } from "@/features/auth/types";
 
 export type AppRoute = {
   href: string;
+  icon:
+    | "audit"
+    | "customers"
+    | "dashboard"
+    | "exports"
+    | "invoices"
+    | "payments"
+    | "receipts"
+    | "settings"
+    | "team";
   label: string;
   status: "available" | "coming-soon";
   task?: string;
@@ -14,19 +24,21 @@ export type NavigationSection = {
 };
 
 const mainRoutes: AppRoute[] = [
-  { href: "/dashboard", label: "Dashboard", status: "available" },
-  { href: "/customers", label: "Customers", status: "available" },
-  { href: "/invoices", label: "Invoices", status: "available" },
-  { href: "/payments", label: "Payments", status: "available" },
-  { href: "/receipts", label: "Receipts", status: "available" },
+  { href: "/dashboard", icon: "dashboard", label: "Dashboard", status: "available" },
+  { href: "/customers", icon: "customers", label: "Customers", status: "available" },
+  { href: "/invoices", icon: "invoices", label: "Invoices", status: "available" },
+  { href: "/payments", icon: "payments", label: "Payments", status: "available" },
+  { href: "/receipts", icon: "receipts", label: "Receipts", status: "available" },
   {
     href: "/exports",
+    icon: "exports",
     label: "Exports",
     status: "available",
     allowedRoles: ["owner", "admin", "accountant"]
   },
   {
     href: "/audit-logs",
+    icon: "audit",
     label: "Audit Logs",
     status: "available",
     allowedRoles: ["owner", "admin"]
@@ -36,12 +48,14 @@ const mainRoutes: AppRoute[] = [
 const settingsRoutes: AppRoute[] = [
   {
     href: "/settings/team",
+    icon: "team",
     label: "Team",
     status: "available",
     allowedRoles: ["owner", "admin"]
   },
   {
     href: "/settings/payment-setup",
+    icon: "settings",
     label: "Payment Setup",
     status: "available"
   }

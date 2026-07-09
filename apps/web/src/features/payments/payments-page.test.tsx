@@ -168,13 +168,13 @@ describe("PaymentsContent", () => {
   it("switches between reconciliation, all attempts, and needs review views", async () => {
     render(<PaymentsContent accessToken="token" />);
 
-    expect(await screen.findByRole("button", { name: "Reconciliation" })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Reconciliation" })).toBeInTheDocument();
     expect(listPayments).toHaveBeenLastCalledWith(
       "token",
       expect.objectContaining({ view: "reconciliation" })
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "All attempts" }));
+    fireEvent.click(screen.getByRole("tab", { name: "All attempts" }));
 
     await waitFor(() =>
       expect(listPayments).toHaveBeenLastCalledWith(
@@ -183,7 +183,7 @@ describe("PaymentsContent", () => {
       )
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Needs review" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Needs review" }));
 
     await waitFor(() =>
       expect(listPayments).toHaveBeenLastCalledWith(

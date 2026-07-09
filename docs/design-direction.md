@@ -22,6 +22,20 @@ Avoid:
 
 Every primary workflow must be demoable in under 5 minutes.
 
+## T017 Visual Identity
+
+The application now uses a dark fintech command-center identity:
+
+- Deep near-black app background.
+- Layered charcoal surfaces.
+- Low-opacity borders.
+- Lime accent reserved for primary actions, active navigation, success states, and financial emphasis.
+- Dense but readable financial tables and cards.
+- Minimal shadow use.
+- No route-local raw palette values; reusable semantic tokens live in `apps/web/src/app/globals.css`.
+
+Hanken Grotesk is the interface font. JetBrains Mono is reserved for money, references, timestamps, and other scan-heavy data.
+
 ## Layout Principles
 
 - Use a restrained app shell with sidebar navigation on desktop.

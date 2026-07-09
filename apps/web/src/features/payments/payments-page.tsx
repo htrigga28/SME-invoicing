@@ -12,6 +12,19 @@ import {
 } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button, LinkButton } from "@/components/ui/button";
+import { MetricCard, SectionCard } from "@/components/ui/card";
+import {
+  DataTable,
+  DataTableContainer,
+  MobileDataCard,
+  Pagination as DataPagination,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
+import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
+import { DateInput as DateControl, FieldLabel, FormField, Input } from "@/components/ui/form";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import type { Pagination } from "@/features/customers/types";
@@ -165,37 +178,26 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
         />
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-2">
-        {paymentViews.map((option) => (
-          <button
-            className={`rounded-md px-3 py-2 text-sm font-semibold ${
-              view === option.value ? "bg-teal-700 text-white" : "text-slate-700 hover:bg-slate-100"
-            }`}
-            key={option.value}
-            onClick={() => setView(option.value)}
-            type="button"
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        label="Payment view"
+        onChange={setView}
+        options={paymentViews}
+        value={view}
+      />
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <form
-          className="grid gap-3 lg:grid-cols-[1fr_150px_210px_150px_150px_auto]"
-          onSubmit={handleSearch}
-        >
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Search</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+      <FilterBar aria-label="Payment filters" onSubmit={handleSearch}>
+        <FilterGrid className="md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_150px_210px_150px_150px_auto]">
+          <FormField>
+            <FieldLabel>Search</FieldLabel>
+            <Input
+              className="mt-1"
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="Reference, invoice, customer, or email"
               value={searchInput}
             />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Status</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Status</FieldLabel>
             <Select
               onChange={(event) => setStatus(event.target.value as PaymentStatus | "all")}
               value={status}
@@ -208,9 +210,9 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
                 </option>
               ))}
             </Select>
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Reconciliation</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Reconciliation</FieldLabel>
             <Select
               onChange={(event) =>
                 setReconciliationState(event.target.value as ReconciliationState | "")
@@ -225,19 +227,18 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
                 </option>
               ))}
             </Select>
-          </label>
+          </FormField>
           <DateInput label="From" onChange={setDateFrom} value={dateFrom} />
           <DateInput label="To" onChange={setDateTo} value={dateTo} />
-          <button
-            className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            type="submit"
-          >
-            Apply
-          </button>
-        </form>
-      </div>
+          <FilterActions>
+            <Button type="submit" variant="outline">
+              Apply
+            </Button>
+          </FilterActions>
+        </FilterGrid>
+      </FilterBar>
 
-      {state === "loading" ? <StatusPanel message="Loading payments..." /> : null}
+      {state === "loading" ? <LoadingSkeleton rows={5} /> : null}
 
       {state === "error" ? (
         <StatusPanel
@@ -248,13 +249,21 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
       ) : null}
 
       {state === "ready" && payments.length === 0 ? (
-        <StatusPanel
-          message={
+        <EmptyState
+          description={
             hasPaginatedRecords
               ? "No payments on this page. Use Previous to return to earlier results."
               : isFiltered
                 ? "No payments match your filters."
                 : getEmptyStateMessage(view)
+          }
+          filtered={isFiltered || hasPaginatedRecords}
+          title={
+            hasPaginatedRecords
+              ? "No payments on this page."
+              : isFiltered
+                ? "No payments match these filters."
+                : "No payments yet."
           }
         />
       ) : null}
@@ -276,11 +285,13 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
 
 function SummaryCard({ helper, label, value }: { helper: string; label: string; value: string }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
-      <p className="mt-1 text-sm text-slate-600">{helper}</p>
-    </article>
+    <MetricCard>
+      <p className="text-xs font-semibold uppercase text-[var(--text-muted)]">{label}</p>
+      <p className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)] tabular-nums">
+        {value}
+      </p>
+      <p className="mt-1 text-sm text-[var(--text-muted)]">{helper}</p>
+    </MetricCard>
   );
 }
 
@@ -294,15 +305,14 @@ function DateInput({
   value: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
+      <DateControl
+        className="mt-1"
         onChange={(event) => onChange(event.target.value)}
-        type="date"
         value={value}
       />
-    </label>
+    </FormField>
   );
 }
 
@@ -332,20 +342,20 @@ function PaymentResults({
   view: PaymentView;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <DataTableContainer>
       <div className="hidden overflow-x-auto xl:block">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <DataTable>
+          <thead>
             <tr>
-              <th className="px-4 py-3">Reference</th>
-              <th className="px-4 py-3">Invoice</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Amount</th>
-              <th className="px-4 py-3">State</th>
-              <th className="px-4 py-3">Reconciliation</th>
-              <th className="px-4 py-3">Settlement</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3 text-right">Action</th>
+              <TableHeaderCell>Reference</TableHeaderCell>
+              <TableHeaderCell>Invoice</TableHeaderCell>
+              <TableHeaderCell>Customer</TableHeaderCell>
+              <TableHeaderCell className="text-right">Amount</TableHeaderCell>
+              <TableHeaderCell>State</TableHeaderCell>
+              <TableHeaderCell>Reconciliation</TableHeaderCell>
+              <TableHeaderCell>Settlement</TableHeaderCell>
+              <TableHeaderCell>Date</TableHeaderCell>
+              <TableHeaderCell className="text-right">Action</TableHeaderCell>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -353,7 +363,7 @@ function PaymentResults({
               <PaymentTableRow key={payment.id} payment={payment} view={view} />
             ))}
           </tbody>
-        </table>
+        </DataTable>
       </div>
 
       <div className="divide-y divide-slate-100 xl:hidden">
@@ -362,14 +372,28 @@ function PaymentResults({
         ))}
       </div>
 
-      <PaginationControls onNext={onNext} onPrevious={onPrevious} pagination={pagination} />
-    </div>
+      <DataPagination
+        canGoNext={pagination.page < pagination.totalPages}
+        canGoPrevious={pagination.page > 1}
+        label={
+          <span>
+            Page {pagination.page} of {pagination.totalPages} • {pagination.total} payments
+          </span>
+        }
+        onNext={onNext}
+        onPrevious={onPrevious}
+      />
+    </DataTableContainer>
   );
 }
 
 function PaymentTableRow({ payment, view }: { payment: PaymentListItem; view: PaymentView }) {
   return (
-    <tr className={payment.isSuperseded && view === "all_attempts" ? "bg-slate-50/70" : undefined}>
+    <tr
+      className={
+        payment.isSuperseded && view === "all_attempts" ? "bg-[var(--surface-raised)]" : undefined
+      }
+    >
       <td className="px-4 py-3">
         <DetailLink href={`/payments/${payment.id}`}>{payment.providerReference}</DetailLink>
       </td>
@@ -386,7 +410,9 @@ function PaymentTableRow({ payment, view }: { payment: PaymentListItem; view: Pa
         <p className="font-medium text-slate-950">{payment.customer?.name ?? "Unknown"}</p>
         <p className="text-slate-600">{payment.customer?.email ?? "No email"}</p>
       </td>
-      <td className="px-4 py-3 text-slate-700">{formatMoney(payment.amountKobo)}</td>
+      <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
+        {formatMoney(payment.amountKobo)}
+      </td>
       <td className="px-4 py-3">
         <AttemptStateBadge state={payment.attemptState} />
         {payment.supersededReason ? (
@@ -407,12 +433,9 @@ function PaymentTableRow({ payment, view }: { payment: PaymentListItem; view: Pa
         {formatDateTime(payment.paidAt ?? payment.createdAt)}
       </td>
       <td className="px-4 py-3 text-right">
-        <Link
-          className="rounded-md border border-slate-300 px-3 py-2 font-medium text-slate-700"
-          href={`/payments/${payment.id}`}
-        >
+        <LinkButton href={`/payments/${payment.id}`} size="sm" variant="outline">
           View
-        </Link>
+        </LinkButton>
       </td>
     </tr>
   );
@@ -420,8 +443,10 @@ function PaymentTableRow({ payment, view }: { payment: PaymentListItem; view: Pa
 
 function PaymentCard({ payment, view }: { payment: PaymentListItem; view: PaymentView }) {
   return (
-    <article
-      className={`space-y-3 p-4 ${payment.isSuperseded && view === "all_attempts" ? "bg-slate-50/70" : ""}`}
+    <MobileDataCard
+      className={
+        payment.isSuperseded && view === "all_attempts" ? "bg-[var(--surface-raised)]" : undefined
+      }
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -433,7 +458,7 @@ function PaymentCard({ payment, view }: { payment: PaymentListItem; view: Paymen
         <AttemptStateBadge state={payment.attemptState} />
       </div>
       <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-        <span>{formatMoney(payment.amountKobo)}</span>
+        <span className="font-mono tabular-nums">{formatMoney(payment.amountKobo)}</span>
         <span>{formatSettlementAccount(payment.settlementAccount)}</span>
         <span>{formatDateTime(payment.paidAt ?? payment.createdAt)}</span>
         {shouldShowReconciliation(payment) ? (
@@ -445,7 +470,10 @@ function PaymentCard({ payment, view }: { payment: PaymentListItem; view: Paymen
       {payment.supersededReason ? (
         <p className="text-xs text-slate-500">{payment.supersededReason}</p>
       ) : null}
-    </article>
+      <LinkButton href={`/payments/${payment.id}`} size="sm" variant="outline">
+        View
+      </LinkButton>
+    </MobileDataCard>
   );
 }
 
@@ -460,45 +488,9 @@ function shouldShowReconciliation(payment: PaymentListItem) {
   ].includes(payment.reconciliationState);
 }
 
-function PaginationControls({
-  onNext,
-  onPrevious,
-  pagination
-}: {
-  onNext: () => void;
-  onPrevious: () => void;
-  pagination: Pagination;
-}) {
-  return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
-      <span>
-        Page {pagination.page} of {pagination.totalPages} • {pagination.total} payments
-      </span>
-      <div className="flex gap-2">
-        <button
-          className="rounded-md border border-slate-300 px-3 py-2 font-medium disabled:opacity-50"
-          disabled={pagination.page <= 1}
-          onClick={onPrevious}
-          type="button"
-        >
-          Previous
-        </button>
-        <button
-          className="rounded-md border border-slate-300 px-3 py-2 font-medium disabled:opacity-50"
-          disabled={pagination.page >= pagination.totalPages}
-          onClick={onNext}
-          type="button"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ReviewEvents({ events }: { events: PaymentReviewEvent[] }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <SectionCard>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">Needs review</h2>
@@ -525,7 +517,7 @@ function ReviewEvents({ events }: { events: PaymentReviewEvent[] }) {
                 <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
               </div>
               {event.errorMessage ? (
-                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+                <p className="mt-2 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-2 text-[var(--warning)]">
                   {event.errorMessage}
                 </p>
               ) : null}
@@ -533,6 +525,6 @@ function ReviewEvents({ events }: { events: PaymentReviewEvent[] }) {
           ))}
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }

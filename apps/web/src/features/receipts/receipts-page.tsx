@@ -4,6 +4,17 @@ import Link from "next/link";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button, LinkButton } from "@/components/ui/button";
+import {
+  DataTable,
+  DataTableContainer,
+  MobileDataCard,
+  Pagination as DataPagination,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
+import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
+import { DateInput as DateControl, FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import type { Pagination } from "@/features/customers/types";
@@ -103,22 +114,19 @@ export function ReceiptsContent({ accessToken }: { accessToken: string }) {
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <form
-          className="grid gap-3 lg:grid-cols-[1fr_190px_150px_150px_auto]"
-          onSubmit={handleSearch}
-        >
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Search</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+      <FilterBar aria-label="Receipt filters" onSubmit={handleSearch}>
+        <FilterGrid className="lg:grid-cols-[minmax(180px,1fr)_190px_150px_150px_auto]">
+          <FormField>
+            <FieldLabel>Search</FieldLabel>
+            <Input
+              className="mt-1"
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="Receipt, invoice, customer, or payment reference"
               value={searchInput}
             />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Refund state</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Refund state</FieldLabel>
             <Select
               onChange={(event) => setRefundState(event.target.value as ReceiptRefundState | "all")}
               value={refundState}
@@ -130,19 +138,18 @@ export function ReceiptsContent({ accessToken }: { accessToken: string }) {
                 </option>
               ))}
             </Select>
-          </label>
+          </FormField>
           <DateInput label="From" onChange={setDateFrom} value={dateFrom} />
           <DateInput label="To" onChange={setDateTo} value={dateTo} />
-          <button
-            className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            type="submit"
-          >
-            Apply
-          </button>
-        </form>
-      </div>
+          <FilterActions>
+            <Button type="submit" variant="outline">
+              Apply
+            </Button>
+          </FilterActions>
+        </FilterGrid>
+      </FilterBar>
 
-      {state === "loading" ? <StatusPanel message="Loading receipts..." /> : null}
+      {state === "loading" ? <LoadingSkeleton rows={5} /> : null}
 
       {state === "error" ? (
         <StatusPanel
@@ -153,12 +160,14 @@ export function ReceiptsContent({ accessToken }: { accessToken: string }) {
       ) : null}
 
       {state === "ready" && receipts.length === 0 ? (
-        <StatusPanel
-          message={
+        <EmptyState
+          description={
             isFiltered
               ? "No receipts match your filters."
               : "Receipts will appear here after successful payments are confirmed."
           }
+          filtered={isFiltered}
+          title={isFiltered ? "No receipts match these filters." : "No receipts yet."}
         />
       ) : null}
 
@@ -184,15 +193,14 @@ function DateInput({
   value: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
+      <DateControl
+        className="mt-1"
         onChange={(event) => onChange(event.target.value)}
-        type="date"
         value={value}
       />
-    </label>
+    </FormField>
   );
 }
 
@@ -208,19 +216,19 @@ function ReceiptResults({
   receipts: ReceiptListItem[];
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <DataTableContainer>
       <div className="hidden overflow-x-auto xl:block">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <DataTable>
+          <thead>
             <tr>
-              <th className="px-4 py-3">Receipt</th>
-              <th className="px-4 py-3">Invoice</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Payment reference</th>
-              <th className="px-4 py-3">Amount</th>
-              <th className="px-4 py-3">Refund state</th>
-              <th className="px-4 py-3">Issued</th>
-              <th className="px-4 py-3 text-right">Action</th>
+              <TableHeaderCell>Receipt</TableHeaderCell>
+              <TableHeaderCell>Invoice</TableHeaderCell>
+              <TableHeaderCell>Customer</TableHeaderCell>
+              <TableHeaderCell>Payment reference</TableHeaderCell>
+              <TableHeaderCell className="text-right">Amount</TableHeaderCell>
+              <TableHeaderCell>Refund state</TableHeaderCell>
+              <TableHeaderCell>Issued</TableHeaderCell>
+              <TableHeaderCell className="text-right">Action</TableHeaderCell>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -228,7 +236,7 @@ function ReceiptResults({
               <ReceiptTableRow key={receipt.id} receipt={receipt} />
             ))}
           </tbody>
-        </table>
+        </DataTable>
       </div>
 
       <div className="divide-y divide-slate-100 xl:hidden">
@@ -237,8 +245,18 @@ function ReceiptResults({
         ))}
       </div>
 
-      <PaginationControls onNext={onNext} onPrevious={onPrevious} pagination={pagination} />
-    </div>
+      <DataPagination
+        canGoNext={pagination.page < pagination.totalPages}
+        canGoPrevious={pagination.page > 1}
+        label={
+          <span>
+            Page {pagination.page} of {pagination.totalPages} • {pagination.total} receipts
+          </span>
+        }
+        onNext={onNext}
+        onPrevious={onPrevious}
+      />
+    </DataTableContainer>
   );
 }
 
@@ -258,18 +276,17 @@ function ReceiptTableRow({ receipt }: { receipt: ReceiptListItem }) {
         <p className="text-slate-600">{receipt.customer.email}</p>
       </td>
       <td className="px-4 py-3 text-slate-600">{receipt.paymentReference}</td>
-      <td className="px-4 py-3 text-slate-700">{formatMoney(receipt.amountKobo)}</td>
+      <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
+        {formatMoney(receipt.amountKobo)}
+      </td>
       <td className="px-4 py-3">
         <RefundStateBadge state={receipt.refundSummary.refundState} />
       </td>
       <td className="px-4 py-3 text-slate-600">{formatDateTime(receipt.issuedAt)}</td>
       <td className="px-4 py-3 text-right">
-        <Link
-          className="rounded-md border border-slate-300 px-3 py-2 font-medium text-slate-700"
-          href={`/receipts/${receipt.id}`}
-        >
+        <LinkButton href={`/receipts/${receipt.id}`} size="sm" variant="outline">
           View
-        </Link>
+        </LinkButton>
       </td>
     </tr>
   );
@@ -277,7 +294,7 @@ function ReceiptTableRow({ receipt }: { receipt: ReceiptListItem }) {
 
 function ReceiptCard({ receipt }: { receipt: ReceiptListItem }) {
   return (
-    <article className="space-y-3 p-4">
+    <MobileDataCard>
       <div className="flex items-start justify-between gap-3">
         <div>
           <DetailLink href={`/receipts/${receipt.id}`}>{receipt.receiptNumber}</DetailLink>
@@ -288,46 +305,13 @@ function ReceiptCard({ receipt }: { receipt: ReceiptListItem }) {
         <RefundStateBadge state={receipt.refundSummary.refundState} />
       </div>
       <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-        <span>{formatMoney(receipt.amountKobo)}</span>
+        <span className="font-mono tabular-nums">{formatMoney(receipt.amountKobo)}</span>
         <span>{receipt.paymentReference}</span>
         <span>{formatDateTime(receipt.issuedAt)}</span>
       </div>
-    </article>
-  );
-}
-
-function PaginationControls({
-  onNext,
-  onPrevious,
-  pagination
-}: {
-  onNext: () => void;
-  onPrevious: () => void;
-  pagination: Pagination;
-}) {
-  return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
-      <span>
-        Page {pagination.page} of {pagination.totalPages} • {pagination.total} receipts
-      </span>
-      <div className="flex gap-2">
-        <button
-          className="rounded-md border border-slate-300 px-3 py-2 font-medium disabled:opacity-50"
-          disabled={pagination.page <= 1}
-          onClick={onPrevious}
-          type="button"
-        >
-          Previous
-        </button>
-        <button
-          className="rounded-md border border-slate-300 px-3 py-2 font-medium disabled:opacity-50"
-          disabled={pagination.page >= pagination.totalPages}
-          onClick={onNext}
-          type="button"
-        >
-          Next
-        </button>
-      </div>
-    </div>
+      <LinkButton href={`/receipts/${receipt.id}`} size="sm" variant="outline">
+        View
+      </LinkButton>
+    </MobileDataCard>
   );
 }

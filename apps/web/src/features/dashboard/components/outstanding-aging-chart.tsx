@@ -9,6 +9,7 @@ import type { DashboardOverviewResponse } from "../types";
 type Aging = DashboardOverviewResponse["outstandingAging"];
 
 export function OutstandingAgingChart({ aging }: { aging: Aging }) {
+  const tick = { fill: "var(--text-muted)", fontSize: 12 };
   const data = [
     { label: "Not due", amountKobo: aging.notDueKobo },
     { label: "1-7 days", amountKobo: aging.overdue1To7DaysKobo },
@@ -19,15 +20,25 @@ export function OutstandingAgingChart({ aging }: { aging: Aging }) {
   return (
     <ResponsiveContainer height={260} width="100%">
       <BarChart data={data} margin={{ bottom: 8, left: 8, right: 18, top: 12 }}>
-        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} />
-        <YAxis
-          tick={{ fill: "#64748b", fontSize: 12 }}
-          tickFormatter={(value) => compactMoney(Number(value))}
-          width={82}
+        <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
+        <XAxis dataKey="label" tick={tick} />
+        <YAxis tick={tick} tickFormatter={(value) => compactMoney(Number(value))} width={82} />
+        <Tooltip
+          contentStyle={{
+            background: "var(--surface-overlay)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 8,
+            color: "var(--text-primary)"
+          }}
+          formatter={(value) => formatKoboToNaira(Number(value))}
+          labelStyle={{ color: "var(--text-secondary)" }}
         />
-        <Tooltip formatter={(value) => formatKoboToNaira(Number(value))} />
-        <Bar dataKey="amountKobo" fill="#0f766e" name="Outstanding balance" radius={[4, 4, 0, 0]} />
+        <Bar
+          dataKey="amountKobo"
+          fill="var(--chart-gross)"
+          name="Outstanding balance"
+          radius={[4, 4, 0, 0]}
+        />
       </BarChart>
     </ResponsiveContainer>
   );

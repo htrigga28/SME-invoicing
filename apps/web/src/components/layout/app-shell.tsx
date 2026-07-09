@@ -1,8 +1,11 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { FilePlus2 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
+import { LinkButton } from "@/components/ui/button";
+import { Alert } from "@/components/ui/feedback";
 import { getMe, logout } from "@/features/auth/auth-api";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
 import type { MeResponse, Membership } from "@/features/auth/types";
@@ -85,28 +88,26 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
 
   if (state === "loading") {
     return (
-      <main className="min-h-screen bg-slate-50 p-6">
-        <p className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          Loading workspace...
-        </p>
+      <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
+        <Alert>Loading workspace...</Alert>
       </main>
     );
   }
 
   if (!context) {
     return (
-      <main className="min-h-screen bg-slate-50 p-6">
+      <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
         <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 md:flex">
+    <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] md:pl-20">
       <Sidebar activePath={pathname} role={context.me.membership.role} />
       <div className="min-w-0 flex-1">
         <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
-        <div className="px-4 py-6 lg:px-6">
+        <div className="mx-auto w-full max-w-[1440px] px-4 py-6 pb-24 lg:px-6">
           {state === "denied" ? (
             <StatusPanel
               message={deniedMessage ?? "You do not have access to this page."}
@@ -118,16 +119,45 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
           ) : null}
           {state === "ready" ? children(context) : null}
         </div>
+        <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
       </div>
     </main>
   );
 }
 
 function StatusPanel({ message, tone }: { message: string; tone: "error" | "warning" }) {
-  const styles = {
-    error: "border-red-200 bg-red-50 text-red-700",
-    warning: "border-amber-200 bg-amber-50 text-amber-800"
-  };
+  return <Alert tone={tone}>{message}</Alert>;
+}
 
-  return <section className={`rounded-lg border p-6 text-sm ${styles[tone]}`}>{message}</section>;
+function CreateInvoiceQuickAction({
+  pathname,
+  role
+}: {
+  pathname: string;
+  role: Membership["role"];
+}) {
+  if (role === "viewer") {
+    return null;
+  }
+
+  const shouldShow =
+    pathname === "/dashboard" ||
+    pathname === "/customers" ||
+    pathname === "/invoices" ||
+    pathname.startsWith("/customers?");
+
+  if (!shouldShow) {
+    return null;
+  }
+
+  return (
+    <LinkButton
+      className="fixed bottom-4 right-4 z-30 rounded-full px-4 shadow-none md:bottom-6 md:right-6"
+      href="/invoices/new"
+      size="lg"
+    >
+      <FilePlus2 aria-hidden="true" className="h-4 w-4" />
+      Create Invoice
+    </LinkButton>
+  );
 }

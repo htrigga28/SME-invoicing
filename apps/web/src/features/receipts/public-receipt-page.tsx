@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { getPublicReceipt } from "./receipts-api";
 import {
   DetailItem,
@@ -38,7 +40,7 @@ export function PublicReceiptPage({ token }: { token: string }) {
 
   if (state === "loading") {
     return (
-      <main className="min-h-screen bg-slate-100 px-4 py-8">
+      <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--text-primary)]">
         <div className="mx-auto max-w-3xl">
           <StatusPanel message="Loading receipt..." />
         </div>
@@ -48,7 +50,7 @@ export function PublicReceiptPage({ token }: { token: string }) {
 
   if (state === "error" || !response) {
     return (
-      <main className="min-h-screen bg-slate-100 px-4 py-8">
+      <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--text-primary)]">
         <div className="mx-auto max-w-3xl">
           <StatusPanel message={error ?? "Receipt could not be loaded."} tone="error" />
         </div>
@@ -59,16 +61,12 @@ export function PublicReceiptPage({ token }: { token: string }) {
   const { receipt } = response;
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-8 print:bg-white print:p-0">
+    <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--text-primary)] print:bg-white print:p-0 print:text-slate-950">
       <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex justify-end print:hidden">
-          <button
-            className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white"
-            onClick={() => window.print()}
-            type="button"
-          >
+          <Button onClick={() => window.print()} type="button">
             Print receipt
-          </button>
+          </Button>
         </div>
 
         <article className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm print:border-0 print:shadow-none">

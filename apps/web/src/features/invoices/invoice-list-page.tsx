@@ -5,8 +5,18 @@ import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button, LinkButton } from "@/components/ui/button";
+import {
+  DataTable,
+  DataTableContainer,
+  MobileDataCard,
+  Pagination as DataPagination,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
+import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
+import { FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
-import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCustomers } from "@/features/customers/customers-api";
 import type { Customer, Pagination } from "@/features/customers/types";
@@ -116,19 +126,19 @@ export function InvoiceListContent({
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <form className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto]" onSubmit={handleSearch}>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Search</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+      <FilterBar aria-label="Invoice filters" onSubmit={handleSearch}>
+        <FilterGrid className="lg:grid-cols-[1fr_180px_220px_auto]">
+          <FormField>
+            <FieldLabel>Search</FieldLabel>
+            <Input
+              className="mt-1"
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="Invoice number, customer, or email"
               value={searchInput}
             />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Status</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Status</FieldLabel>
             <Select
               onChange={(event) => setStatus(event.target.value as InvoiceStatus | "")}
               value={status}
@@ -141,9 +151,9 @@ export function InvoiceListContent({
                 </option>
               ))}
             </Select>
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Customer</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Customer</FieldLabel>
             <Select
               onChange={(event) => setCustomerId(event.target.value)}
               value={customerId}
@@ -156,28 +166,23 @@ export function InvoiceListContent({
                 </option>
               ))}
             </Select>
-          </label>
-          <button
-            className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            type="submit"
-          >
-            Apply
-          </button>
-        </form>
-      </div>
+          </FormField>
+          <FilterActions>
+            <Button type="submit" variant="outline">
+              Apply
+            </Button>
+          </FilterActions>
+        </FilterGrid>
+      </FilterBar>
 
-      {state === "loading" ? <StatusPanel message="Loading invoices..." /> : null}
+      {state === "loading" ? <LoadingSkeleton rows={5} /> : null}
 
       {state === "error" ? (
         <StatusPanel
           action={
-            <button
-              className={compactPrimaryActionClassName}
-              onClick={() => void loadInvoices()}
-              type="button"
-            >
+            <Button onClick={() => void loadInvoices()} size="sm" type="button">
               Retry
-            </button>
+            </Button>
           }
           message="Invoice list could not be loaded."
           tone="error"
@@ -185,30 +190,36 @@ export function InvoiceListContent({
       ) : null}
 
       {state === "ready" && invoices.length === 0 ? (
-        <StatusPanel
+        <EmptyState
           action={
             canManage && !isFiltered ? (
               <PrimaryLink href="/invoices/new">New invoice</PrimaryLink>
             ) : null
           }
-          message={isFiltered ? "No invoices match your filters." : "Create your first invoice."}
+          description={
+            isFiltered
+              ? "Adjust search, status, or customer filters to widen the invoice list."
+              : "Create an invoice once you have a customer ready to bill."
+          }
+          filtered={isFiltered}
+          title={isFiltered ? "No invoices match these filters." : "No invoices yet."}
         />
       ) : null}
 
       {state === "ready" && invoices.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <DataTableContainer>
           <div className="hidden overflow-x-auto lg:block">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <DataTable>
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Invoice</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Issue</th>
-                  <th className="px-4 py-3">Due</th>
-                  <th className="px-4 py-3">Total</th>
-                  <th className="px-4 py-3">Balance</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <TableHeaderCell>Invoice</TableHeaderCell>
+                  <TableHeaderCell>Customer</TableHeaderCell>
+                  <TableHeaderCell>Issue</TableHeaderCell>
+                  <TableHeaderCell>Due</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Total</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Balance</TableHeaderCell>
+                  <TableHeaderCell>Status</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Actions</TableHeaderCell>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -223,30 +234,29 @@ export function InvoiceListContent({
                     </td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(invoice.issueDate)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(invoice.dueDate)}</td>
-                    <td className="px-4 py-3 text-slate-700">{formatMoney(invoice.totalKobo)}</td>
-                    <td className="px-4 py-3 text-slate-700">
+                    <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
+                      {formatMoney(invoice.totalKobo)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
                       {formatMoney(invoice.balanceDueKobo)}
                     </td>
                     <td className="px-4 py-3">
                       <InvoiceStatusBadge status={invoice.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        className="rounded-md border border-slate-300 px-3 py-2 font-medium text-slate-700"
-                        href={`/invoices/${invoice.id}`}
-                      >
+                      <LinkButton href={`/invoices/${invoice.id}`} size="sm" variant="outline">
                         View
-                      </Link>
+                      </LinkButton>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
 
           <div className="divide-y divide-slate-100 lg:hidden">
             {invoices.map((invoice) => (
-              <article className="space-y-3 p-4" key={invoice.id}>
+              <MobileDataCard key={invoice.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <Link className="font-medium text-slate-950" href={`/invoices/${invoice.id}`}>
@@ -258,44 +268,31 @@ export function InvoiceListContent({
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm text-slate-600">
                   <span>Due {formatDate(invoice.dueDate)}</span>
-                  <span className="text-right">{formatMoney(invoice.balanceDueKobo)} due</span>
+                  <span className="text-right font-mono tabular-nums">
+                    {formatMoney(invoice.balanceDueKobo)} due
+                  </span>
                 </div>
-                <Link
-                  className="inline-flex rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
-                  href={`/invoices/${invoice.id}`}
-                >
+                <LinkButton href={`/invoices/${invoice.id}`} size="sm" variant="outline">
                   View
-                </Link>
-              </article>
+                </LinkButton>
+              </MobileDataCard>
             ))}
           </div>
-        </div>
+        </DataTableContainer>
       ) : null}
 
       {state === "ready" && pagination.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm text-slate-600">
-          <span>
-            Page {pagination.page} of {pagination.totalPages}
-          </span>
-          <div className="flex gap-2">
-            <button
-              className="rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:text-slate-400"
-              disabled={pagination.page <= 1}
-              onClick={() => void loadInvoices(pagination.page - 1)}
-              type="button"
-            >
-              Previous
-            </button>
-            <button
-              className="rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:text-slate-400"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => void loadInvoices(pagination.page + 1)}
-              type="button"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <DataPagination
+          canGoNext={pagination.page < pagination.totalPages}
+          canGoPrevious={pagination.page > 1}
+          label={
+            <span>
+              Page {pagination.page} of {pagination.totalPages} • {pagination.total} invoices
+            </span>
+          }
+          onNext={() => void loadInvoices(pagination.page + 1)}
+          onPrevious={() => void loadInvoices(pagination.page - 1)}
+        />
       ) : null}
     </section>
   );

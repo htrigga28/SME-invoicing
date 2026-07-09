@@ -7,6 +7,9 @@ import {
   type InvoiceStatus
 } from "@sme-invoicing/shared";
 
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/feedback";
+import { StatusBadge as SharedStatusBadge } from "@/components/ui/status-badge";
 import { isApiRequestError } from "@/lib/api";
 
 import {
@@ -25,17 +28,6 @@ type PaymentConfirmationState = {
 
 const PAYMENT_CALLBACK_POLL_INTERVAL_MS = 3000;
 const PAYMENT_CALLBACK_POLL_LIMIT = 10;
-
-const statusStyles: Record<InvoiceStatus, string> = {
-  draft: "border-slate-200 bg-slate-100 text-slate-700",
-  sent: "border-blue-200 bg-blue-50 text-blue-700",
-  viewed: "border-cyan-200 bg-cyan-50 text-cyan-700",
-  partially_paid: "border-amber-200 bg-amber-50 text-amber-800",
-  paid: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  overdue: "border-red-200 bg-red-50 text-red-700",
-  cancelled: "border-slate-200 bg-slate-100 text-slate-600",
-  void: "border-zinc-200 bg-zinc-100 text-zinc-700"
-};
 
 export function PublicInvoicePage({
   paymentCallback = false,
@@ -247,10 +239,10 @@ export function PublicInvoicePage({
   return (
     <PublicInvoiceShell>
       {showPaymentCallbackNotice ? (
-        <div className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <Alert className="mx-auto mb-4 max-w-5xl" tone="warning">
           <p className="font-semibold">{callbackNotice?.title}</p>
           <p className="mt-1">{callbackNotice?.message}</p>
-        </div>
+        </Alert>
       ) : null}
       <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-200 bg-slate-950 px-5 py-6 text-white sm:px-8">
@@ -373,24 +365,20 @@ export function PublicInvoicePage({
             <div className="rounded-lg border border-teal-200 bg-teal-50 p-4">
               <h2 className="text-lg font-semibold text-slate-950">Payment</h2>
               {invoice.paymentSummary.available ? (
-                <button
-                  className="mt-4 w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-700"
+                <Button
+                  className="mt-4 w-full"
                   disabled={isInitializingPayment}
+                  isLoading={isInitializingPayment}
+                  loadingLabel="Redirecting..."
                   onClick={() => void handlePayOnline()}
                   type="button"
                 >
-                  {isInitializingPayment
-                    ? "Redirecting..."
-                    : `Pay ${formatKoboToNaira(invoice.paymentSummary.amountKobo)} online`}
-                </button>
+                  Pay {formatKoboToNaira(invoice.paymentSummary.amountKobo)} online
+                </Button>
               ) : showUnavailablePaymentButton ? (
-                <button
-                  className="mt-4 w-full cursor-not-allowed rounded-md bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-                  disabled
-                  type="button"
-                >
+                <Button className="mt-4 w-full" disabled type="button" variant="outline">
                   Pay online unavailable
-                </button>
+                </Button>
               ) : null}
               <p className="mt-3 text-sm text-slate-700">{invoice.paymentSummary.message}</p>
               {invoice.paymentSummary.available ? (
@@ -415,17 +403,15 @@ export function PublicInvoicePage({
 }
 
 function PublicInvoiceShell({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-screen bg-slate-100 px-4 py-8 sm:px-6 lg:px-8">{children}</main>;
+  return (
+    <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--text-primary)] print:bg-white print:text-slate-950 sm:px-6 lg:px-8">
+      {children}
+    </main>
+  );
 }
 
 function StatusBadge({ status }: { status: InvoiceStatus }) {
-  return (
-    <span
-      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusStyles[status]}`}
-    >
-      {INVOICE_STATUS_LABELS[status]}
-    </span>
-  );
+  return <SharedStatusBadge status={status}>{INVOICE_STATUS_LABELS[status]}</SharedStatusBadge>;
 }
 
 function getCallbackNotice(
@@ -481,16 +467,11 @@ function StatusPanel({
   title?: string;
   tone?: "error" | "info";
 }) {
-  const styles =
-    tone === "error"
-      ? "border-red-200 bg-red-50 text-red-800"
-      : "border-slate-200 bg-white text-slate-700";
-
   return (
-    <section className={`mx-auto max-w-2xl rounded-xl border p-6 shadow-sm ${styles}`}>
+    <Alert className="mx-auto max-w-2xl" tone={tone === "error" ? "error" : "info"}>
       <h1 className="text-2xl font-semibold">{title}</h1>
       <p className="mt-3 text-sm">{message}</p>
-    </section>
+    </Alert>
   );
 }
 
