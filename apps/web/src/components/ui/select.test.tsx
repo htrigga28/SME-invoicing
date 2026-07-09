@@ -26,13 +26,14 @@ describe("Select", () => {
 
     expect(select).toHaveClass("appearance-none");
     expect(select).toHaveClass("pr-12");
+    expect(select).toHaveClass("bg-[var(--surface-raised)]");
     expect(chevron).toHaveClass("right-4");
     expect(chevron).toHaveClass("pointer-events-none");
   });
 
   it("keeps primary actions high-contrast while active", () => {
-    expect(primaryActionClassName).toContain("bg-teal-700");
-    expect(primaryActionClassName).toContain("text-white");
-    expect(primaryActionClassName).toContain("hover:bg-teal-800");
+    expect(primaryActionClassName).toContain("bg-[var(--accent)]");
+    expect(primaryActionClassName).toContain("text-[var(--accent-foreground)]");
+    expect(primaryActionClassName).toContain("hover:bg-[var(--accent-hover)]");
   });
 });

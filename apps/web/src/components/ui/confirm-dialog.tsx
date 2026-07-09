@@ -2,6 +2,8 @@
 
 import React, { useId, type ReactNode } from "react";
 
+import { Button } from "./button";
+
 type ConfirmDialogProps = {
   cancelLabel?: string;
   confirmLabel: string;
@@ -36,46 +38,36 @@ export function ConfirmDialog({
     return null;
   }
 
-  const confirmClassName = destructive
-    ? "bg-red-700 text-white hover:bg-red-800 disabled:bg-red-300"
-    : "bg-teal-700 text-white hover:bg-teal-800 disabled:bg-slate-400";
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--dialog-backdrop)] px-4 py-6 backdrop-blur-sm">
       <section
         aria-describedby={descriptionId}
         aria-labelledby={titleId}
         aria-modal="true"
-        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-xl"
+        className="w-full max-w-md rounded-[var(--radius-card)] border border-[var(--border-default)] bg-[var(--surface-overlay)] p-5"
         role="dialog"
       >
-        <h2 className="text-lg font-semibold text-slate-950" id={titleId}>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]" id={titleId}>
           {title}
         </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600" id={descriptionId}>
+        <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]" id={descriptionId}>
           {description}
         </p>
         {children ? <div className="mt-4">{children}</div> : null}
 
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button
-            aria-label={cancelLabel}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
-            disabled={isLoading}
-            onClick={onCancel}
-            type="button"
-          >
+          <Button disabled={isLoading} onClick={onCancel} type="button" variant="outline">
             {cancelLabel}
-          </button>
-          <button
-            aria-label={confirmLabel}
-            className={`rounded-md px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed ${confirmClassName}`}
-            disabled={isLoading}
+          </Button>
+          <Button
+            isLoading={isLoading}
+            loadingLabel={loadingLabel}
             onClick={onConfirm}
             type="button"
+            variant={destructive ? "destructive" : "primary"}
           >
-            {isLoading ? (loadingLabel ?? "Working...") : confirmLabel}
-          </button>
+            {confirmLabel}
+          </Button>
         </div>
       </section>
     </div>

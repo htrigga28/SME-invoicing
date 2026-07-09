@@ -5,8 +5,11 @@ import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader as SharedPageHeader } from "@/components/layout/page";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Alert, type AlertTone } from "@/components/ui/feedback";
 import { Select } from "@/components/ui/select";
+import { StatusBadge as SharedStatusBadge } from "@/components/ui/status-badge";
 import {
   compactPrimaryActionClassName,
   destructiveActionClassName,
@@ -446,7 +449,11 @@ function SetupWizard({
   selectedBankCode: string;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+    <div
+      className={`grid gap-5 ${
+        resolvedAccount ? "xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]" : ""
+      }`}
+    >
       <form className="rounded-lg border border-slate-200 bg-white p-5" onSubmit={onResolve}>
         <div>
           <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Step 1</p>
@@ -520,13 +527,18 @@ function SetupWizard({
             {isResolving ? "Resolving..." : "Resolve account"}
           </button>
         </div>
+        {!resolvedAccount ? (
+          <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Step 2 appears after Paystack resolves the account name.
+          </p>
+        ) : null}
       </form>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Step 2</p>
-        <h2 className="text-xl font-semibold text-slate-950">Confirm resolved account</h2>
+      {resolvedAccount ? (
+        <section className="rounded-lg border border-slate-200 bg-white p-5">
+          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Step 2</p>
+          <h2 className="text-xl font-semibold text-slate-950">Confirm resolved account</h2>
 
-        {resolvedAccount ? (
           <div className="mt-5 space-y-4">
             <dl className="grid gap-3 text-sm">
               <InfoRow label="Bank name" value={resolvedAccount.bankName} />
@@ -547,12 +559,8 @@ function SetupWizard({
               {isCreating ? "Activating..." : "Confirm and activate payouts"}
             </button>
           </div>
-        ) : (
-          <p className="mt-5 text-sm text-slate-600">
-            Resolve an account to review the Paystack account name before activation.
-          </p>
-        )}
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -633,7 +641,7 @@ function PaymentAccountStatusCard({
         <InfoRow label="Provider" value="Paystack" />
         <InfoRow label="Bank" value={account.bankName} />
         <InfoRow label="Account name" value={account.accountName} />
-        <InfoRow label="Account last4" value={account.accountNumberLast4} />
+        <InfoRow label="Masked account" value={maskLast4(account.accountNumberLast4)} />
         <InfoRow
           label="Verified at"
           value={account.verifiedAt ? formatDate(account.verifiedAt) : "Not verified"}
@@ -668,15 +676,7 @@ function PageHeader({
   eyebrow?: string;
   title: string;
 }) {
-  return (
-    <div>
-      {eyebrow ? (
-        <p className="text-sm font-medium uppercase tracking-wide text-teal-700">{eyebrow}</p>
-      ) : null}
-      <h1 className="text-3xl font-semibold text-slate-950">{title}</h1>
-      <p className="mt-2 text-sm text-slate-600">{description}</p>
-    </div>
-  );
+  return <SharedPageHeader description={description} eyebrow={eyebrow} title={title} />;
 }
 
 function StatusPanel({
@@ -690,35 +690,16 @@ function StatusPanel({
   title?: string;
   tone?: "error" | "info" | "success" | "warning";
 }) {
-  const styles = {
-    error: "border-red-200 bg-red-50 text-red-700",
-    info: "border-slate-200 bg-white text-slate-600",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    warning: "border-amber-200 bg-amber-50 text-amber-800"
-  };
-
   return (
-    <section className={`rounded-lg border p-5 text-sm ${styles[tone]}`}>
+    <Alert action={action} tone={tone as AlertTone}>
       {title ? <h2 className="font-semibold">{title}</h2> : null}
       <p className={title ? "mt-1" : undefined}>{message}</p>
-      {action ? <div className="mt-3">{action}</div> : null}
-    </section>
+    </Alert>
   );
 }
 
 function StatusBadge({ status }: { status: PaymentSetupAccount["status"] }) {
-  const styles = {
-    active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    disabled: "bg-slate-100 text-slate-600 ring-slate-200",
-    pending_confirmation: "bg-amber-50 text-amber-800 ring-amber-200",
-    verification_delayed: "bg-amber-50 text-amber-800 ring-amber-200"
-  };
-
-  return (
-    <span className={`rounded-full px-2 py-1 text-xs font-medium ring-1 ${styles[status]}`}>
-      {statusLabel(status)}
-    </span>
-  );
+  return <SharedStatusBadge status={status}>{statusLabel(status)}</SharedStatusBadge>;
 }
 
 function statusLabel(status: PaymentSetupAccount["status"]) {

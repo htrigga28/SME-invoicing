@@ -13,14 +13,14 @@ import type { DashboardOverviewResponse } from "../types";
 type StatusPoint = DashboardOverviewResponse["invoiceStatusBreakdown"][number];
 
 const statusColors: Record<InvoiceStatus, string> = {
-  draft: "#94a3b8",
-  sent: "#2563eb",
-  viewed: "#0891b2",
-  partially_paid: "#d97706",
-  paid: "#059669",
-  overdue: "#dc2626",
-  cancelled: "#64748b",
-  void: "#3f3f46"
+  draft: "var(--neutral-state)",
+  sent: "var(--neutral-state)",
+  viewed: "var(--text-secondary)",
+  partially_paid: "var(--warning)",
+  paid: "var(--success)",
+  overdue: "var(--danger)",
+  cancelled: "var(--text-muted)",
+  void: "var(--surface-elevated)"
 };
 
 export function InvoiceStatusChart({ data }: { data: StatusPoint[] }) {
@@ -33,7 +33,7 @@ export function InvoiceStatusChart({ data }: { data: StatusPoint[] }) {
 
   if (!visibleData.length) {
     return (
-      <div className="flex h-[260px] items-center justify-center text-sm text-slate-500">
+      <div className="flex h-[260px] items-center justify-center text-sm text-[var(--text-muted)]">
         No invoices yet.
       </div>
     );
@@ -57,14 +57,21 @@ export function InvoiceStatusChart({ data }: { data: StatusPoint[] }) {
           ))}
         </Pie>
         <Tooltip
+          contentStyle={{
+            background: "var(--surface-overlay)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 8,
+            color: "var(--text-primary)"
+          }}
           formatter={(value, _name, item) => [
             `${value} invoice${Number(value) === 1 ? "" : "s"} · ${formatKoboToNaira(
               Number((item.payload as StatusPoint).balanceKobo)
             )}`,
             "Status"
           ]}
+          labelStyle={{ color: "var(--text-secondary)" }}
         />
-        <Legend />
+        <Legend wrapperStyle={{ color: "var(--text-secondary)", fontSize: 12 }} />
       </PieChart>
     </ResponsiveContainer>
   );

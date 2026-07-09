@@ -4,9 +4,19 @@ import Link from "next/link";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button, LinkButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  DataTable,
+  DataTableContainer,
+  MobileDataCard,
+  Pagination as DataPagination,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
+import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
+import { FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
-import { compactPrimaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -138,19 +148,19 @@ export function CustomerListContent({
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <form className="grid gap-3 md:grid-cols-[1fr_180px_auto]" onSubmit={handleSearch}>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Search</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+      <FilterBar aria-label="Customer filters" onSubmit={handleSearch}>
+        <FilterGrid className="md:grid-cols-[1fr_180px_auto]">
+          <FormField>
+            <FieldLabel>Search</FieldLabel>
+            <Input
+              className="mt-1"
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="Search name, email, or phone"
               value={searchInput}
             />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Status</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Status</FieldLabel>
             <Select
               onChange={(event) => setStatus(event.target.value as CustomerListStatus)}
               value={status}
@@ -162,28 +172,23 @@ export function CustomerListContent({
                 </option>
               ))}
             </Select>
-          </label>
-          <button
-            className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            type="submit"
-          >
-            Apply
-          </button>
-        </form>
-      </div>
+          </FormField>
+          <FilterActions>
+            <Button type="submit" variant="outline">
+              Apply
+            </Button>
+          </FilterActions>
+        </FilterGrid>
+      </FilterBar>
 
       {state === "loading" ? <CustomerListSkeleton /> : null}
 
       {state === "error" ? (
         <StatusPanel
           action={
-            <button
-              className={compactPrimaryActionClassName}
-              onClick={() => void loadCustomers()}
-              type="button"
-            >
+            <Button onClick={() => void loadCustomers()} size="sm" type="button">
               Retry
-            </button>
+            </Button>
           }
           message="Customer list could not be loaded."
           tone="error"
@@ -191,27 +196,33 @@ export function CustomerListContent({
       ) : null}
 
       {state === "ready" && customers.length === 0 ? (
-        <StatusPanel
+        <EmptyState
           action={
             canManage && !isFiltered ? (
               <PrimaryLink href="/customers/new">New customer</PrimaryLink>
             ) : null
           }
-          message={isFiltered ? "No customers match your filters." : "Create your first customer."}
+          description={
+            isFiltered
+              ? "Adjust search or status filters to widen the customer list."
+              : "Create a customer before issuing invoices."
+          }
+          filtered={isFiltered}
+          title={isFiltered ? "No customers match these filters." : "No customers yet."}
         />
       ) : null}
 
       {state === "ready" && customers.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <DataTableContainer>
           <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <DataTable>
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Phone</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <TableHeaderCell>Customer</TableHeaderCell>
+                  <TableHeaderCell>Phone</TableHeaderCell>
+                  <TableHeaderCell>Status</TableHeaderCell>
+                  <TableHeaderCell>Created</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Actions</TableHeaderCell>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -233,27 +244,26 @@ export function CustomerListContent({
                     <td className="px-4 py-3 text-slate-600">{formatDate(customer.createdAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <Link
-                          className="rounded-md border border-slate-300 px-3 py-2 font-medium text-slate-700"
-                          href={`/customers/${customer.id}`}
-                        >
+                        <LinkButton href={`/customers/${customer.id}`} size="sm" variant="outline">
                           View
-                        </Link>
+                        </LinkButton>
                         {canManage && customer.status === "active" ? (
                           <>
-                            <Link
-                              className="rounded-md border border-slate-300 px-3 py-2 font-medium text-slate-700"
+                            <LinkButton
                               href={`/customers/${customer.id}/edit`}
+                              size="sm"
+                              variant="outline"
                             >
                               Edit
-                            </Link>
-                            <button
-                              className="rounded-md border border-red-200 px-3 py-2 font-medium text-red-700"
+                            </LinkButton>
+                            <Button
                               onClick={() => setCustomerPendingArchive(customer)}
+                              size="sm"
                               type="button"
+                              variant="destructive"
                             >
                               Archive
-                            </button>
+                            </Button>
                           </>
                         ) : null}
                       </div>
@@ -261,12 +271,12 @@ export function CustomerListContent({
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
 
           <div className="divide-y divide-slate-100 md:hidden">
             {customers.map((customer) => (
-              <article className="space-y-3 p-4" key={customer.id}>
+              <MobileDataCard key={customer.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link className="font-medium text-slate-950" href={`/customers/${customer.id}`}>
@@ -279,51 +289,33 @@ export function CustomerListContent({
                 <p className="text-sm text-slate-600">{customer.phone ?? "No phone provided"}</p>
                 <p className="text-xs text-slate-500">Created {formatDate(customer.createdAt)}</p>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  <Link
-                    className="rounded-md border border-slate-300 px-3 py-2 font-medium"
-                    href={`/customers/${customer.id}`}
-                  >
+                  <LinkButton href={`/customers/${customer.id}`} size="sm" variant="outline">
                     View
-                  </Link>
+                  </LinkButton>
                   {canManage && customer.status === "active" ? (
-                    <Link
-                      className="rounded-md border border-slate-300 px-3 py-2 font-medium"
-                      href={`/customers/${customer.id}/edit`}
-                    >
+                    <LinkButton href={`/customers/${customer.id}/edit`} size="sm" variant="outline">
                       Edit
-                    </Link>
+                    </LinkButton>
                   ) : null}
                 </div>
-              </article>
+              </MobileDataCard>
             ))}
           </div>
-        </div>
+        </DataTableContainer>
       ) : null}
 
       {state === "ready" && pagination.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm text-slate-600">
-          <span>
-            Page {pagination.page} of {pagination.totalPages}
-          </span>
-          <div className="flex gap-2">
-            <button
-              className="rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:text-slate-400"
-              disabled={pagination.page <= 1}
-              onClick={() => void loadCustomers(pagination.page - 1)}
-              type="button"
-            >
-              Previous
-            </button>
-            <button
-              className="rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:text-slate-400"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => void loadCustomers(pagination.page + 1)}
-              type="button"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <DataPagination
+          canGoNext={pagination.page < pagination.totalPages}
+          canGoPrevious={pagination.page > 1}
+          label={
+            <span>
+              Page {pagination.page} of {pagination.totalPages} • {pagination.total} customers
+            </span>
+          }
+          onNext={() => void loadCustomers(pagination.page + 1)}
+          onPrevious={() => void loadCustomers(pagination.page - 1)}
+        />
       ) : null}
 
       <ConfirmDialog
@@ -342,9 +334,5 @@ export function CustomerListContent({
 }
 
 function CustomerListSkeleton() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
-      Loading customers...
-    </div>
-  );
+  return <LoadingSkeleton rows={5} />;
 }

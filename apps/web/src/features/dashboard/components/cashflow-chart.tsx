@@ -18,23 +18,30 @@ import type { DashboardOverviewResponse } from "../types";
 type CashflowPoint = DashboardOverviewResponse["cashflowTrend"][number];
 
 export function CashflowChart({ data }: { data: CashflowPoint[] }) {
+  const tick = { fill: "var(--text-muted)", fontSize: 12 };
+
   return (
     <ResponsiveContainer height={300} width="100%">
       <LineChart data={data} margin={{ bottom: 8, left: 8, right: 18, top: 12 }}>
-        <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="period" minTickGap={24} tick={{ fill: "#64748b", fontSize: 12 }} />
-        <YAxis
-          tick={{ fill: "#64748b", fontSize: 12 }}
-          tickFormatter={(value) => compactMoney(Number(value))}
-          width={86}
+        <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" />
+        <XAxis dataKey="period" minTickGap={24} tick={tick} />
+        <YAxis tick={tick} tickFormatter={(value) => compactMoney(Number(value))} width={86} />
+        <Tooltip
+          contentStyle={{
+            background: "var(--surface-overlay)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 8,
+            color: "var(--text-primary)"
+          }}
+          formatter={(value) => formatKoboToNaira(Number(value))}
+          labelStyle={{ color: "var(--text-secondary)" }}
         />
-        <Tooltip formatter={(value) => formatKoboToNaira(Number(value))} />
-        <Legend />
+        <Legend wrapperStyle={{ color: "var(--text-secondary)", fontSize: 12 }} />
         <Line
           dataKey="grossCollectedKobo"
           dot={false}
           name="Gross collections"
-          stroke="#0f766e"
+          stroke="var(--chart-gross)"
           strokeWidth={2}
           type="monotone"
         />
@@ -42,7 +49,7 @@ export function CashflowChart({ data }: { data: CashflowPoint[] }) {
           dataKey="processedRefundsKobo"
           dot={false}
           name="Refunds"
-          stroke="#be123c"
+          stroke="var(--chart-refund)"
           strokeWidth={2}
           type="monotone"
         />
@@ -50,7 +57,7 @@ export function CashflowChart({ data }: { data: CashflowPoint[] }) {
           dataKey="netCollectedKobo"
           dot={false}
           name="Net collections"
-          stroke="#2563eb"
+          stroke="var(--chart-net)"
           strokeWidth={2}
           type="monotone"
         />

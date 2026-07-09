@@ -6,9 +6,9 @@ export function AppToaster() {
   return (
     <Toaster
       position="top-right"
-      richColors
       toastOptions={{
-        className: "border border-slate-200",
+        className:
+          "border border-[var(--border-default)] bg-[var(--surface-overlay)] text-[var(--text-primary)]",
         duration: 5000
       }}
     />

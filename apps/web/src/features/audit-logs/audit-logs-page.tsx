@@ -4,7 +4,20 @@ import Link from "next/link";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page";
+import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/card";
+import {
+  DataTable,
+  DataTableContainer,
+  Pagination as DataPagination,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { Alert, EmptyState, ErrorState, LoadingSkeleton } from "@/components/ui/feedback";
+import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
+import { DateInput as DateControl, FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { clearStoredSession } from "@/features/auth/session";
 import type { Pagination } from "@/features/customers/types";
 import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
@@ -117,17 +130,19 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
 
   return (
     <section className="space-y-5">
-      <header>
-        <h1 className="text-3xl font-semibold text-slate-950">Audit Logs</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Review important activity across your organisation.
-        </p>
-      </header>
+      <PageHeader
+        description="Review important activity across your organisation."
+        title="Audit Logs"
+      />
 
-      {error ? <StatusPanel message={error} tone="error" /> : null}
+      {error && state !== "error" ? (
+        <Alert tone="error">
+          <p>{error}</p>
+        </Alert>
+      ) : null}
 
-      <form className="rounded-lg border border-slate-200 bg-white p-4" onSubmit={handleSearch}>
-        <div className="grid gap-3 lg:grid-cols-[1fr_170px_170px_170px_170px_150px_150px_auto]">
+      <FilterBar aria-label="Audit log filters" onSubmit={handleSearch}>
+        <FilterGrid className="lg:grid-cols-[minmax(220px,1fr)_repeat(3,minmax(140px,170px))] 2xl:grid-cols-[minmax(220px,1fr)_170px_170px_170px_170px_150px_150px_auto]">
           <TextField
             label="Search"
             onChange={setSearchInput}
@@ -166,50 +181,51 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
           />
           <DateField label="From" onChange={setDateFrom} value={dateFrom} />
           <DateField label="To" onChange={setDateTo} value={dateTo} />
-          <button
-            className="self-end rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            type="submit"
-          >
-            Apply
-          </button>
-        </div>
-      </form>
+          <FilterActions>
+            <Button type="submit" variant="outline">
+              Apply
+            </Button>
+          </FilterActions>
+        </FilterGrid>
+      </FilterBar>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          {state === "loading" ? <StatusPanel message="Loading audit logs..." /> : null}
+        <div className="min-w-0 space-y-4">
+          {state === "loading" ? <LoadingSkeleton rows={7} /> : null}
 
           {state === "error" ? (
-            <StatusPanel
-              action={<RetryButton onClick={() => void loadAuditLogs()} />}
-              message="Audit logs could not be loaded."
-              tone="error"
+            <ErrorState
+              message={error ?? "Audit logs could not be loaded."}
+              onRetry={() => void loadAuditLogs()}
+              title="Audit logs could not be loaded."
             />
           ) : null}
 
           {state === "ready" && auditLogs.length === 0 ? (
-            <StatusPanel
-              message={
+            <EmptyState
+              description={
                 isFiltered
                   ? "No audit events match your filters."
                   : "No audit activity has been recorded yet."
               }
+              filtered={isFiltered}
+              title={isFiltered ? "No audit events match these filters." : "No audit activity yet."}
             />
           ) : null}
 
           {state === "ready" && auditLogs.length > 0 ? (
-            <>
+            <DataTableContainer>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
+                <DataTable className="min-w-[960px]">
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Time</th>
-                      <th className="px-4 py-3">Actor</th>
-                      <th className="px-4 py-3">Action</th>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Resource</th>
-                      <th className="px-4 py-3">Summary</th>
-                      <th className="px-4 py-3">View</th>
+                      <TableHeaderCell>Time</TableHeaderCell>
+                      <TableHeaderCell>Actor</TableHeaderCell>
+                      <TableHeaderCell>Action</TableHeaderCell>
+                      <TableHeaderCell>Category</TableHeaderCell>
+                      <TableHeaderCell>Resource</TableHeaderCell>
+                      <TableHeaderCell>Summary</TableHeaderCell>
+                      <TableHeaderCell>View</TableHeaderCell>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -223,9 +239,9 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
                           {auditLog.actionLabel}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                          <StatusBadge status={auditLog.category} tone="neutral">
                             {categoryLabels[auditLog.category]}
-                          </span>
+                          </StatusBadge>
                         </td>
                         <td className="px-4 py-3 text-slate-700">
                           {auditLog.resource ? auditLog.resource.label : "None"}
@@ -234,21 +250,32 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
                           {auditLog.metadataSummary || "No additional details"}
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700"
+                          <Button
                             onClick={() => void loadAuditLogDetail(auditLog.id)}
+                            size="sm"
                             type="button"
+                            variant="outline"
                           >
                             View
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </DataTable>
               </div>
-              <PaginationControls pagination={pagination} onPageChange={loadAuditLogs} />
-            </>
+              <DataPagination
+                canGoNext={pagination.page < pagination.totalPages}
+                canGoPrevious={pagination.page > 1}
+                label={
+                  <span>
+                    Page {pagination.page} of {pagination.totalPages} • {pagination.total} events
+                  </span>
+                }
+                onNext={() => void loadAuditLogs(pagination.page + 1)}
+                onPrevious={() => void loadAuditLogs(pagination.page - 1)}
+              />
+            </DataTableContainer>
           ) : null}
         </div>
 
@@ -268,11 +295,11 @@ function AuditLogDetailPanel({
   state: LoadState;
 }) {
   return (
-    <aside className="rounded-lg border border-slate-200 bg-white p-5">
+    <SectionCard>
       <h2 className="text-lg font-semibold text-slate-950">Event detail</h2>
       {state === "loading" ? <p className="mt-4 text-sm text-slate-600">Loading event...</p> : null}
       {state === "error" ? (
-        <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--danger-border)] bg-[var(--danger-muted)] p-3 text-sm text-[var(--danger)]">
           {error ?? "Audit log detail could not be loaded."}
         </p>
       ) : null}
@@ -296,7 +323,7 @@ function AuditLogDetailPanel({
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500">Event details</p>
             {auditLog.metadataFields.length > 0 ? (
-              <dl className="mt-2 divide-y divide-slate-100 rounded-md border border-slate-200">
+              <dl className="mt-2 divide-y divide-[var(--border-subtle)] rounded-[var(--radius-control)] border border-[var(--border-subtle)]">
                 {auditLog.metadataFields.map((field) => (
                   <div className="grid gap-2 px-3 py-2 sm:grid-cols-[120px_1fr]" key={field.key}>
                     <dt className="text-xs font-semibold text-slate-500">{field.label}</dt>
@@ -310,7 +337,7 @@ function AuditLogDetailPanel({
           </div>
         </div>
       ) : null}
-    </aside>
+    </SectionCard>
   );
 }
 
@@ -322,7 +349,10 @@ function RelatedResourceLink({ resource }: { resource: NonNullable<AuditLogDetai
   }
 
   return (
-    <Link className="mt-1 inline-flex text-sm font-semibold text-teal-700" href={href}>
+    <Link
+      className="mt-1 inline-flex text-sm font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)]"
+      href={href}
+    >
       {resource.label}
     </Link>
   );
@@ -348,74 +378,6 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PaginationControls({
-  onPageChange,
-  pagination
-}: {
-  onPageChange: (page: number) => void;
-  pagination: Pagination;
-}) {
-  return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
-      <span>
-        Page {pagination.page} of {pagination.totalPages} · {pagination.total} events
-      </span>
-      <div className="flex gap-2">
-        <button
-          className="rounded-md border border-slate-300 px-3 py-1.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={pagination.page <= 1}
-          onClick={() => onPageChange(pagination.page - 1)}
-          type="button"
-        >
-          Previous
-        </button>
-        <button
-          className="rounded-md border border-slate-300 px-3 py-1.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={pagination.page >= pagination.totalPages}
-          onClick={() => onPageChange(pagination.page + 1)}
-          type="button"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StatusPanel({
-  action,
-  message,
-  tone = "neutral"
-}: {
-  action?: React.ReactNode;
-  message: string;
-  tone?: "error" | "neutral";
-}) {
-  const className =
-    tone === "error"
-      ? "border-red-200 bg-red-50 text-red-700"
-      : "border-slate-200 bg-white text-slate-600";
-
-  return (
-    <div className={`m-4 rounded-lg border p-5 text-sm ${className}`}>
-      <p>{message}</p>
-      {action ? <div className="mt-3">{action}</div> : null}
-    </div>
-  );
-}
-
-function RetryButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white"
-      onClick={onClick}
-      type="button"
-    >
-      Retry
-    </button>
-  );
-}
-
 function TextField({
   label,
   onChange,
@@ -428,29 +390,36 @@ function TextField({
   value: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
+      <Input
+        className="mt-1"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         value={value}
       />
-    </label>
+    </FormField>
   );
 }
 
-function DateField(props: Omit<React.ComponentProps<typeof TextField>, "placeholder">) {
+function DateField({
+  label,
+  onChange,
+  value
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{props.label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        onChange={(event) => props.onChange(event.target.value)}
-        type="date"
-        value={props.value}
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
+      <DateControl
+        className="mt-1"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
       />
-    </label>
+    </FormField>
   );
 }
 
@@ -466,8 +435,8 @@ function SelectField({
   value: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
       <Select
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -475,7 +444,7 @@ function SelectField({
       >
         {children}
       </Select>
-    </label>
+    </FormField>
   );
 }
 
