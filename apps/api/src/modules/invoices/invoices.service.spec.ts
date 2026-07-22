@@ -58,7 +58,7 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     status: "sent",
     currency: "NGN",
     issueDate: "2026-06-01",
-    dueDate: "2026-07-15",
+    dueDate: "2099-07-15",
     notes: "Thank you.",
     subtotalKobo: 100000,
     discountKobo: 10000,
@@ -392,7 +392,7 @@ describe("InvoicesService public payment initialization", () => {
         createPublicInvoiceRow(
           createInvoice({
             balanceDueKobo: 42500,
-            dueDate: status === "overdue" ? "2026-01-01" : "2026-07-15",
+            dueDate: status === "overdue" ? "2026-01-01" : "2099-07-15",
             status: status === "overdue" ? "sent" : status
           })
         )
