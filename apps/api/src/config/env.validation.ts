@@ -11,7 +11,7 @@ const envSchema = z.object({
   PAYSTACK_BASE_URL: z.string().url().optional(),
   PAYSTACK_WEBHOOK_SECRET: z.string().optional(),
   FRONTEND_APP_URL: z.string().url().optional(),
-  CORS_ORIGINS: z.string().default("http://localhost:3000")
+  CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002")
 });
 
 export function validateEnv(config: Record<string, unknown>) {
