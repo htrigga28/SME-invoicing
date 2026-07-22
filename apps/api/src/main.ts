@@ -1,6 +1,7 @@
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import "reflect-metadata";
@@ -8,7 +9,7 @@ import "reflect-metadata";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
   const port = configService.get<number>("PORT") ?? 4000;
   const corsOrigins = configService
@@ -16,8 +17,10 @@ async function bootstrap() {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const trustProxy = configService.get<string>("TRUST_PROXY", "loopback");
 
   app.use(helmet());
+  app.set("trust proxy", trustProxy);
   app.enableCors({
     origin: corsOrigins,
     credentials: true

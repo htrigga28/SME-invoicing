@@ -5,6 +5,7 @@ import { submitWaitlistEntry } from "@/lib/waitlist-api";
 import { WaitlistSection } from "./waitlist-section";
 
 vi.mock("@/lib/waitlist-api", () => ({
+  getWaitlistEndpoint: () => "http://localhost:4000/public/waitlist",
   submitWaitlistEntry: vi.fn()
 }));
 
@@ -23,6 +24,14 @@ describe("WaitlistSection", () => {
     expect(details).not.toHaveAttribute("open");
     expect(screen.getByText("Add business details (optional)")).toBeInTheDocument();
     expect(screen.getByLabelText("Work email")).toBeVisible();
+  });
+
+  it("uses a POST fallback so no-JavaScript submissions do not put PII in the URL", () => {
+    const { container } = render(<WaitlistSection />);
+    const form = container.querySelector("form");
+
+    expect(form).toHaveAttribute("method", "post");
+    expect(form).toHaveAttribute("action", "http://localhost:4000/public/waitlist");
   });
 
   it("validates work email before submitting", () => {
@@ -49,7 +58,7 @@ describe("WaitlistSection", () => {
     window.dispatchEvent(new CustomEvent("lumina:waitlist-source", { detail: "hero" }));
 
     fireEvent.change(screen.getByLabelText("Work email"), {
-      target: { value: "founder@lagosagency.test" }
+      target: { value: "  founder@lagosagency.test  " }
     });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Okonkwo" } });
     fireEvent.change(screen.getByLabelText("Business name"), {

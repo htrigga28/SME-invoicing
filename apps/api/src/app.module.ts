@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 import { validateEnv } from "./config/env.validation";
 import { DatabaseModule } from "./database/database.module";
@@ -23,6 +24,12 @@ import { TeamModule } from "./modules/team/team.module";
       isGlobal: true,
       validate: validateEnv
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 5
+      }
+    ]),
     DatabaseModule,
     AuthModule,
     AuditLogModule,

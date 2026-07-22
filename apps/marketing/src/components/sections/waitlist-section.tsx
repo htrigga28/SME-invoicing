@@ -5,7 +5,11 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { MarketingButton } from "@/components/ui/marketing-button";
 import { waitlist } from "@/content/site-copy";
-import { submitWaitlistEntry, type WaitlistUtm } from "@/lib/waitlist-api";
+import {
+  getWaitlistEndpoint,
+  submitWaitlistEntry,
+  type WaitlistUtm
+} from "@/lib/waitlist-api";
 
 type FormState = "idle" | "submitting" | "success" | "validation-error" | "server-error";
 
@@ -76,7 +80,7 @@ export function WaitlistSection() {
 
     try {
       await submitWaitlistEntry({
-        email: values.email,
+        email: values.email.trim(),
         fullName: values.fullName || null,
         companyName: values.companyName || null,
         role: values.role || null,
@@ -108,7 +112,14 @@ export function WaitlistSection() {
           </div>
         </div>
 
-        <form className="waitlist-form" noValidate onSubmit={onSubmit}>
+        <form
+          action={getWaitlistEndpoint()}
+          className="waitlist-form"
+          method="post"
+          noValidate
+          onSubmit={onSubmit}
+        >
+          <input name="source" type="hidden" value={source} />
           <div className="form-heading">
             <span className="data-label">YOUR PLACE ON THE TRAIL</span>
             <strong>Start with your work email.</strong>
@@ -153,6 +164,12 @@ export function WaitlistSection() {
           <MarketingButton className="w-full" isLoading={formState === "submitting"} loadingLabel="Joining..." size="lg" type="submit">
             Join the waitlist
           </MarketingButton>
+
+          <noscript>
+            <p className="form-message">
+              Submitting opens Lumina&apos;s confirmation response in this window.
+            </p>
+          </noscript>
 
           {formState === "success" ? (
             <div className="form-message is-success" role="status">

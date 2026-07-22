@@ -29,6 +29,7 @@ The API uses `CORS_ORIGINS` to allow browser requests. Local development should 
 
 ```text
 CORS_ORIGINS=http://localhost:3000,http://localhost:3002
+TRUST_PROXY=loopback
 ```
 
 ## Waitlist Flow
@@ -54,8 +55,12 @@ Privacy and anti-enumeration rules:
 
 - Duplicate emails return the same generic success response as new emails.
 - Honeypot submissions return generic success and are not inserted.
+- The public endpoint is limited to five requests per minute per proxy-aware client IP.
+- The native form fallback uses `POST`, so no-JavaScript submissions do not put contact details in the page URL or browser history.
 - There is no public list endpoint.
 - The frontend never sends organisation IDs.
+
+The built-in limiter uses per-instance memory. `TRUST_PROXY` must match the deployment ingress (for example, `loopback,linklocal,uniquelocal` for a private-network proxy) so forwarded client IPs are interpreted correctly. T019 production hardening should move throttling to shared storage and evaluate a managed bot challenge before a multi-instance launch.
 
 ## SEO Strategy
 
@@ -116,6 +121,6 @@ Motion uses `LazyMotion`, `domAnimation`, and `m` components only on those autho
 
 ## Deployment Expectations
 
-Deploy `apps/marketing` to the root domain and `apps/web` to `app.<root-domain>`. Set `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, and `NEXT_PUBLIC_API_URL` per environment. Ensure `CORS_ORIGINS` on the API includes both the product and marketing origins.
+Deploy `apps/marketing` to the root domain and `apps/web` to `app.<root-domain>`. Set `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, and `NEXT_PUBLIC_API_URL` per environment. Ensure `CORS_ORIGINS` on the API includes both the product and marketing origins, and set `TRUST_PROXY` to the actual ingress topology before enabling the public waitlist.
 
 The `/privacy` and `/terms` pages are draft legal copy and require owner/legal review before production use.

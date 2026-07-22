@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsEmail,
   IsObject,
@@ -43,6 +43,7 @@ export class WaitlistUtmDto {
 
 export class CreateWaitlistEntryDto {
   @ApiProperty({ example: "founder@lagosagency.test" })
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   @IsEmail()
   @MaxLength(320)
   email!: string;

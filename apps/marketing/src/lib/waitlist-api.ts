@@ -24,8 +24,12 @@ export type WaitlistResponse = {
   message: string;
 };
 
+export function getWaitlistEndpoint() {
+  return new URL("/public/waitlist", `${getApiUrl()}/`).toString();
+}
+
 export async function submitWaitlistEntry(payload: WaitlistPayload): Promise<WaitlistResponse> {
-  const response = await fetch(new URL("/public/waitlist", `${getApiUrl()}/`), {
+  const response = await fetch(getWaitlistEndpoint(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
