@@ -29,7 +29,8 @@ Status values:
 | T015 Dashboard Metrics | Done | `codex/T015-dashboard-metrics` | [#15](https://github.com/htrigga28/SME-invoicing/pull/15) | Build dashboard summaries for invoices, payments, outstanding balances, overdue amounts, collection rate, and recent activity. | Dashboard gives a useful operational view of invoice and payment health. |
 | T016 Exports and Audit Logs | In Review | `codex/T016-secure-exports-audit-logs` | [#16](https://github.com/htrigga28/SME-invoicing/pull/16) | Add secure CSV exports and read-only audit log browsing for key records and actions. | Authorized users can export records safely and review important activity history. |
 | T017 App-Wide UI/UX Redesign and Design System Migration | In Progress | `codex/T017-ui-redesign-design-system` | [#17](https://github.com/htrigga28/SME-invoicing/pull/17) | Redesign the full frontend around a reusable dark fintech design system spanning shells, public pages, tables, forms, status, charts, print, and responsive states. | Semantic tokens, fonts, shared primitives, shell redesign, route migrations, docs, and validation pass without changing backend/business/payment/auth behavior. |
-| T018 Deployment and Portfolio Demo Hardening | Not Started | `task/T018-deployment-demo-hardening` | TBD | Finalize deployment configuration, portfolio-facing docs, demo safety, and launch hardening. | The project is deployable, documented, and safe to present with realistic payment-setup assumptions. |
+| T018 Marketing Website, Waitlist and SEO Foundation | In Review | `codex/T018-marketing-website-waitlist-seo` | [#18](https://github.com/htrigga28/SME-invoicing/pull/18) | Create the public Lumina marketing app, waitlist flow, SEO foundation, and marketing documentation. | `apps/marketing` exists, waitlist submissions are API-backed, SEO routes/metadata are implemented, and validation passes without renaming `apps/web`. |
+| T019 Deployment, Portfolio and Launch Hardening | Not Started | `task/T019-deployment-portfolio-launch-hardening` | TBD | Finalize deployment configuration, portfolio-facing docs, demo safety, launch hardening, and production operations checklist. | The project is deployable, documented, and safe to present with realistic payment-setup and marketing-domain assumptions. |
 
 ## Task Execution Notes
 
@@ -57,3 +58,5 @@ Status values:
 - The unresolved global button/select UI issue is deferred to T017.
 - T017 expands the UI polish pass into an app-wide dark fintech design-system migration. It must not be marked Done until validation and manual QA acceptance are complete.
 - T017 now includes shared filter bars, segmented controls, and data-table primitives across Customers, Invoices, Payments, Receipts, and Audit Logs.
+- T018 creates a separate `apps/marketing` public site for the root domain while keeping `apps/web` as the authenticated product app for `app.<root-domain>`.
+- Deployment and portfolio hardening moved to T019 so T018 can focus on marketing, waitlist, and SEO foundations.

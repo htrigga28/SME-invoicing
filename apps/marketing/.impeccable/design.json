@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-22T00:00:00.000Z",
+  "title": "Design System: Lumina Marketing",
+  "extensions": {
+    "colorMeta": {
+      "night": { "role": "neutral", "displayName": "Night", "canonical": "#070a08" },
+      "graphite": { "role": "neutral", "displayName": "Graphite", "canonical": "#0d110e" },
+      "ledger": { "role": "neutral", "displayName": "Ledger", "canonical": "#121813" },
+      "raised": { "role": "neutral", "displayName": "Raised", "canonical": "#182019" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#f5f7ef" },
+      "inkMuted": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#aeb8a7" },
+      "signal": { "role": "primary", "displayName": "Signal Lime", "canonical": "#c1ff72" },
+      "verified": { "role": "secondary", "displayName": "Verified Mint", "canonical": "#72e6b1" },
+      "review": { "role": "tertiary", "displayName": "Review Amber", "canonical": "#f6c96b" },
+      "exception": { "role": "tertiary", "displayName": "Exception Coral", "canonical": "#ff7878" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Owner-facing display", "purpose": "Hero and major section promises." },
+      "body": { "displayName": "Reading text", "purpose": "Benefit and explanatory copy." },
+      "data": { "displayName": "Operational data", "purpose": "Money, references, timestamps, status metadata, and code." }
+    },
+    "shadows": [
+      { "name": "floating-navigation", "value": "0 18px 60px rgba(0,0,0,0.32)", "purpose": "Separates the compact header from page content after scrolling." },
+      { "name": "product-focus", "value": "0 24px 80px rgba(0,0,0,0.34)", "purpose": "Supports the primary authored demonstration without a colored halo." }
+    ],
+    "roundedMeta": {
+      "compact": { "canonical": "9px" },
+      "navigation": { "canonical": "10px" },
+      "control": { "canonical": "12px" },
+      "floating": { "canonical": "14px" },
+      "surface": { "canonical": "16px" },
+      "pill": { "canonical": "999px", "role": "pill" }
+    },
+    "motion": [
+      { "name": "micro", "value": "160ms cubic-bezier(0.22,1,0.36,1)", "purpose": "Hover, focus, and compact control feedback." },
+      { "name": "state", "value": "260ms cubic-bezier(0.22,1,0.36,1)", "purpose": "Menu and product-state changes." },
+      { "name": "reveal", "value": "520ms cubic-bezier(0.22,1,0.36,1)", "purpose": "Major authored entrances only." },
+      { "name": "trail", "value": "900ms cubic-bezier(0.22,1,0.36,1)", "purpose": "The one-time hero payment-trail draw." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single strongest action in a viewport.",
+      "html": "<button class=\"ds-button-primary\">JOIN THE WAITLIST</button>",
+      "css": ".ds-button-primary{background:var(--accent,#c1ff72);color:#070a08;border:0;border-radius:12px;padding:12px 20px;font:600 14px/1.2 'Hanken Grotesk',sans-serif;transition:transform 160ms cubic-bezier(.22,1,.36,1),background 160ms cubic-bezier(.22,1,.36,1)}.ds-button-primary:hover{background:#a9eb59;transform:translateY(-2px)}.ds-button-primary:focus-visible{outline:2px solid #070a08;box-shadow:0 0 0 4px #c1ff72}"
+    },
+    {
+      "name": "Product Surface",
+      "kind": "custom",
+      "refersTo": "product-surface",
+      "description": "A real product state inside the Payment Trail.",
+      "html": "<div class=\"ds-product-surface\"><span>PAYSTACK REFERENCE</span><strong>T8129-4F3A-90LX</strong></div>",
+      "css": ".ds-product-surface{display:grid;gap:8px;background:#121813;color:#f5f7ef;border:1px solid rgba(245,247,239,.1);border-radius:16px;padding:16px}.ds-product-surface span{color:#aeb8a7;font:600 11px/1.4 'JetBrains Mono',monospace}.ds-product-surface strong{font:600 15px/1.4 'JetBrains Mono',monospace}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "description": "Waitlist field with an explicit label and financial-workspace focus treatment.",
+      "html": "<label class=\"ds-field\"><span>Work email</span><input placeholder=\"you@business.com\"></label>",
+      "css": ".ds-field{display:grid;gap:8px;color:#f5f7ef;font:600 14px/1.4 'Hanken Grotesk',sans-serif}.ds-field input{background:#182019;color:#f5f7ef;border:1px solid rgba(245,247,239,.14);border-radius:12px;padding:13px 14px}.ds-field input:focus{outline:2px solid #c1ff72;outline-offset:2px}.ds-field input::placeholder{color:#7f8a7a}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Payment Trail",
+    "overview": "Invoice, checkout, provider confirmation, reconciliation, settlement, and receipt appear as one connected system. Product truth is the visual material.",
+    "keyCharacteristics": ["connected", "product-specific", "restrained", "operational", "owner-readable"],
+    "rules": [
+      { "name": "The Signal Rule", "body": "Lime marks the primary action or current truth; it does not outline every container.", "section": "colors" },
+      { "name": "The One Trail Rule", "body": "Motion explains the payment trail once, then yields to content.", "section": "elevation" }
+    ],
+    "dos": ["Show realistic invoice, payment, refund, and receipt states.", "Keep financial state readable without color or motion."],
+    "donts": ["Do not use equal feature-card grids as page structure.", "Do not fabricate proof or unsupported financial claims."]
+  }
+}
