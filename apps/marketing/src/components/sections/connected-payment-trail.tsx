@@ -5,6 +5,7 @@ import { LazyMotion, useReducedMotion, useScroll } from "motion/react";
 import * as m from "motion/react-m";
 import { useRef } from "react";
 
+import { NairaText } from "@/components/ui/naira-text";
 import { paymentTrail } from "@/content/site-copy";
 
 const loadMotionFeatures = () => import("@/lib/motion-features").then((module) => module.default);
@@ -57,7 +58,7 @@ export function ConnectedPaymentTrail() {
                     <span className="stage-label">{stage.label}</span>
                     <h3>{stage.title}</h3>
                     <p>{stage.copy}</p>
-                    <span className="stage-meta">{stage.meta}</span>
+                    <span className="stage-meta"><NairaText value={stage.meta} /></span>
                   </li>
                 );
               })}

@@ -14,6 +14,7 @@ import {
   UsersRound
 } from "lucide-react";
 
+import { NairaText } from "@/components/ui/naira-text";
 import { capabilityGroups, trustNodes } from "@/content/site-copy";
 
 const capabilityIcons = {
@@ -58,17 +59,17 @@ export function OperationsField() {
             </div>
             <div className="position-total">
               <span>Net collected this month</span>
-              <strong>₦132,850</strong>
+              <strong><NairaText value="₦132,850" /></strong>
               <small>Successful payments less processed refunds</small>
             </div>
             <div className="position-rows">
-              <div><span>Outstanding</span><strong>₦86,400</strong><small>Across 12 invoices</small></div>
-              <div><span>Overdue</span><strong>₦18,000</strong><small>3 invoices</small></div>
+              <div><span>Outstanding</span><strong><NairaText value="₦86,400" /></strong><small>Across 12 invoices</small></div>
+              <div><span>Overdue</span><strong><NairaText value="₦18,000" /></strong><small>3 invoices</small></div>
               <div><span>Needs review</span><strong className="review-value">2</strong><small>Real exceptions</small></div>
             </div>
             <div className="position-event">
               <span className="event-icon"><Check aria-hidden="true" /></span>
-              <div><strong>Payment T8129-4F3A-90LX matched</strong><span>INV-000184 · Adebayo Studio · ₦42,000</span></div>
+              <div><strong>Payment T8129-4F3A-90LX matched</strong><span><NairaText value="INV-000184 · Adebayo Studio · ₦42,000" /></span></div>
               <time>Now</time>
             </div>
           </article>

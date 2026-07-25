@@ -25,9 +25,9 @@ export function MarketingFooter() {
 
       <div className="shell-container footer-grid">
         <div className="footer-brand">
-          <BrandLogo />
+          <BrandLogo className="footer-logo" />
           <p>{footer.descriptor}</p>
-          <span>{footer.boundaryNote}</span>
+          <span className="footer-boundary">{footer.boundaryNote}</span>
         </div>
         <FooterGroup
           links={navigation.productItems.map((item) => ({ href: resolveHref(item.href), label: item.label }))}

@@ -12,6 +12,7 @@ import { LazyMotion, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { useEffect, useState } from "react";
 
+import { NairaText } from "@/components/ui/naira-text";
 import { hero } from "@/content/site-copy";
 
 const loadMotionFeatures = () => import("@/lib/motion-features").then((module) => module.default);
@@ -75,7 +76,7 @@ export function PaymentTrailVisual() {
               <span>AB</span>
               <div><strong>Adebayo Studio</strong><small>Due 30 July 2026</small></div>
             </div>
-            <div className="amount-line"><span>Balance due</span><strong>₦78,400</strong></div>
+            <div className="amount-line"><span>Balance due</span><strong><NairaText value="₦78,400" /></strong></div>
           </m.article>
 
           <m.article className="trail-panel checkout-panel" key={`checkout-${motionReady ? "motion" : "static"}`} {...enter(0.2, 0, 16)}>
@@ -84,7 +85,7 @@ export function PaymentTrailVisual() {
               <span className="data-label">CHECKOUT</span>
             </div>
             <p className="panel-title">Paystack payment</p>
-            <div className="checkout-amount">₦42,000</div>
+            <div className="checkout-amount"><NairaText value="₦42,000" /></div>
             <div className="checkout-control"><span>Pay securely</span><ShieldCheck aria-hidden="true" /></div>
           </m.article>
 
@@ -118,14 +119,14 @@ export function PaymentTrailVisual() {
               <span className="status-chip success">Issued</span>
             </div>
             <p className="panel-title">RCT-000241</p>
-            <div className="receipt-total"><span>Payment received</span><strong>₦42,000</strong></div>
+            <div className="receipt-total"><span>Payment received</span><strong><NairaText value="₦42,000" /></strong></div>
             <p className="muted-line">Public receipt link ready</p>
           </m.article>
         </div>
 
         <div className="trail-window-footer">
           <span><span className="pulse-dot" /> Financial trail connected</span>
-          <span>Invoice balance now ₦36,400</span>
+          <span><NairaText value="Invoice balance now ₦36,400" /></span>
         </div>
       </div>
     </LazyMotion>

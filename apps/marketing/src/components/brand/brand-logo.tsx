@@ -18,7 +18,7 @@ export function BrandMark({ className }: { className?: string }) {
 
 export function BrandLogo({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-3", className)}>
+    <span className={cn("brand-logo inline-flex items-center", className)}>
       <BrandMark />
       <span className="text-base font-semibold tracking-[-0.02em] text-[var(--text-primary)]">Lumina</span>
     </span>

@@ -5,6 +5,7 @@ import { AnimatePresence, LazyMotion, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { type KeyboardEvent, useRef, useState } from "react";
 
+import { NairaText } from "@/components/ui/naira-text";
 import { outcomes } from "@/content/site-copy";
 import { cn } from "@/lib/cn";
 
@@ -103,7 +104,7 @@ export function OutcomeExplorer() {
 
                 <div className="outcome-amount">
                   <span>{active.amountLabel}</span>
-                  <strong>{active.amount}</strong>
+                  <strong><NairaText value={active.amount} /></strong>
                 </div>
 
                 <div className="outcome-message">
@@ -116,7 +117,7 @@ export function OutcomeExplorer() {
                   <div><dt>Reference</dt><dd>{active.reference}</dd></div>
                   <div><dt>Invoice</dt><dd>{active.invoice}</dd></div>
                   {active.events.map((event) => (
-                    <div key={event.label}><dt>{event.label}</dt><dd>{event.value}</dd></div>
+                    <div key={event.label}><dt>{event.label}</dt><dd><NairaText value={event.value} /></dd></div>
                   ))}
                 </dl>
 

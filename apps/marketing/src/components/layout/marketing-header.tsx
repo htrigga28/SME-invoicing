@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { NairaText } from "@/components/ui/naira-text";
 import { WaitlistAnchor } from "@/components/ui/waitlist-anchor";
 import { navigation } from "@/content/site-copy";
 import { cn } from "@/lib/cn";
@@ -145,7 +146,7 @@ export function MarketingHeader() {
                         >
                           <span className="data-label">{activeProduct.label.toUpperCase()}</span>
                           <strong>{activeProduct.title}</strong>
-                          <p>{activeProduct.preview}</p>
+                          <p><NairaText value={activeProduct.preview} /></p>
                           <span className="preview-action">Explore section <ArrowUpRight aria-hidden="true" /></span>
                         </m.div>
                       </AnimatePresence>
