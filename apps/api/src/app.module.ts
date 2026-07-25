@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 import { validateEnv } from "./config/env.validation";
 import { DatabaseModule } from "./database/database.module";
@@ -13,6 +14,7 @@ import { ExportsModule } from "./modules/exports/exports.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { PaymentSetupModule } from "./modules/payment-setup/payment-setup.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
+import { PublicWaitlistModule } from "./modules/public-waitlist/public-waitlist.module";
 import { ReceiptsModule } from "./modules/receipts/receipts.module";
 import { TeamModule } from "./modules/team/team.module";
 
@@ -22,6 +24,12 @@ import { TeamModule } from "./modules/team/team.module";
       isGlobal: true,
       validate: validateEnv
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 5
+      }
+    ]),
     DatabaseModule,
     AuthModule,
     AuditLogModule,
@@ -32,6 +40,7 @@ import { TeamModule } from "./modules/team/team.module";
     InvoicesModule,
     PaymentSetupModule,
     PaymentsModule,
+    PublicWaitlistModule,
     ReceiptsModule,
     TeamModule
   ],

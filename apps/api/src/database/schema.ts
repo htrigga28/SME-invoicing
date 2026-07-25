@@ -70,6 +70,13 @@ export const paymentRefundStatusEnum = pgEnum("payment_refund_status", [
   "failed"
 ]);
 
+export const marketingWaitlistEntryStatusEnum = pgEnum("marketing_waitlist_entry_status", [
+  "waiting",
+  "invited",
+  "joined",
+  "unsubscribed"
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -594,6 +601,35 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+export const marketingWaitlistEntries = pgTable(
+  "marketing_waitlist_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: varchar("email", { length: 320 }).notNull(),
+    emailNormalized: varchar("email_normalized", { length: 320 }).notNull(),
+    fullName: varchar("full_name", { length: 200 }),
+    companyName: varchar("company_name", { length: 200 }),
+    role: varchar("role", { length: 120 }),
+    source: varchar("source", { length: 80 }),
+    status: marketingWaitlistEntryStatusEnum("status").notNull().default("waiting"),
+    utmSource: varchar("utm_source", { length: 200 }),
+    utmMedium: varchar("utm_medium", { length: 200 }),
+    utmCampaign: varchar("utm_campaign", { length: 200 }),
+    utmContent: varchar("utm_content", { length: 200 }),
+    utmTerm: varchar("utm_term", { length: 200 }),
+    referrer: text("referrer"),
+    ...timestamps
+  },
+  (table) => ({
+    emailNormalizedUnique: uniqueIndex("marketing_waitlist_email_normalized_unique").on(
+      table.emailNormalized
+    ),
+    statusIndex: index("marketing_waitlist_status_idx").on(table.status),
+    createdAtIndex: index("marketing_waitlist_created_at_idx").on(table.createdAt),
+    sourceIndex: index("marketing_waitlist_source_idx").on(table.source)
+  })
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(organisationMembers),
   sentInvitations: many(organisationInvitations),
@@ -829,3 +865,5 @@ export type NewReceipt = typeof receipts.$inferInsert;
 export type ReceiptNumberSequence = typeof receiptNumberSequences.$inferSelect;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type MarketingWaitlistEntry = typeof marketingWaitlistEntries.$inferSelect;
+export type NewMarketingWaitlistEntry = typeof marketingWaitlistEntries.$inferInsert;

@@ -17,6 +17,7 @@ A standalone B2B SaaS portfolio project for Nigerian SMEs, freelancers, agencies
 
 ```text
 apps/
+  marketing/ Next.js public marketing website
   web/       Next.js frontend
   api/       NestJS backend
 packages/
@@ -35,7 +36,7 @@ cp .env.example .env
 pnpm dev
 ```
 
-`pnpm dev` starts workspace dev tasks through Turborepo. The web app defaults to `http://localhost:3000`; the API defaults to `http://localhost:4000`.
+`pnpm dev` starts workspace dev tasks through Turborepo. The marketing app defaults to `http://localhost:3002`, the product app defaults to `http://localhost:3000`, and the API defaults to `http://localhost:4000`.
 
 ## Environment Setup
 
@@ -43,12 +44,20 @@ Use [.env.example](./.env.example) as the starting point. T002 only adds placeho
 
 Required categories:
 
-- Frontend API URL and Paystack public key
+- Marketing site URL, product app URL, public API URL, contact email, and Paystack public key
 - Database URL
 - JWT secrets
 - Paystack secret, optional base URL, and webhook config
 - Frontend/backend URL and CORS origins
 - Later Brevo and Cloudflare R2 credentials
+
+Marketing notes:
+
+- `NEXT_PUBLIC_SITE_URL` controls canonical marketing metadata and sitemap URLs.
+- `NEXT_PUBLIC_APP_URL` controls Sign In links and should point to the authenticated product app.
+- `NEXT_PUBLIC_API_URL` controls waitlist submissions.
+- `NEXT_PUBLIC_CONTACT_EMAIL` is displayed on marketing legal pages.
+- Local API CORS should include both `http://localhost:3000` and `http://localhost:3002`.
 
 Payment Setup notes:
 
@@ -132,7 +141,9 @@ pnpm build
 
 ```bash
 pnpm dev
+pnpm dev:marketing
 pnpm build
+pnpm build:marketing
 pnpm lint
 pnpm typecheck
 pnpm test
@@ -318,6 +329,24 @@ Manual overpayment/refund check:
 5. Confirm the refund shows pending/processing until Paystack sends a processed refund event.
 6. Simulate or receive `refund.processed` and confirm the invoice financial summary recalculates from successful payments minus processed refunds.
 
+## Marketing Site and Waitlist
+
+The public Lumina marketing site lives in `apps/marketing` and is intended for the root domain. The authenticated product app remains in `apps/web` and is intended for `app.<root-domain>`.
+
+Local marketing commands:
+
+```bash
+pnpm dev:marketing
+pnpm build:marketing
+```
+
+The waitlist form posts to `POST /public/waitlist`. The API stores normalized email, optional profile fields, CTA source, UTM fields, and referrer in `marketing_waitlist_entries`. Duplicate emails and honeypot submissions return the same generic success response so the public endpoint does not reveal whether an email is already on the list.
+
+Marketing documentation:
+
+- [Marketing site plan](./docs/marketing-site-plan.md)
+- [Marketing site operations](./docs/marketing-site.md)
+
 ## Auth Session Trade-Off
 
 The frontend currently stores access and refresh tokens in `localStorage` for MVP development speed. This keeps the MVP simple and demoable, but it is not the preferred production design. A later hardening task should move sessions to secure, HTTP-only cookies and add CSRF-aware flows where needed.
@@ -359,4 +388,4 @@ Implemented so far:
 - Secure CSV exports for customers, invoices, payments, receipts, and Owner/Admin audit logs.
 - Read-only Audit Logs API/UI with search, filters, pagination, safe detail inspection, and metadata redaction.
 
-Next planned implementation task: T017 UI Polish Pass.
+Next planned implementation task after T018: T019 Deployment, Portfolio and Launch Hardening.
