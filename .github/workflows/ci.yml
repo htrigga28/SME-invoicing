@@ -17,12 +17,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  NEXT_PUBLIC_SITE_URL: https://lumina.example.test
-  NEXT_PUBLIC_APP_URL: https://app.lumina.example.test
-  NEXT_PUBLIC_MARKETING_URL: https://lumina.example.test
-  NEXT_PUBLIC_API_URL: https://api.lumina.example.test
-
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -53,3 +47,8 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          NEXT_PUBLIC_SITE_URL: https://lumina.example.test
+          NEXT_PUBLIC_APP_URL: https://app.lumina.example.test
+          NEXT_PUBLIC_MARKETING_URL: https://lumina.example.test
+          NEXT_PUBLIC_API_URL: https://api.lumina.example.test
