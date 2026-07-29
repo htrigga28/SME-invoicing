@@ -127,6 +127,7 @@ Repeat the applicable checks above against:
 Development-specific checks:
 
 - [ ] All three domains are attached to Vercel Preview branch `dev`.
+- [ ] All three development domains load for a visitor who is not a Vercel team member.
 - [ ] Development requests never use production API URLs.
 - [ ] Development API never uses the production Neon branch.
 - [ ] Seeded demo login works only against the development database.

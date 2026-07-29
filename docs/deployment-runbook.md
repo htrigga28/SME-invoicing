@@ -23,6 +23,10 @@ The persistent development environment is built from the Git `dev` branch:
 | API | `https://api.dev.lumina.akhigbe.xyz` | Preview, branch `dev` |
 | Database | Neon branch `development` | Separate pooled runtime connection |
 
+Vercel Authentication is disabled on all three projects so the development
+domains are publicly accessible to external reviewers. Development contains
+demo data only and must never reuse production database or JWT credentials.
+
 All three deployable applications remain separate Vercel projects. Do not rename `apps/web`, merge the projects, or move the API to another provider unless the architecture is intentionally revisited.
 
 ## Observed Vercel mapping
@@ -43,9 +47,9 @@ After URL environment variables were added, the current source was redeployed su
 
 | Service | Production deployment ID | Status |
 | --- | --- | --- |
-| Marketing | `DM6MVYRCMyJs8HRsQqjDJfHcpmTs` | Ready |
-| Product app | `5wJgjFLH3yH4J5zk5oXqY8PM5R13` | Ready |
-| API | `CMpHNNDztynXyUmzadfE3Gyi9jdJ` | Ready |
+| Marketing | `5AY7zSnKu7fLbjwHFA1DqS3JAC8B` | Ready |
+| Product app | `H4U5dTibKqsnXABYft9xyT99oAyw` | Ready |
+| API | `8VZd5HiXH3f9tCG7W3hQ56DL3fVj` | Ready |
 
 The product project also received one duplicate redeploy while the first redeploy was not yet visible in the dashboard. Both completed safely; the table records the current production deployment.
 
@@ -58,9 +62,9 @@ Pxxl DNS is authoritative for `akhigbe.xyz`. The selected Lumina topology requir
 | CNAME | `lumina` | `f7a895aad2762b42.vercel-dns-017.com` | DNS only | Configured |
 | CNAME | `app.lumina` | `7fba3fe690f6626f.vercel-dns-017.com` | DNS only | Configured |
 | CNAME | `api.lumina` | `ad465d585e73ed72.vercel-dns-017.com` | DNS only | Configured |
-| CNAME | `dev.lumina` | `f7a895aad2762b42.vercel-dns-017.com` | DNS only | Configured; propagation pending |
-| CNAME | `app.dev.lumina` | `7fba3fe690f6626f.vercel-dns-017.com` | DNS only | Configured; propagation pending |
-| CNAME | `api.dev.lumina` | `ad465d585e73ed72.vercel-dns-017.com` | DNS only | Configured; propagation pending |
+| CNAME | `dev.lumina` | `f7a895aad2762b42.vercel-dns-017.com` | DNS only | Configured; Vercel valid |
+| CNAME | `app.dev.lumina` | `7fba3fe690f6626f.vercel-dns-017.com` | DNS only | Configured; Vercel valid |
+| CNAME | `api.dev.lumina` | `ad465d585e73ed72.vercel-dns-017.com` | DNS only | Configured; Vercel valid |
 
 The Lumina deployment does not use `app.akhigbe.xyz` or `api.akhigbe.xyz`. Those non-Lumina aliases were removed from Vercel and Pxxl before this audit. The unrelated apex, `www`, and `portfolio` DNS records are outside this project and must not be deleted as part of a Lumina release.
 
@@ -77,9 +81,9 @@ dig +short app.dev.lumina.akhigbe.xyz CNAME
 dig +short api.dev.lumina.akhigbe.xyz CNAME
 ```
 
-Vercel may show Invalid Configuration until public DNS propagation completes. Use the project Domains page Refresh control after the records resolve publicly.
+Vercel may show Invalid Configuration while a future DNS change propagates. Use the project Domains page Refresh control after the records resolve publicly.
 
-On 2026-07-29 Pxxl published all three production records and Vercel reported Valid Configuration for the three production custom domains. The development records were added during this run and must be rechecked after public DNS propagation and TLS issuance.
+On 2026-07-29 Pxxl published all six Lumina records. Vercel reported Valid Configuration and HTTPS worked for the three production and three development custom domains.
 
 ## Environment variables
 
@@ -333,6 +337,8 @@ Vercel remains the deployment system:
 - The three production custom domains are attached to Production.
 - The three development custom domains are attached to Preview branch `dev`.
 - Preview API/database/JWT values are separate from Production.
+- Vercel Authentication is disabled, so all three development domains are
+  reachable by reviewers who are not members of the Vercel team.
 
 Do not promote a Preview deployment to Production unless its commit is intended for `main` and the production environment variables have been reviewed.
 
@@ -380,6 +386,24 @@ Filter by deployment, route, status, and time. Summarize errors without copying 
 | Webhook returns 500 | Database state, pending payment reference, and safe runtime log summary |
 | First database request is slow | Neon compute waking from Idle |
 | Build succeeds with wrong URLs | Confirm production env names and redeploy; repository guards should make missing production variables fail closed after this runbook change is deployed |
+
+## 2026-07-29 launch QA
+
+- Production marketing, product login, authenticated workspace routes, API
+  health, production CORS, legal/SEO routes, and idempotent waitlist submission
+  passed.
+- Development marketing, demo login, dashboard, customers, invoices, payments,
+  receipts, exports, audit logs, Payment Setup, public invoice, public receipt,
+  API health, and restricted CORS passed.
+- The development marketing deployment initially exposed a client-side missing
+  URL error. Commit `4c712ef` changed public URL access to statically analyzable
+  `NEXT_PUBLIC_*` references; the replacement Preview deployment is Ready and
+  the public domain now renders without browser errors.
+- The production database intentionally has no seeded invoice or receipt data,
+  so production public invoice and receipt pages were not exercised.
+- A complete Paystack checkout was not performed. The development demo payout
+  setup is disabled, while the webhook and callback configuration were verified
+  independently.
 
 ## Launch record
 
