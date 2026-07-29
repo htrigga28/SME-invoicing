@@ -3,20 +3,34 @@ const DEFAULT_APP_URL = "http://localhost:3000";
 const DEFAULT_API_URL = "http://localhost:4000";
 
 export function getSiteUrl() {
-  return getRequiredPublicUrl("NEXT_PUBLIC_SITE_URL", DEFAULT_SITE_URL);
+  return getRequiredPublicUrl(
+    "NEXT_PUBLIC_SITE_URL",
+    process.env.NEXT_PUBLIC_SITE_URL,
+    DEFAULT_SITE_URL
+  );
 }
 
 export function getAppUrl() {
-  return getRequiredPublicUrl("NEXT_PUBLIC_APP_URL", DEFAULT_APP_URL);
+  return getRequiredPublicUrl(
+    "NEXT_PUBLIC_APP_URL",
+    process.env.NEXT_PUBLIC_APP_URL,
+    DEFAULT_APP_URL
+  );
 }
 
 export function getApiUrl() {
-  return getRequiredPublicUrl("NEXT_PUBLIC_API_URL", DEFAULT_API_URL);
+  return getRequiredPublicUrl(
+    "NEXT_PUBLIC_API_URL",
+    process.env.NEXT_PUBLIC_API_URL,
+    DEFAULT_API_URL
+  );
 }
 
-function getRequiredPublicUrl(name: string, developmentFallback: string) {
-  const value = process.env[name];
-
+function getRequiredPublicUrl(
+  name: string,
+  value: string | undefined,
+  developmentFallback: string
+) {
   if (value) {
     return trimTrailingSlash(value);
   }
