@@ -346,6 +346,14 @@ Marketing documentation:
 
 - [Marketing site plan](./docs/marketing-site-plan.md)
 - [Marketing site operations](./docs/marketing-site.md)
+- [Deployment runbook](./docs/deployment-runbook.md)
+- [Deployment smoke test](./docs/deployment-smoke-test.md)
+
+Deployment environments:
+
+- Production: `lumina.akhigbe.xyz`, `app.lumina.akhigbe.xyz`, and `api.lumina.akhigbe.xyz`
+- Development (`dev` branch): `dev.lumina.akhigbe.xyz`, `app.dev.lumina.akhigbe.xyz`, and `api.dev.lumina.akhigbe.xyz`
+- Vercel projects remain split across `apps/marketing`, `apps/web`, and `apps/api`; Neon uses separate `production` and `development` branches.
 
 ## Auth Session Trade-Off
 

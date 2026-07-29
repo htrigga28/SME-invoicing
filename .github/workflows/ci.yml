@@ -2,9 +2,26 @@ name: CI
 
 on:
   pull_request:
+    branches:
+      - dev
+      - main
   push:
     branches:
+      - dev
       - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_PUBLIC_SITE_URL: https://lumina.example.test
+  NEXT_PUBLIC_APP_URL: https://app.lumina.example.test
+  NEXT_PUBLIC_MARKETING_URL: https://lumina.example.test
+  NEXT_PUBLIC_API_URL: https://api.lumina.example.test
 
 jobs:
   validate:
@@ -17,7 +34,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Enable Corepack
         run: corepack enable
