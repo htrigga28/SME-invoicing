@@ -79,6 +79,7 @@ describe("AuthService", () => {
         }
       }),
       getActiveContextForUser: jest.fn().mockResolvedValue(context),
+      hasPaymentAccountHistory: jest.fn().mockResolvedValue(false),
       createRefreshToken: jest.fn(),
       findRefreshTokenByHash: jest.fn((hash: string) => Promise.resolve(refreshRecords.get(hash))),
       rotateRefreshToken: jest.fn(
@@ -143,6 +144,7 @@ describe("AuthService", () => {
     expect(result.businessProfile.setupCompletedAt).toBeNull();
     expect(result.refreshToken).toBe("refresh-token");
     expect(result.onboardingRequired).toBe(true);
+    expect(result.onboardingStep).toBe("business_profile");
   });
 
   it("rejects duplicate registration email", async () => {
@@ -169,6 +171,57 @@ describe("AuthService", () => {
     expect(result.accessToken).toBe("access-user-1");
     expect(result.refreshToken).toBe("refresh-token");
     expect(result.onboardingRequired).toBe(true);
+    expect(result.onboardingStep).toBe("business_profile");
+    expect(repository.hasPaymentAccountHistory).not.toHaveBeenCalled();
+  });
+
+  it("routes a completed business profile without payment account history to payment setup", async () => {
+    const { context, repository, service } = setup();
+    const completedAt = new Date("2026-01-02T00:00:00.000Z");
+    repository.findUserByEmail.mockResolvedValue({
+      ...context.user,
+      passwordHash: "hashed-password"
+    });
+    repository.getActiveContextForUser.mockResolvedValue({
+      ...context,
+      activeOrganisation: {
+        ...context.activeOrganisation,
+        onboardingCompletedAt: completedAt
+      },
+      businessProfile: {
+        ...context.businessProfile,
+        setupCompletedAt: completedAt
+      }
+    });
+
+    const result = await service.login({ email: "owner@example.com", password: "password123" });
+
+    expect(result.onboardingRequired).toBe(true);
+    expect(result.onboardingStep).toBe("payment_setup");
+    expect(repository.hasPaymentAccountHistory).toHaveBeenCalledWith("org-1");
+  });
+
+  it("completes onboarding when the organisation has submitted any payment account", async () => {
+    const { context, repository, service } = setup();
+    const completedAt = new Date("2026-01-02T00:00:00.000Z");
+    repository.getActiveContextForUser.mockResolvedValue({
+      ...context,
+      activeOrganisation: {
+        ...context.activeOrganisation,
+        onboardingCompletedAt: completedAt
+      },
+      businessProfile: {
+        ...context.businessProfile,
+        setupCompletedAt: completedAt
+      }
+    });
+    repository.hasPaymentAccountHistory.mockResolvedValue(true);
+
+    const result = await service.getMe("user-1");
+
+    expect(result.onboardingRequired).toBe(false);
+    expect(result.onboardingStep).toBeNull();
+    expect(repository.hasPaymentAccountHistory).toHaveBeenCalledWith("org-1");
   });
 
   it("rejects incorrect credentials", async () => {

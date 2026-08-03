@@ -45,7 +45,7 @@ Refresh tokens support `POST /auth/refresh` and `POST /auth/logout`. Rotation an
 | id | Primary key. |
 | name | Internal workspace name, may default from business name/email. |
 | slug | Unique workspace slug. |
-| onboarding_completed_at | Nullable. Set when business profile setup is complete. |
+| onboarding_completed_at | Nullable. Set when business profile setup is complete. Full signup completion is derived separately from payment-account history. |
 | created_at, updated_at | Timestamps. |
 
 Constraint: `organisations.slug` unique.

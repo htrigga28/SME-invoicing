@@ -56,6 +56,13 @@ function DashboardContent({
   const [customTo, setCustomTo] = useState(today);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [showSignupComplete, setShowSignupComplete] = useState(false);
+
+  useEffect(() => {
+    setShowSignupComplete(
+      new URLSearchParams(window.location.search).get("onboarding") === "complete"
+    );
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -138,6 +145,20 @@ function DashboardContent({
         description="Monitor collections, outstanding invoices, and payment activity."
         title="Dashboard"
       />
+
+      {showSignupComplete ? (
+        <Alert tone="success">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold text-[var(--text-primary)]">Your workspace is ready</p>
+              <p className="mt-1">Create your first invoice to start the payment trail.</p>
+            </div>
+            <LinkButton href="/invoices/new" size="sm">
+              Create first invoice
+            </LinkButton>
+          </div>
+        </Alert>
+      ) : null}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">

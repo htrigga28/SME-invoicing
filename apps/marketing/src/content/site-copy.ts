@@ -58,7 +58,7 @@ export const navigation: {
   productItems: ProductMenuItem[];
   links: Array<{ href: "#trust" | "#faq"; label: string }>;
   signInLabel: string;
-  waitlistLabel: string;
+  signupLabel: string;
 } = {
   productLabel: "Product",
   productItems: [
@@ -92,14 +92,14 @@ export const navigation: {
     { href: "#faq", label: "FAQ" }
   ],
   signInLabel: "Sign In",
-  waitlistLabel: "Join Waitlist"
+  signupLabel: "Create account"
 };
 
 export const hero = {
   eyebrow: "INVOICE PAYMENT CLARITY FOR NIGERIAN SMEs",
   title: "Know what got paid—without the spreadsheet chase.",
   copy: "Lumina connects every invoice, Paystack payment, payout route, refund, and receipt, so you always know what is settled, what is due, and what needs attention.",
-  primaryCta: "Join the waitlist",
+  primaryCta: "Create account",
   secondaryCta: "See the payment trail",
   trustNote: "Built for NGN invoices and Paystack settlement flows.",
   previewLabel: "Connected payment trail",
@@ -306,12 +306,9 @@ export const faq = [
   }
 ];
 
-export const waitlist = {
+export const signup = {
   heading: "Make every invoice payment easier to understand.",
-  copy: "Join the Lumina early-access list. We will let you know when a payment operations workspace built for Nigerian SMEs is ready for you.",
-  successTitle: "You're on the list.",
-  successCopy: "We'll let you know when Lumina early access opens.",
-  roles: ["Founder / Owner", "Finance / Accounting", "Operations", "Developer / Technical", "Other"]
+  copy: "Create your Lumina workspace, add the business details customers should see, and connect the payout account that completes your payment trail."
 };
 
 export const footer = {

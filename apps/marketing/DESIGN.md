@@ -154,9 +154,9 @@ Product surfaces use ledger and raised tones, one structural border or one shado
 
 The desktop header is compact and floating. The Product menu keeps one fixed shell open while its active preview shifts between product stories. Mobile uses a full-width drawer and accordion; no information depends on hover.
 
-### Inputs
+### Signup Conversion
 
-Inputs use raised graphite, clear labels, 12px corners, and a lime focus ring. Optional fields remain discoverable through a semantic disclosure. Error text names the recovery action.
+Signup remains on the product-app origin. Marketing uses one lime Create Account action, a lower-emphasis Sign In link, and a connected three-stage Account → Business → Payments trail. The trail should feel like the final branch of the payment system, not a row of generic feature cards.
 
 ## Do's and Don'ts
 

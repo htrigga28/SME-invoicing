@@ -22,7 +22,6 @@ Marketing uses only public runtime configuration:
 
 - `NEXT_PUBLIC_SITE_URL`: canonical marketing URL.
 - `NEXT_PUBLIC_APP_URL`: authenticated product app URL.
-- `NEXT_PUBLIC_API_URL`: API URL for public waitlist submission.
 - `NEXT_PUBLIC_CONTACT_EMAIL`: contact address shown on legal pages.
 
 The API uses `CORS_ORIGINS` to allow browser requests. Local development should include:
@@ -32,35 +31,27 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:3002
 TRUST_PROXY=loopback
 ```
 
-## Waitlist Flow
+The marketing origin is only needed in `CORS_ORIGINS` if the dormant waitlist form is restored; direct signup runs on the product-app origin.
 
-The public waitlist form posts to:
+## Signup Flow
+
+The marketing site does not collect account credentials or create sessions. Its primary CTAs resolve through `NEXT_PUBLIC_APP_URL` to:
 
 ```text
-POST /public/waitlist
+https://app.<root-domain>/register
 ```
 
-Stored fields:
+The product app then runs three required, resumable steps:
 
-- email and normalized email
-- optional name
-- optional company name
-- optional role
-- CTA source
-- UTM source, medium, campaign, content, and term
-- referrer
-- status
+- Account creation
+- Business profile
+- Payment Setup submission
 
-Privacy and anti-enumeration rules:
+The API derives the current step from business-profile completion and organisation payment-account history. Marketing never receives or transfers auth tokens.
 
-- Duplicate emails return the same generic success response as new emails.
-- Honeypot submissions return generic success and are not inserted.
-- The public endpoint is limited to five requests per minute per proxy-aware client IP.
-- The native form fallback uses `POST`, so no-JavaScript submissions do not put contact details in the page URL or browser history.
-- There is no public list endpoint.
-- The frontend never sends organisation IDs.
+The former `POST /public/waitlist` endpoint, database table, and stored leads remain retained as a dormant rollback path. The marketing frontend no longer sends requests to it.
 
-The built-in limiter uses per-instance memory. `TRUST_PROXY` must match the deployment ingress (for example, `loopback,linklocal,uniquelocal` for a private-network proxy) so forwarded client IPs are interpreted correctly. T019 production hardening should move throttling to shared storage and evaluate a managed bot challenge before a multi-instance launch.
+Public registration uses the API's configured throttler. `TRUST_PROXY` must match the deployment ingress so forwarded client IPs are interpreted correctly.
 
 ## SEO Strategy
 
@@ -82,17 +73,15 @@ The homepage uses these themes naturally in title, description, H1/supporting co
 
 ## Conversion Goal
 
-Primary conversion: Join Waitlist.
+Primary conversion: Create Account.
 
-Secondary conversion: Sign In for users who already have access.
+Secondary conversion: Sign In for existing users.
 
-Waitlist CTAs appear in:
+Signup CTAs appear in:
 
 - fixed navigation
 - hero
-- unified waitlist close and footer
-
-CTA source values are captured as `nav`, `hero`, or `final_cta`.
+- connected signup close and footer
 
 ## Content Rules
 
@@ -114,13 +103,12 @@ The marketing app is mostly static/server-rendered. Client components are limite
 - navigation scroll/mobile state and Product preview motion
 - hero payment-trail and connected-trail motion
 - outcome explorer tabs and transitions
-- waitlist form
-- waitlist CTA source dispatch
+- signup links remain static and server-rendered
 
 Motion uses `LazyMotion`, `domAnimation`, and `m` components only on those authored surfaces. There is no autoplay video, chart library, perpetual decorative animation, or global client state. FAQ and legal content remain server-rendered with native HTML disclosures where interaction is needed.
 
 ## Deployment Expectations
 
-Deploy `apps/marketing` to the root domain and `apps/web` to `app.<root-domain>`. Set `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, and `NEXT_PUBLIC_API_URL` per environment. Ensure `CORS_ORIGINS` on the API includes both the product and marketing origins, and set `TRUST_PROXY` to the actual ingress topology before enabling the public waitlist.
+Deploy `apps/marketing` to the root domain and `apps/web` to `app.<root-domain>`. Set `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_APP_URL` for marketing, and configure `NEXT_PUBLIC_API_URL` for the product app. Set `TRUST_PROXY` to the actual API ingress topology before opening public registration.
 
 The `/privacy` and `/terms` pages are draft legal copy and require owner/legal review before production use.

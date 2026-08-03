@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useRef, useState } from "react";
 
-import { primaryActionClassName } from "@/components/ui/styles";
+import { Alert } from "@/components/ui/feedback";
+import { FieldError, FieldHint, FieldLabel, FormField, Input } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
 
 import { register } from "./auth-api";
 import { setStoredSession } from "./session";
@@ -16,6 +18,9 @@ export function RegisterForm() {
   const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,6 +28,11 @@ export function RegisterForm() {
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
+      const firstInvalidField = (["name", "email", "password"] as const).find(
+        (field) => nextErrors[field]
+      );
+      const refs = { name: nameRef, email: emailRef, password: passwordRef };
+      refs[firstInvalidField ?? "name"].current?.focus();
       return;
     }
 
@@ -45,55 +55,90 @@ export function RegisterForm() {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">Name</span>
-        <input
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          value={form.name}
-          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-        />
-        {errors.name ? (
-          <span className="mt-1 block text-sm text-red-600">{errors.name}</span>
-        ) : null}
-      </label>
+      <div>
+        <FormField>
+          <FieldLabel>Name</FieldLabel>
+          <Input
+            aria-describedby={errors.name ? "register-name-error" : undefined}
+            aria-invalid={Boolean(errors.name)}
+            autoComplete="name"
+            className="mt-1"
+            id="register-name"
+            ref={nameRef}
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+          />
+        </FormField>
+        {errors.name ? <FieldError id="register-name-error">{errors.name}</FieldError> : null}
+      </div>
 
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">Email</span>
-        <input
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          type="email"
-          value={form.email}
-          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-        />
-        {errors.email ? (
-          <span className="mt-1 block text-sm text-red-600">{errors.email}</span>
+      <div>
+        <FormField>
+          <FieldLabel>Email</FieldLabel>
+          <Input
+            aria-describedby={errors.email ? "register-email-error" : "register-email-hint"}
+            aria-invalid={Boolean(errors.email)}
+            autoComplete="email"
+            className="mt-1"
+            id="register-email"
+            inputMode="email"
+            ref={emailRef}
+            type="email"
+            value={form.email}
+            onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+          />
+        </FormField>
+        {!errors.email ? (
+          <FieldHint id="register-email-hint">
+            Use the email you want tied to this workspace.
+          </FieldHint>
         ) : null}
-      </label>
+        {errors.email ? <FieldError id="register-email-error">{errors.email}</FieldError> : null}
+      </div>
 
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">Password</span>
-        <input
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          type="password"
-          value={form.password}
-          onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-        />
+      <div>
+        <FormField>
+          <FieldLabel>Password</FieldLabel>
+          <Input
+            aria-describedby={
+              errors.password ? "register-password-error" : "register-password-hint"
+            }
+            aria-invalid={Boolean(errors.password)}
+            autoComplete="new-password"
+            className="mt-1"
+            id="register-password"
+            ref={passwordRef}
+            type="password"
+            value={form.password}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, password: event.target.value }))
+            }
+          />
+        </FormField>
+        {!errors.password ? (
+          <FieldHint id="register-password-hint">Use at least 8 characters.</FieldHint>
+        ) : null}
         {errors.password ? (
-          <span className="mt-1 block text-sm text-red-600">{errors.password}</span>
+          <FieldError id="register-password-error">{errors.password}</FieldError>
         ) : null}
-      </label>
+      </div>
 
       {submitError ? (
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{submitError}</p>
+        <Alert role="alert" tone="error">
+          {submitError}
+        </Alert>
       ) : null}
 
-      <button
-        className={`${primaryActionClassName} w-full`}
+      <Button
+        className="w-full"
         disabled={isSubmitDisabled(isSubmitting)}
+        isLoading={isSubmitting}
+        loadingLabel="Creating account..."
+        size="lg"
         type="submit"
       >
-        {isSubmitting ? "Creating account..." : "Create account"}
-      </button>
+        Create account
+      </Button>
 
       <p className="text-center text-sm text-slate-600">
         Already have an account?{" "}
