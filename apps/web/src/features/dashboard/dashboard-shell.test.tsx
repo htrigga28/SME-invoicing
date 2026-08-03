@@ -36,7 +36,8 @@ const appShellContext = {
       logoFileId: null,
       setupCompletedAt: "2026-06-30T00:00:00.000Z"
     },
-    onboardingRequired: false
+    onboardingRequired: false,
+    onboardingStep: null
   }
 };
 
@@ -71,9 +72,22 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.history.pushState({}, "", "/");
 });
 
 describe("DashboardShell", () => {
+  it("shows the first-invoice action after signup completes", async () => {
+    window.history.pushState({}, "", "/dashboard?onboarding=complete");
+
+    render(<DashboardShell />);
+
+    expect(await screen.findByText("Your workspace is ready")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create first invoice" })).toHaveAttribute(
+      "href",
+      "/invoices/new"
+    );
+  });
+
   it("shows a payment setup CTA for owners when online payments are not configured", async () => {
     render(<DashboardShell />);
 

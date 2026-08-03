@@ -128,6 +128,8 @@ Public/auth shell:
 - No authenticated navigation.
 - Centered document or form panel.
 - Shared dark brand language.
+- Signup uses one shared three-step Account, Business, and Payments progress trail.
+- Registration remains compact, business profile may widen for form readability, and required Payment Setup uses a focused `max-w-4xl` surface without workspace navigation.
 - Print overrides produce white pages with dark readable text.
 
 ## Recharts

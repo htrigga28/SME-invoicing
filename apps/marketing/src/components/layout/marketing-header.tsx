@@ -8,7 +8,7 @@ import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { NairaText } from "@/components/ui/naira-text";
-import { WaitlistAnchor } from "@/components/ui/waitlist-anchor";
+import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { navigation } from "@/content/site-copy";
 import { cn } from "@/lib/cn";
 import { getAppLoginUrl, getMarketingAnchorHref } from "@/lib/urls";
@@ -26,7 +26,9 @@ export function MarketingHeader() {
   const reduceMotion = useReducedMotion();
   const loginUrl = getAppLoginUrl();
   const activeProduct = useMemo(
-    () => navigation.productItems.find((item) => item.id === activeProductId) ?? navigation.productItems[0]!,
+    () =>
+      navigation.productItems.find((item) => item.id === activeProductId) ??
+      navigation.productItems[0]!,
     [activeProductId]
   );
 
@@ -81,10 +83,7 @@ export function MarketingHeader() {
   }
 
   return (
-    <header
-      className={cn("marketing-header", isScrolled && "is-scrolled")}
-      ref={headerRef}
-    >
+    <header className={cn("marketing-header", isScrolled && "is-scrolled")} ref={headerRef}>
       <div className="header-shell">
         <a aria-label="Lumina home" className="brand-home" href="/">
           <BrandLogo />
@@ -115,15 +114,24 @@ export function MarketingHeader() {
                   <m.div
                     animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                     className="product-menu"
-                    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, filter: "blur(6px)" }}
+                    exit={
+                      reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, filter: "blur(6px)" }
+                    }
                     id="product-menu"
                     initial={reduceMotion ? false : { opacity: 0, y: -8, filter: "blur(6px)" }}
-                    transition={reduceMotion ? { duration: 0.01 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                    transition={
+                      reduceMotion
+                        ? { duration: 0.01 }
+                        : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
+                    }
                   >
                     <div className="product-menu-list">
                       {navigation.productItems.map((item) => (
                         <a
-                          className={cn("product-menu-link", item.id === activeProductId && "is-active")}
+                          className={cn(
+                            "product-menu-link",
+                            item.id === activeProductId && "is-active"
+                          )}
                           href={resolveHref(item.href)}
                           key={item.id}
                           onClick={() => setIsProductOpen(false)}
@@ -139,15 +147,29 @@ export function MarketingHeader() {
                       <AnimatePresence initial={false} mode="wait">
                         <m.div
                           animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-                          exit={reduceMotion ? { opacity: 1 } : { opacity: 0, x: -16, filter: "blur(8px)" }}
-                          initial={reduceMotion ? false : { opacity: 0, x: 16, filter: "blur(8px)" }}
+                          exit={
+                            reduceMotion
+                              ? { opacity: 1 }
+                              : { opacity: 0, x: -16, filter: "blur(8px)" }
+                          }
+                          initial={
+                            reduceMotion ? false : { opacity: 0, x: 16, filter: "blur(8px)" }
+                          }
                           key={activeProduct.id}
-                          transition={reduceMotion ? { duration: 0.01 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                          transition={
+                            reduceMotion
+                              ? { duration: 0.01 }
+                              : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
+                          }
                         >
                           <span className="data-label">{activeProduct.label.toUpperCase()}</span>
                           <strong>{activeProduct.title}</strong>
-                          <p><NairaText value={activeProduct.preview} /></p>
-                          <span className="preview-action">Explore section <ArrowUpRight aria-hidden="true" /></span>
+                          <p>
+                            <NairaText value={activeProduct.preview} />
+                          </p>
+                          <span className="preview-action">
+                            Explore section <ArrowUpRight aria-hidden="true" />
+                          </span>
                         </m.div>
                       </AnimatePresence>
                     </div>
@@ -165,8 +187,11 @@ export function MarketingHeader() {
         </nav>
 
         <div className="desktop-actions">
-          <a className="sign-in-link" href={loginUrl}><LogIn aria-hidden="true" />{navigation.signInLabel}</a>
-          <WaitlistAnchor source="nav">{navigation.waitlistLabel}</WaitlistAnchor>
+          <a className="sign-in-link" href={loginUrl}>
+            <LogIn aria-hidden="true" />
+            {navigation.signInLabel}
+          </a>
+          <SignupAnchor>{navigation.signupLabel}</SignupAnchor>
         </div>
 
         <button
@@ -197,19 +222,25 @@ export function MarketingHeader() {
               <div className="mobile-product-links">
                 {navigation.productItems.map((item) => (
                   <a href={resolveHref(item.href)} key={item.id} onClick={closeMobileNavigation}>
-                    <strong>{item.label}</strong><span>{item.detail}</span>
+                    <strong>{item.label}</strong>
+                    <span>{item.detail}</span>
                   </a>
                 ))}
               </div>
             ) : null}
             {navigation.links.map((link) => (
-              <a href={resolveHref(link.href)} key={link.href} onClick={closeMobileNavigation}>{link.label}</a>
+              <a href={resolveHref(link.href)} key={link.href} onClick={closeMobileNavigation}>
+                {link.label}
+              </a>
             ))}
             <div className="mobile-actions">
-              <a href={loginUrl}><LogIn aria-hidden="true" />{navigation.signInLabel}</a>
-              <WaitlistAnchor className="w-full" onClick={closeMobileNavigation} source="nav">
-                {navigation.waitlistLabel}
-              </WaitlistAnchor>
+              <a href={loginUrl}>
+                <LogIn aria-hidden="true" />
+                {navigation.signInLabel}
+              </a>
+              <SignupAnchor className="w-full" onClick={closeMobileNavigation}>
+                {navigation.signupLabel}
+              </SignupAnchor>
             </div>
           </nav>
         </div>

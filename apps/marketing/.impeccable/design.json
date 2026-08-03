@@ -16,13 +16,27 @@
       "exception": { "role": "tertiary", "displayName": "Exception Coral", "canonical": "#ff7878" }
     },
     "typographyMeta": {
-      "display": { "displayName": "Owner-facing display", "purpose": "Hero and major section promises." },
+      "display": {
+        "displayName": "Owner-facing display",
+        "purpose": "Hero and major section promises."
+      },
       "body": { "displayName": "Reading text", "purpose": "Benefit and explanatory copy." },
-      "data": { "displayName": "Operational data", "purpose": "Money, references, timestamps, status metadata, and code." }
+      "data": {
+        "displayName": "Operational data",
+        "purpose": "Money, references, timestamps, status metadata, and code."
+      }
     },
     "shadows": [
-      { "name": "floating-navigation", "value": "0 18px 60px rgba(0,0,0,0.32)", "purpose": "Separates the compact header from page content after scrolling." },
-      { "name": "product-focus", "value": "0 24px 80px rgba(0,0,0,0.34)", "purpose": "Supports the primary authored demonstration without a colored halo." }
+      {
+        "name": "floating-navigation",
+        "value": "0 18px 60px rgba(0,0,0,0.32)",
+        "purpose": "Separates the compact header from page content after scrolling."
+      },
+      {
+        "name": "product-focus",
+        "value": "0 24px 80px rgba(0,0,0,0.34)",
+        "purpose": "Supports the primary authored demonstration without a colored halo."
+      }
     ],
     "roundedMeta": {
       "compact": { "canonical": "9px" },
@@ -33,10 +47,26 @@
       "pill": { "canonical": "999px", "role": "pill" }
     },
     "motion": [
-      { "name": "micro", "value": "160ms cubic-bezier(0.22,1,0.36,1)", "purpose": "Hover, focus, and compact control feedback." },
-      { "name": "state", "value": "260ms cubic-bezier(0.22,1,0.36,1)", "purpose": "Menu and product-state changes." },
-      { "name": "reveal", "value": "520ms cubic-bezier(0.22,1,0.36,1)", "purpose": "Major authored entrances only." },
-      { "name": "trail", "value": "900ms cubic-bezier(0.22,1,0.36,1)", "purpose": "The one-time hero payment-trail draw." }
+      {
+        "name": "micro",
+        "value": "160ms cubic-bezier(0.22,1,0.36,1)",
+        "purpose": "Hover, focus, and compact control feedback."
+      },
+      {
+        "name": "state",
+        "value": "260ms cubic-bezier(0.22,1,0.36,1)",
+        "purpose": "Menu and product-state changes."
+      },
+      {
+        "name": "reveal",
+        "value": "520ms cubic-bezier(0.22,1,0.36,1)",
+        "purpose": "Major authored entrances only."
+      },
+      {
+        "name": "trail",
+        "value": "900ms cubic-bezier(0.22,1,0.36,1)",
+        "purpose": "The one-time hero payment-trail draw."
+      }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },
@@ -51,7 +81,7 @@
       "kind": "button",
       "refersTo": "button-primary",
       "description": "The single strongest action in a viewport.",
-      "html": "<button class=\"ds-button-primary\">JOIN THE WAITLIST</button>",
+      "html": "<button class=\"ds-button-primary\">CREATE ACCOUNT</button>",
       "css": ".ds-button-primary{background:var(--accent,#c1ff72);color:#070a08;border:0;border-radius:12px;padding:12px 20px;font:600 14px/1.2 'Hanken Grotesk',sans-serif;transition:transform 160ms cubic-bezier(.22,1,.36,1),background 160ms cubic-bezier(.22,1,.36,1)}.ds-button-primary:hover{background:#a9eb59;transform:translateY(-2px)}.ds-button-primary:focus-visible{outline:2px solid #070a08;box-shadow:0 0 0 4px #c1ff72}"
     },
     {
@@ -63,22 +93,42 @@
       "css": ".ds-product-surface{display:grid;gap:8px;background:#121813;color:#f5f7ef;border:1px solid rgba(245,247,239,.1);border-radius:16px;padding:16px}.ds-product-surface span{color:#aeb8a7;font:600 11px/1.4 'JetBrains Mono',monospace}.ds-product-surface strong{font:600 15px/1.4 'JetBrains Mono',monospace}"
     },
     {
-      "name": "Input",
-      "kind": "input",
-      "description": "Waitlist field with an explicit label and financial-workspace focus treatment.",
-      "html": "<label class=\"ds-field\"><span>Work email</span><input placeholder=\"you@business.com\"></label>",
-      "css": ".ds-field{display:grid;gap:8px;color:#f5f7ef;font:600 14px/1.4 'Hanken Grotesk',sans-serif}.ds-field input{background:#182019;color:#f5f7ef;border:1px solid rgba(245,247,239,.14);border-radius:12px;padding:13px 14px}.ds-field input:focus{outline:2px solid #c1ff72;outline-offset:2px}.ds-field input::placeholder{color:#7f8a7a}"
+      "name": "Signup Trail",
+      "kind": "custom",
+      "description": "The connected Account, Business, and Payments path leading to product-app registration.",
+      "html": "<ol class=\"ds-signup-trail\"><li>Account</li><li>Business</li><li>Payments</li></ol>",
+      "css": ".ds-signup-trail{display:grid;gap:1px;margin:0;padding:0;list-style:none;background:rgba(245,247,239,.1)}.ds-signup-trail li{background:#121813;color:#f5f7ef;padding:14px 16px;font:600 14px/1.4 'Hanken Grotesk',sans-serif}.ds-signup-trail li::marker{color:#c1ff72}"
     }
   ],
   "narrative": {
     "northStar": "The Payment Trail",
     "overview": "Invoice, checkout, provider confirmation, reconciliation, settlement, and receipt appear as one connected system. Product truth is the visual material.",
-    "keyCharacteristics": ["connected", "product-specific", "restrained", "operational", "owner-readable"],
-    "rules": [
-      { "name": "The Signal Rule", "body": "Lime marks the primary action or current truth; it does not outline every container.", "section": "colors" },
-      { "name": "The One Trail Rule", "body": "Motion explains the payment trail once, then yields to content.", "section": "elevation" }
+    "keyCharacteristics": [
+      "connected",
+      "product-specific",
+      "restrained",
+      "operational",
+      "owner-readable"
     ],
-    "dos": ["Show realistic invoice, payment, refund, and receipt states.", "Keep financial state readable without color or motion."],
-    "donts": ["Do not use equal feature-card grids as page structure.", "Do not fabricate proof or unsupported financial claims."]
+    "rules": [
+      {
+        "name": "The Signal Rule",
+        "body": "Lime marks the primary action or current truth; it does not outline every container.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Trail Rule",
+        "body": "Motion explains the payment trail once, then yields to content.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Show realistic invoice, payment, refund, and receipt states.",
+      "Keep financial state readable without color or motion."
+    ],
+    "donts": [
+      "Do not use equal feature-card grids as page structure.",
+      "Do not fabricate proof or unsupported financial claims."
+    ]
   }
 }

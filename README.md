@@ -55,7 +55,7 @@ Marketing notes:
 
 - `NEXT_PUBLIC_SITE_URL` controls canonical marketing metadata and sitemap URLs.
 - `NEXT_PUBLIC_APP_URL` controls Sign In links and should point to the authenticated product app.
-- `NEXT_PUBLIC_API_URL` controls waitlist submissions.
+- `NEXT_PUBLIC_API_URL` controls product-app API requests.
 - `NEXT_PUBLIC_CONTACT_EMAIL` is displayed on marketing legal pages.
 - Local API CORS should include both `http://localhost:3000` and `http://localhost:3002`.
 
@@ -329,7 +329,7 @@ Manual overpayment/refund check:
 5. Confirm the refund shows pending/processing until Paystack sends a processed refund event.
 6. Simulate or receive `refund.processed` and confirm the invoice financial summary recalculates from successful payments minus processed refunds.
 
-## Marketing Site and Waitlist
+## Marketing Site and Signup
 
 The public Lumina marketing site lives in `apps/marketing` and is intended for the root domain. The authenticated product app remains in `apps/web` and is intended for `app.<root-domain>`.
 
@@ -340,7 +340,7 @@ pnpm dev:marketing
 pnpm build:marketing
 ```
 
-The waitlist form posts to `POST /public/waitlist`. The API stores normalized email, optional profile fields, CTA source, UTM fields, and referrer in `marketing_waitlist_entries`. Duplicate emails and honeypot submissions return the same generic success response so the public endpoint does not reveal whether an email is already on the list.
+Marketing CTAs resolve through `NEXT_PUBLIC_APP_URL` to the product app's `/register` route. Signup creates the owner account and workspace, collects the business profile, and requires Payment Setup submission before dashboard access. The former `POST /public/waitlist` endpoint and `marketing_waitlist_entries` data remain retained but are dormant and are not called by the marketing site.
 
 Marketing documentation:
 

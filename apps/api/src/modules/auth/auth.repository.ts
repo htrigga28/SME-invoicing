@@ -7,6 +7,7 @@ import {
   businessProfiles,
   organisations,
   organisationMembers,
+  organisationPaymentAccounts,
   refreshTokens,
   users,
   type BusinessProfile,
@@ -177,6 +178,16 @@ export class AuthRepository {
       membership,
       businessProfile
     };
+  }
+
+  async hasPaymentAccountHistory(organisationId: string): Promise<boolean> {
+    const [paymentAccount] = await this.databaseService.db
+      .select({ id: organisationPaymentAccounts.id })
+      .from(organisationPaymentAccounts)
+      .where(eq(organisationPaymentAccounts.organisationId, organisationId))
+      .limit(1);
+
+    return Boolean(paymentAccount);
   }
 
   async createRefreshToken(

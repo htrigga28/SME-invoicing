@@ -7,6 +7,7 @@ import { FormEvent, useState } from "react";
 import { primaryActionClassName } from "@/components/ui/styles";
 
 import { login } from "./auth-api";
+import { getOnboardingPath } from "./onboarding";
 import { setStoredSession } from "./session";
 import { isSubmitDisabled, validateLoginForm } from "./validation";
 
@@ -35,7 +36,7 @@ export function LoginForm() {
         accessToken: response.accessToken,
         refreshToken: response.refreshToken
       });
-      router.push(response.onboardingRequired ? "/onboarding/business" : "/dashboard");
+      router.push(getOnboardingPath(response.onboardingStep));
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Login failed.");
     } finally {

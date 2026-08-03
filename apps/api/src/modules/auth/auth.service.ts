@@ -13,7 +13,10 @@ type AuthSessionResponse = ActiveOrganisationContext & {
   accessToken: string;
   refreshToken: string;
   onboardingRequired: boolean;
+  onboardingStep: OnboardingStep;
 };
+
+export type OnboardingStep = "business_profile" | "payment_setup" | null;
 
 @Injectable()
 export class AuthService {
@@ -47,7 +50,8 @@ export class AuthService {
       ...registration,
       accessToken: this.tokenService.signAccessToken(registration.user.id),
       refreshToken: rawRefreshToken,
-      onboardingRequired: true
+      onboardingRequired: true,
+      onboardingStep: "business_profile"
     };
   }
 
@@ -71,6 +75,7 @@ export class AuthService {
       throw new UnauthorizedException("No active organisation membership was found.");
     }
 
+    const onboardingStep = await this.getOnboardingStep(context);
     const rawRefreshToken = this.tokenService.generateRefreshToken();
     await this.authRepository.createRefreshToken(
       user.id,
@@ -82,7 +87,8 @@ export class AuthService {
       ...context,
       accessToken: this.tokenService.signAccessToken(user.id),
       refreshToken: rawRefreshToken,
-      onboardingRequired: this.isOnboardingRequired(context)
+      onboardingRequired: onboardingStep !== null,
+      onboardingStep
     };
   }
 
@@ -127,10 +133,12 @@ export class AuthService {
     if (!context) {
       throw new UnauthorizedException("No active organisation membership was found.");
     }
+    const onboardingStep = await this.getOnboardingStep(context);
 
     return {
       ...context,
-      onboardingRequired: this.isOnboardingRequired(context)
+      onboardingRequired: onboardingStep !== null,
+      onboardingStep
     };
   }
 
@@ -150,10 +158,18 @@ export class AuthService {
     return `${baseSlug}-${suffix}`;
   }
 
-  private isOnboardingRequired(context: ActiveOrganisationContext) {
-    return (
+  private async getOnboardingStep(context: ActiveOrganisationContext): Promise<OnboardingStep> {
+    if (
       context.businessProfile.setupCompletedAt === null ||
       context.activeOrganisation.onboardingCompletedAt === null
+    ) {
+      return "business_profile";
+    }
+
+    const hasPaymentAccountHistory = await this.authRepository.hasPaymentAccountHistory(
+      context.activeOrganisation.id
     );
+
+    return hasPaymentAccountHistory ? null : "payment_setup";
   }
 }

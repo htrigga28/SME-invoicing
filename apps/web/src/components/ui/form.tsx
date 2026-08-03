@@ -32,7 +32,7 @@ export const Textarea = forwardRef<
   return <textarea className={cn(controlClassName, "min-h-24", className)} ref={ref} {...props} />;
 });
 
-export function FormField({ className, ...props }: HTMLAttributes<HTMLLabelElement>) {
+export function FormField({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
   return <label className={cn("block", className)} {...props} />;
 }
 

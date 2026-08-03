@@ -45,7 +45,8 @@ const me = {
     logoFileId: null,
     setupCompletedAt: "2026-01-01T00:00:00.000Z"
   },
-  onboardingRequired: false
+  onboardingRequired: false,
+  onboardingStep: null
 } satisfies MeResponse;
 
 beforeEach(() => {

@@ -7,8 +7,10 @@ import React, { useEffect, useState } from "react";
 import { LinkButton } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { getMe, logout } from "@/features/auth/auth-api";
+import { getOnboardingPath } from "@/features/auth/onboarding";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
 import type { MeResponse, Membership } from "@/features/auth/types";
+import { OnboardingProgress } from "@/features/onboarding/onboarding-progress";
 import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
 
 import { Sidebar } from "./sidebar";
@@ -49,8 +51,11 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
 
     getMe(sessionContext.accessToken)
       .then((response) => {
-        if (response.onboardingRequired) {
-          router.replace("/onboarding/business");
+        const isAllowedPaymentSetupRoute =
+          response.onboardingStep === "payment_setup" && pathname === "/settings/payment-setup";
+
+        if (response.onboardingStep && !isAllowedPaymentSetupRoute) {
+          router.replace(getOnboardingPath(response.onboardingStep));
           return;
         }
 
@@ -73,7 +78,7 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
         setError(getApiErrorMessage(loadError, "Could not load workspace."));
         setState("error");
       });
-  }, [requiredRoles, router]);
+  }, [pathname, requiredRoles, router]);
 
   async function handleLogout() {
     const session = getStoredSession();
@@ -98,6 +103,17 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
     return (
       <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
         <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
+      </main>
+    );
+  }
+
+  if (context.me.onboardingStep === "payment_setup") {
+    return (
+      <main className="min-h-screen bg-[var(--background)] px-4 py-10 text-[var(--text-primary)] sm:px-6">
+        <section className="mx-auto w-full max-w-4xl">
+          <OnboardingProgress currentStep={3} />
+          <div className="mt-8">{children(context)}</div>
+        </section>
       </main>
     );
   }

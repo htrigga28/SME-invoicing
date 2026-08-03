@@ -277,8 +277,8 @@ button { color: inherit; }
 .story-section, .operations-section, .faq-section { padding: clamp(96px, 12vw, 168px) 0; }
 .story-section { background: var(--surface); }
 .story-intro, .operations-intro { display: grid; grid-template-columns: 1.1fr 0.9fr; align-items: end; gap: 80px; }
-.story-intro h2, .operations-intro h2, .trust-intro h2, .faq-intro h2, .waitlist-copy h2, .footer-lead h2 { max-width: 760px; margin: 0; font-size: clamp(2.5rem, 5vw, 4.5rem); font-weight: 600; line-height: 0.98; letter-spacing: -0.032em; text-wrap: balance; }
-.story-intro > p, .operations-intro > p, .trust-intro > p, .faq-intro > p, .waitlist-copy > p { max-width: 620px; margin: 0; color: var(--text-secondary); font-size: 1.0625rem; line-height: 1.72; }
+.story-intro h2, .operations-intro h2, .trust-intro h2, .faq-intro h2, .signup-copy h2, .footer-lead h2 { max-width: 760px; margin: 0; font-size: clamp(2.5rem, 5vw, 4.5rem); font-weight: 600; line-height: 0.98; letter-spacing: -0.032em; text-wrap: balance; }
+.story-intro > p, .operations-intro > p, .trust-intro > p, .faq-intro > p, .signup-copy > p { max-width: 620px; margin: 0; color: var(--text-secondary); font-size: 1.0625rem; line-height: 1.72; }
 .stage-rail-wrap { position: relative; margin-top: 90px; }
 .stage-rail, .stage-rail-progress { position: absolute; top: 26px; left: 8%; right: 8%; height: 1px; transform-origin: left center; }
 .stage-rail { background: var(--border-default); }
@@ -417,41 +417,34 @@ button { color: inherit; }
 .faq-answer { overflow: hidden; }
 .faq-answer p { max-width: 650px; margin: 0; padding: 0 56px 24px 2px; color: var(--text-secondary); font-size: 0.875rem; line-height: 1.72; }
 
-/* Waitlist close */
-.waitlist-section { position: relative; overflow: clip; padding: clamp(96px, 12vw, 168px) 0; background: var(--accent); color: var(--accent-foreground); }
-.waitlist-route { position: absolute; inset: 0; pointer-events: none; opacity: 0.15; }
-.waitlist-route span { position: absolute; border: 1px solid var(--accent-foreground); border-radius: 50%; }
-.waitlist-route span:first-child { width: 780px; height: 780px; top: -440px; right: -120px; }
-.waitlist-route span:last-child { width: 540px; height: 540px; bottom: -390px; left: -80px; }
-.waitlist-layout { position: relative; z-index: 1; display: grid; grid-template-columns: 1.02fr 0.98fr; align-items: center; gap: clamp(52px, 9vw, 120px); }
-.waitlist-mark { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 34px; border-radius: 50%; background: var(--accent-foreground); color: var(--accent); }
-.waitlist-mark svg { width: 22px; height: 22px; }
-.waitlist-copy .section-signal { color: rgb(7 10 8 / 0.65); }
-.waitlist-copy > p { margin-top: 26px; color: rgb(7 10 8 / 0.72); }
-.waitlist-boundary { max-width: 560px; display: flex; align-items: flex-start; gap: 10px; margin-top: 30px; color: rgb(7 10 8 / 0.72); font-size: 0.75rem; line-height: 1.55; }
-.waitlist-boundary svg { width: 16px; height: 16px; flex: 0 0 auto; }
-.waitlist-form { display: grid; gap: 18px; padding: 30px; border-radius: 16px; background: var(--background); color: var(--text-primary); box-shadow: 0 34px 90px rgb(7 10 8 / 0.28); }
-.form-heading { display: grid; gap: 8px; margin-bottom: 4px; }
-.form-heading strong { font-size: 1.2rem; }
-.waitlist-form label { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 0.8125rem; font-weight: 620; }
-.waitlist-form input, .waitlist-form select { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid var(--border-default); border-radius: 12px; background: var(--surface-raised); color: var(--text-primary); transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
-.waitlist-form input::placeholder { color: var(--text-muted); }
-.waitlist-form input:focus, .waitlist-form select:focus { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 3px var(--accent-glow); }
-.email-field > p { min-height: 20px; margin: 7px 0 0; color: var(--danger); font-size: 0.75rem; }
-.optional-details { border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
-.optional-details summary { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; list-style: none; color: var(--text-secondary); font-size: 0.8125rem; font-weight: 600; }
-.optional-details summary::-webkit-details-marker { display: none; }
-.optional-details summary svg { width: 16px; height: 16px; transition: transform 160ms var(--ease-out); }
-.optional-details[open] summary svg { transform: rotate(180deg); }
-.optional-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 4px 0 20px; }
-.role-field { grid-column: 1 / -1; }
-.waitlist-honeypot { display: none; }
-.form-message { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 14px; border-radius: 12px; font-size: 0.8125rem; }
-.form-message svg { width: 18px; height: 18px; flex: 0 0 auto; }
-.form-message div { display: grid; gap: 4px; }
-.form-message p { margin: 0; color: var(--text-secondary); }
-.form-message.is-success { background: var(--success-muted); color: var(--success); }
-.form-message.is-error { background: var(--danger-muted); color: var(--danger); }
+/* Signup close */
+.signup-section { position: relative; overflow: clip; padding: clamp(96px, 12vw, 168px) 0; background: var(--accent); color: var(--accent-foreground); }
+.signup-route { position: absolute; inset: 0; pointer-events: none; opacity: 0.15; }
+.signup-route span { position: absolute; border: 1px solid var(--accent-foreground); border-radius: 50%; }
+.signup-route span:first-child { width: 780px; height: 780px; top: -440px; right: -120px; }
+.signup-route span:last-child { width: 540px; height: 540px; bottom: -390px; left: -80px; }
+.signup-layout { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr); align-items: center; gap: clamp(52px, 9vw, 120px); }
+.signup-copy, .signup-trail { min-width: 0; }
+.signup-mark { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 34px; border-radius: 50%; background: var(--accent-foreground); color: var(--accent); }
+.signup-mark svg { width: 22px; height: 22px; }
+.signup-copy .section-signal { color: rgb(7 10 8 / 0.65); }
+.signup-copy > p { margin-top: 26px; color: rgb(7 10 8 / 0.72); }
+.signup-boundary { max-width: 560px; display: flex; align-items: flex-start; gap: 10px; margin-top: 30px; color: rgb(7 10 8 / 0.72); font-size: 0.75rem; line-height: 1.55; }
+.signup-boundary svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.signup-trail { padding: 30px; border-radius: 16px; background: var(--background); color: var(--text-primary); box-shadow: 0 34px 90px rgb(7 10 8 / 0.28); }
+.signup-trail-heading { display: grid; gap: 8px; padding-bottom: 22px; border-bottom: 1px solid var(--border-subtle); }
+.signup-trail-heading strong { max-width: 420px; font-size: 1.2rem; line-height: 1.35; }
+.signup-trail ol { display: grid; margin: 0; padding: 22px 0 0; list-style: none; }
+.signup-trail li { position: relative; display: grid; grid-template-columns: 40px 1fr; gap: 14px; padding-bottom: 24px; }
+.signup-trail li:not(:last-child)::after { content: ""; position: absolute; top: 40px; bottom: 0; left: 19px; width: 1px; background: var(--accent-border); }
+.signup-step-icon { position: relative; z-index: 1; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-muted); color: var(--accent); }
+.signup-step-icon svg { width: 18px; height: 18px; }
+.signup-trail li > div > span { color: var(--accent); font-size: 0.6875rem; font-weight: 650; }
+.signup-trail h3 { margin: 5px 0 0; font-size: 0.9375rem; font-weight: 650; }
+.signup-trail li p { margin: 7px 0 0; color: var(--text-muted); font-size: 0.75rem; line-height: 1.55; }
+.signup-actions { display: grid; gap: 12px; padding-top: 22px; border-top: 1px solid var(--border-subtle); }
+.signup-signin { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; color: var(--text-secondary); font-size: 0.8125rem; font-weight: 600; transition: color 160ms var(--ease-out), background 160ms var(--ease-out); }
+.signup-signin:hover, .signup-signin:focus-visible { background: var(--hover-subtle); color: var(--text-primary); }
 
 /* Footer */
 .marketing-footer { background: var(--background-deep); }
@@ -552,8 +545,8 @@ button { color: inherit; }
   .payout-panel { order: 5; }
   .receipt-panel { order: 6; }
   .trail-window-footer { align-items: flex-start; flex-direction: column; }
-  .story-section, .operations-section, .faq-section, .outcome-section, .trust-section, .waitlist-section { padding: 92px 0; }
-  .story-intro, .operations-intro, .outcome-layout, .faq-layout, .waitlist-layout { grid-template-columns: 1fr; gap: 36px; }
+  .story-section, .operations-section, .faq-section, .outcome-section, .trust-section, .signup-section { padding: 92px 0; }
+  .story-intro, .operations-intro, .outcome-layout, .faq-layout, .signup-layout { grid-template-columns: 1fr; gap: 36px; }
   .stage-rail-wrap { margin-top: 60px; }
   .stage-rail, .stage-rail-progress { display: none; }
   .stage-list { grid-template-columns: 1fr; gap: 0; }
@@ -587,9 +580,7 @@ button { color: inherit; }
   .trust-node { padding: 20px; background: var(--surface); }
   .trust-routes { display: none; }
   .faq-intro { position: static; }
-  .waitlist-form { padding: 22px; }
-  .optional-fields { grid-template-columns: 1fr; }
-  .role-field { grid-column: auto; }
+  .signup-trail { padding: 22px; }
   .footer-lead { align-items: flex-start; flex-direction: column; padding-block: 64px; }
   .footer-grid { grid-template-columns: 1.3fr 1fr; gap: 40px 28px; }
   .footer-brand { grid-column: 1 / -1; }
