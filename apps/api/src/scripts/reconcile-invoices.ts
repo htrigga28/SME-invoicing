@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../config/load-root-env";
 
 import { ConfigService } from "@nestjs/config";
 import { drizzle } from "drizzle-orm/node-postgres";

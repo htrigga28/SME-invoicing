@@ -529,7 +529,7 @@ button { color: inherit; }
   .mobile-navigation { width: calc(100% - 16px); }
   .hero-section { min-height: auto; padding: 132px 0 64px; }
   .hero-orbits { top: 86px; height: 440px; }
-  .hero-copy h1 { margin-top: 22px; font-size: clamp(3rem, 15vw, 4.7rem); }
+  .hero-copy h1 { min-width: 0; max-width: 100%; margin-top: 22px; font-size: clamp(3rem, 15vw, 4.7rem); overflow-wrap: anywhere; }
   .hero-support { margin-top: 24px; font-size: 1rem; }
   .hero-actions { width: 100%; flex-direction: column; }
   .hero-actions > * { width: 100%; }

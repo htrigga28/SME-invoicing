@@ -1,7 +1,5 @@
 "use client";
 
-import { AnimatePresence, LazyMotion, useReducedMotion } from "motion/react";
-import * as m from "motion/react-m";
 import { ArrowUpRight, ChevronDown, LogIn, Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -13,8 +11,6 @@ import { navigation } from "@/content/site-copy";
 import { cn } from "@/lib/cn";
 import { getAppLoginUrl, getMarketingAnchorHref } from "@/lib/urls";
 
-const loadMotionFeatures = () => import("@/lib/motion-features").then((module) => module.default);
-
 export function MarketingHeader() {
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
@@ -23,7 +19,9 @@ export function MarketingHeader() {
   const [isProductOpen, setIsProductOpen] = useState(false);
   const [isMobileProductOpen, setIsMobileProductOpen] = useState(false);
   const [activeProductId, setActiveProductId] = useState(navigation.productItems[0]!.id);
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = usePrefersReducedMotion();
+  const productMenuRef = useRef<HTMLDivElement>(null);
+  const productPreviewRef = useRef<HTMLDivElement>(null);
   const loginUrl = getAppLoginUrl();
   const activeProduct = useMemo(
     () =>
@@ -40,6 +38,40 @@ export function MarketingHeader() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const menu = productMenuRef.current;
+    if (!menu || !isProductOpen) return;
+    let disposed = false;
+    let revert = () => {};
+    void import("gsap").then(({ gsap }) => {
+      if (disposed) return;
+      const context = gsap.context(() => {
+        gsap.fromTo(menu, { opacity: 0, y: -8, filter: "blur(6px)" }, {
+          duration: 0.24, opacity: 1, y: 0, filter: "blur(0px)", ease: "power2.out"
+        });
+      }, menu);
+      revert = () => context.revert();
+    }).catch(() => undefined);
+    return () => { disposed = true; revert(); };
+  }, [isProductOpen, reduceMotion]);
+
+  useEffect(() => {
+    if (reduceMotion || !isProductOpen || !productPreviewRef.current) return;
+    let disposed = false;
+    let revert = () => {};
+    void import("gsap").then(({ gsap }) => {
+      if (disposed || !productPreviewRef.current) return;
+      const context = gsap.context(() => {
+        gsap.fromTo(productPreviewRef.current, { opacity: 0, x: 12, filter: "blur(6px)" }, {
+          duration: 0.24, opacity: 1, x: 0, filter: "blur(0px)", ease: "power2.out"
+        });
+      }, productPreviewRef.current);
+      revert = () => context.revert();
+    }).catch(() => undefined);
+    return () => { disposed = true; revert(); };
+  }, [activeProductId, isProductOpen, reduceMotion]);
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "";
@@ -108,75 +140,33 @@ export function MarketingHeader() {
               <ChevronDown aria-hidden="true" className={cn(isProductOpen && "rotate-180")} />
             </button>
 
-            <LazyMotion features={loadMotionFeatures} strict>
-              <AnimatePresence>
-                {isProductOpen ? (
-                  <m.div
-                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                    className="product-menu"
-                    exit={
-                      reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, filter: "blur(6px)" }
-                    }
-                    id="product-menu"
-                    initial={reduceMotion ? false : { opacity: 0, y: -8, filter: "blur(6px)" }}
-                    transition={
-                      reduceMotion
-                        ? { duration: 0.01 }
-                        : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
-                    }
-                  >
-                    <div className="product-menu-list">
-                      {navigation.productItems.map((item) => (
-                        <a
-                          className={cn(
-                            "product-menu-link",
-                            item.id === activeProductId && "is-active"
-                          )}
-                          href={resolveHref(item.href)}
-                          key={item.id}
-                          onClick={() => setIsProductOpen(false)}
-                          onFocus={() => setActiveProductId(item.id)}
-                          onMouseEnter={() => setActiveProductId(item.id)}
-                        >
-                          <span>{item.label}</span>
-                          <small>{item.detail}</small>
-                        </a>
-                      ))}
-                    </div>
-                    <div className="product-menu-preview" aria-live="polite">
-                      <AnimatePresence initial={false} mode="wait">
-                        <m.div
-                          animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-                          exit={
-                            reduceMotion
-                              ? { opacity: 1 }
-                              : { opacity: 0, x: -16, filter: "blur(8px)" }
-                          }
-                          initial={
-                            reduceMotion ? false : { opacity: 0, x: 16, filter: "blur(8px)" }
-                          }
-                          key={activeProduct.id}
-                          transition={
-                            reduceMotion
-                              ? { duration: 0.01 }
-                              : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
-                          }
-                        >
-                          <span className="data-label">{activeProduct.label.toUpperCase()}</span>
-                          <strong>{activeProduct.title}</strong>
-                          <p>
-                            <NairaText value={activeProduct.preview} />
-                          </p>
-                          <span className="preview-action">
-                            Explore section <ArrowUpRight aria-hidden="true" />
-                          </span>
-                        </m.div>
-                      </AnimatePresence>
-                    </div>
-                  </m.div>
-                ) : null}
-              </AnimatePresence>
-            </LazyMotion>
+            {isProductOpen ? (
+              <div className="product-menu" id="product-menu" ref={productMenuRef}>
+                <div className="product-menu-list">
+                  {navigation.productItems.map((item) => (
+                    <a
+                      className={cn("product-menu-link", item.id === activeProductId && "is-active")}
+                      href={resolveHref(item.href)}
+                      key={item.id}
+                      onClick={() => setIsProductOpen(false)}
+                      onFocus={() => setActiveProductId(item.id)}
+                      onMouseEnter={() => setActiveProductId(item.id)}
+                    >
+                      <span>{item.label}</span>
+                      <small>{item.detail}</small>
+                    </a>
+                  ))}
+                </div>
+                <div className="product-menu-preview" aria-live="polite" ref={productPreviewRef}>
+                  <span className="data-label">{activeProduct.label.toUpperCase()}</span>
+                  <strong>{activeProduct.title}</strong>
+                  <p><NairaText value={activeProduct.preview} /></p>
+                  <span className="preview-action">
+                    Explore section <ArrowUpRight aria-hidden="true" />
+                  </span>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {navigation.links.map((link) => (
@@ -247,4 +237,19 @@ export function MarketingHeader() {
       ) : null}
     </header>
   );
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!media) return;
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  return reduced;
 }

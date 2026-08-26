@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardShell } from "./dashboard-shell";
@@ -126,6 +126,23 @@ describe("DashboardShell", () => {
     expect(screen.getByText("Outstanding")).toBeInTheDocument();
     expect(screen.getByText("NGN 45,000.00")).toBeInTheDocument();
     expect(screen.getByTestId("cashflow-chart")).toBeInTheDocument();
+  });
+
+  it("keeps dashboard attention in setup, review, overdue, pending order", async () => {
+    render(<DashboardShell />);
+
+    const attention = await screen.findByRole("region", { name: "Attention" });
+    const headings = within(attention)
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent);
+
+    expect(headings).toEqual(["Needs review", "Overdue", "Pending confirmations"]);
+    expect(within(attention).getByText("Online payments are not configured")).toBeInTheDocument();
+    expect(within(attention).getByRole("link", { name: "Set up online payments" })).toHaveAttribute(
+      "href",
+      "/settings/payment-setup"
+    );
+    expect(within(attention).getAllByRole("link", { name: "Review" })).toHaveLength(3);
   });
 });
 

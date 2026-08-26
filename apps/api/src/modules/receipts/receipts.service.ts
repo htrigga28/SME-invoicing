@@ -50,6 +50,10 @@ type ReceiptRefundSummary = {
   hasRefundInProgress: boolean;
 };
 
+export type ReceiptBackfillScope =
+  | { organisationId: string; organisationSlug?: never }
+  | { organisationSlug: string; organisationId?: never };
+
 @Injectable()
 export class ReceiptsService {
   constructor(
@@ -205,11 +209,12 @@ export class ReceiptsService {
     return { created: Boolean(created), receipt };
   }
 
-  async backfillReceipts() {
+  async backfillReceipts(scope?: ReceiptBackfillScope) {
+    const organisationId = await this.resolveBackfillOrganisationId(scope);
     const successfulPayments = await this.databaseService.db
       .select({ id: payments.id })
       .from(payments)
-      .where(eq(payments.status, "successful"))
+      .where(and(eq(payments.status, "successful"), eq(payments.organisationId, organisationId)))
       .orderBy(desc(payments.paidAt), desc(payments.createdAt));
 
     let created = 0;
@@ -232,6 +237,32 @@ export class ReceiptsService {
       created,
       existing
     };
+  }
+
+  private async resolveBackfillOrganisationId(scope?: ReceiptBackfillScope) {
+    if (
+      !scope ||
+      ("organisationId" in scope && !scope.organisationId) ||
+      ("organisationSlug" in scope && !scope.organisationSlug)
+    ) {
+      throw new Error("Receipt backfill requires an explicit organisation id or slug.");
+    }
+
+    const [organisation] = await this.databaseService.db
+      .select({ id: organisations.id })
+      .from(organisations)
+      .where(
+        "organisationId" in scope
+          ? eq(organisations.id, scope.organisationId)
+          : eq(organisations.slug, scope.organisationSlug)
+      )
+      .limit(1);
+
+    if (!organisation) {
+      throw new NotFoundException("Organisation was not found.");
+    }
+
+    return organisation.id;
   }
 
   private async findReceiptRows(

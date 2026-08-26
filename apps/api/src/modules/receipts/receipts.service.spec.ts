@@ -153,6 +153,14 @@ function setup() {
 }
 
 describe("ReceiptsService", () => {
+  it("requires an explicit organisation scope for receipt backfill", async () => {
+    const { service } = setup();
+
+    await expect(service.backfillReceipts()).rejects.toThrow(
+      "Receipt backfill requires an explicit organisation id or slug."
+    );
+  });
+
   it("returns an existing receipt without creating another receipt number", async () => {
     const { service } = setup();
     const existing = createReceipt();

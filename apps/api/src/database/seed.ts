@@ -1,7 +1,8 @@
-import "dotenv/config";
+import "../config/load-root-env";
 
 import { createHmac } from "crypto";
 import * as argon2 from "argon2";
+import { ConfigService } from "@nestjs/config";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -19,9 +20,9 @@ import {
   organisations,
   paymentEvents,
   payments,
-  receipts,
   users
 } from "./schema";
+import { ReceiptsService } from "../modules/receipts/receipts.service";
 
 const demoPassword = "DemoPass123!";
 const organisationSlug = "akin-co-demo";
@@ -200,7 +201,18 @@ function calculateSeedTotals(
   };
 }
 
-async function main() {
+export function assertDemoSeedAllowed(env: NodeJS.ProcessEnv = process.env) {
+  if (env.NODE_ENV === "production") {
+    throw new Error("Demo seed is disabled in production.");
+  }
+
+  if (env.ALLOW_DEMO_SEED !== "true") {
+    throw new Error("Demo seed requires ALLOW_DEMO_SEED=true in a non-production environment.");
+  }
+}
+
+export async function seedDemo() {
+  assertDemoSeedAllowed();
   const databaseUrl = process.env.DATABASE_URL;
   const refreshSecret = process.env.JWT_REFRESH_SECRET;
 
@@ -213,597 +225,591 @@ async function main() {
   }
 
   const pool = new Pool({ connectionString: databaseUrl });
-  const db = drizzle(pool);
+  const connection = drizzle(pool);
   const now = new Date();
   const passwordHash = await argon2.hash(demoPassword);
 
   try {
-    const [organisation] = await db
-      .insert(organisations)
-      .values({
-        name: organisationName,
-        slug: organisationSlug,
-        onboardingCompletedAt: now
-      })
-      .onConflictDoUpdate({
-        target: organisations.slug,
-        set: {
-          name: organisationName,
-          onboardingCompletedAt: now,
-          updatedAt: now
-        }
-      })
-      .returning();
+    await connection.transaction(async (tx) => {
+      const db = tx;
+      const receiptsService = new ReceiptsService({ db } as never, new ConfigService());
 
-    if (!organisation) {
-      throw new Error("Demo organisation could not be created.");
-    }
-
-    await db
-      .insert(businessProfiles)
-      .values({
-        organisationId: organisation.id,
-        businessName: organisationName,
-        email: "billing@akinco.com",
-        phone: "+2348012345678",
-        address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
-        setupCompletedAt: now
-      })
-      .onConflictDoUpdate({
-        target: businessProfiles.organisationId,
-        set: {
-          businessName: organisationName,
-          email: "billing@akinco.com",
-          phone: "+2348012345678",
-          address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
-          setupCompletedAt: now,
-          updatedAt: now
-        }
-      });
-
-    const seededUsers = new Map<string, { id: string }>();
-
-    for (const demoUser of demoUsers) {
-      const [user] = await db
-        .insert(users)
+      const [organisation] = await db
+        .insert(organisations)
         .values({
-          email: demoUser.email,
-          name: demoUser.name,
-          passwordHash
+          name: organisationName,
+          slug: organisationSlug,
+          onboardingCompletedAt: now
         })
         .onConflictDoUpdate({
-          target: users.email,
+          target: organisations.slug,
           set: {
-            name: demoUser.name,
-            passwordHash,
+            name: organisationName,
+            onboardingCompletedAt: now,
             updatedAt: now
           }
         })
         .returning();
 
-      if (!user) {
-        throw new Error(`Demo user could not be created: ${demoUser.email}`);
+      if (!organisation) {
+        throw new Error("Demo organisation could not be created.");
       }
 
-      seededUsers.set(demoUser.email, { id: user.id });
-
-      const [existingMembership] = await db
-        .select()
-        .from(organisationMembers)
-        .where(
-          and(
-            eq(organisationMembers.organisationId, organisation.id),
-            eq(organisationMembers.userId, user.id)
-          )
-        )
-        .limit(1);
-
-      if (existingMembership) {
-        await db
-          .update(organisationMembers)
-          .set({
-            role: demoUser.role,
-            status: "active",
-            updatedAt: now
-          })
-          .where(eq(organisationMembers.id, existingMembership.id));
-      } else {
-        await db.insert(organisationMembers).values({
+      await db
+        .insert(businessProfiles)
+        .values({
           organisationId: organisation.id,
-          userId: user.id,
-          role: demoUser.role,
-          status: "active"
+          businessName: organisationName,
+          email: "billing@akinco.com",
+          phone: "+2348012345678",
+          address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
+          setupCompletedAt: now
+        })
+        .onConflictDoUpdate({
+          target: businessProfiles.organisationId,
+          set: {
+            businessName: organisationName,
+            email: "billing@akinco.com",
+            phone: "+2348012345678",
+            address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
+            setupCompletedAt: now,
+            updatedAt: now
+          }
         });
-      }
-    }
 
-    const owner = seededUsers.get("owner@demo.com");
+      const seededUsers = new Map<string, { id: string }>();
 
-    if (!owner) {
-      throw new Error("Demo owner was not seeded.");
-    }
+      for (const demoUser of demoUsers) {
+        const [user] = await db
+          .insert(users)
+          .values({
+            email: demoUser.email,
+            name: demoUser.name,
+            passwordHash
+          })
+          .onConflictDoUpdate({
+            target: users.email,
+            set: {
+              name: demoUser.name,
+              passwordHash,
+              updatedAt: now
+            }
+          })
+          .returning();
 
-    const pendingInviteUrls: string[] = [];
+        if (!user) {
+          throw new Error(`Demo user could not be created: ${demoUser.email}`);
+        }
 
-    for (const invitation of demoInvitations) {
-      const tokenHash = createHmac("sha256", refreshSecret).update(invitation.token).digest("hex");
-      const expiresAt = new Date(now.getTime() + invitation.daysFromNow * 24 * 60 * 60 * 1000);
-      const revokedAt = invitation.status === "revoked" ? now : null;
+        seededUsers.set(demoUser.email, { id: user.id });
 
-      const [existingInvitation] = await db
-        .select()
-        .from(organisationInvitations)
-        .where(
-          and(
-            eq(organisationInvitations.organisationId, organisation.id),
-            eq(organisationInvitations.email, invitation.email),
-            eq(organisationInvitations.status, invitation.status)
+        const [existingMembership] = await db
+          .select()
+          .from(organisationMembers)
+          .where(
+            and(
+              eq(organisationMembers.organisationId, organisation.id),
+              eq(organisationMembers.userId, user.id)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (existingInvitation) {
-        await db
-          .update(organisationInvitations)
-          .set({
+        if (existingMembership) {
+          await db
+            .update(organisationMembers)
+            .set({
+              role: demoUser.role,
+              status: "active",
+              updatedAt: now
+            })
+            .where(eq(organisationMembers.id, existingMembership.id));
+        } else {
+          await db.insert(organisationMembers).values({
+            organisationId: organisation.id,
+            userId: user.id,
+            role: demoUser.role,
+            status: "active"
+          });
+        }
+      }
+
+      const owner = seededUsers.get("owner@demo.com");
+
+      if (!owner) {
+        throw new Error("Demo owner was not seeded.");
+      }
+
+      const pendingInviteUrls: string[] = [];
+
+      for (const invitation of demoInvitations) {
+        const tokenHash = createHmac("sha256", refreshSecret)
+          .update(invitation.token)
+          .digest("hex");
+        const expiresAt = new Date(now.getTime() + invitation.daysFromNow * 24 * 60 * 60 * 1000);
+        const revokedAt = invitation.status === "revoked" ? now : null;
+
+        const [existingInvitation] = await db
+          .select()
+          .from(organisationInvitations)
+          .where(
+            and(
+              eq(organisationInvitations.organisationId, organisation.id),
+              eq(organisationInvitations.email, invitation.email),
+              eq(organisationInvitations.status, invitation.status)
+            )
+          )
+          .limit(1);
+
+        if (existingInvitation) {
+          await db
+            .update(organisationInvitations)
+            .set({
+              tokenHash,
+              role: invitation.role,
+              invitedByUserId: owner.id,
+              expiresAt,
+              revokedAt,
+              updatedAt: now
+            })
+            .where(eq(organisationInvitations.id, existingInvitation.id));
+        } else {
+          await db.insert(organisationInvitations).values({
+            organisationId: organisation.id,
+            email: invitation.email,
             tokenHash,
             role: invitation.role,
+            status: invitation.status,
             invitedByUserId: owner.id,
             expiresAt,
-            revokedAt,
-            updatedAt: now
-          })
-          .where(eq(organisationInvitations.id, existingInvitation.id));
-      } else {
-        await db.insert(organisationInvitations).values({
-          organisationId: organisation.id,
-          email: invitation.email,
-          tokenHash,
-          role: invitation.role,
-          status: invitation.status,
-          invitedByUserId: owner.id,
-          expiresAt,
-          revokedAt
-        });
+            revokedAt
+          });
+        }
+
+        if (invitation.status === "pending") {
+          pendingInviteUrls.push(`${frontendUrl}/accept-invite/${invitation.token}`);
+        }
       }
 
-      if (invitation.status === "pending") {
-        pendingInviteUrls.push(`${frontendUrl}/accept-invite/${invitation.token}`);
-      }
-    }
+      for (const customer of demoCustomers) {
+        const archivedAt = "archived" in customer && customer.archived ? now : null;
+        const [existingCustomer] = await db
+          .select()
+          .from(customers)
+          .where(
+            and(eq(customers.organisationId, organisation.id), eq(customers.email, customer.email))
+          )
+          .limit(1);
+        const [existingCustomerByName] = existingCustomer
+          ? [existingCustomer]
+          : await db
+              .select()
+              .from(customers)
+              .where(
+                and(
+                  eq(customers.organisationId, organisation.id),
+                  eq(customers.name, customer.name)
+                )
+              )
+              .limit(1);
+        const customerToUpdate = existingCustomer ?? existingCustomerByName;
 
-    for (const customer of demoCustomers) {
-      const archivedAt = "archived" in customer && customer.archived ? now : null;
-      const [existingCustomer] = await db
-        .select()
-        .from(customers)
-        .where(
-          and(eq(customers.organisationId, organisation.id), eq(customers.email, customer.email))
-        )
-        .limit(1);
-      const [existingCustomerByName] = existingCustomer
-        ? [existingCustomer]
-        : await db
-            .select()
-            .from(customers)
-            .where(
-              and(eq(customers.organisationId, organisation.id), eq(customers.name, customer.name))
-            )
-            .limit(1);
-      const customerToUpdate = existingCustomer ?? existingCustomerByName;
-
-      if (customerToUpdate) {
-        await db
-          .update(customers)
-          .set({
+        if (customerToUpdate) {
+          await db
+            .update(customers)
+            .set({
+              name: customer.name,
+              email: customer.email,
+              phone: customer.phone,
+              billingAddress: customer.billingAddress,
+              archivedAt,
+              updatedAt: now
+            })
+            .where(eq(customers.id, customerToUpdate.id));
+        } else {
+          await db.insert(customers).values({
+            organisationId: organisation.id,
+            createdByUserId: owner.id,
             name: customer.name,
             email: customer.email,
             phone: customer.phone,
             billingAddress: customer.billingAddress,
-            archivedAt,
-            updatedAt: now
-          })
-          .where(eq(customers.id, customerToUpdate.id));
-      } else {
-        await db.insert(customers).values({
-          organisationId: organisation.id,
-          createdByUserId: owner.id,
-          name: customer.name,
-          email: customer.email,
-          phone: customer.phone,
-          billingAddress: customer.billingAddress,
-          archivedAt
-        });
+            archivedAt
+          });
+        }
       }
-    }
 
-    const activeCustomers = await db
-      .select()
-      .from(customers)
-      .where(
-        and(eq(customers.organisationId, organisation.id), sql`${customers.archivedAt} is null`)
+      const activeCustomers = await db
+        .select()
+        .from(customers)
+        .where(
+          and(eq(customers.organisationId, organisation.id), sql`${customers.archivedAt} is null`)
+        );
+      const activeCustomerByEmail = new Map(
+        activeCustomers.map((customer) => [customer.email, customer])
       );
-    const activeCustomerByEmail = new Map(
-      activeCustomers.map((customer) => [customer.email, customer])
-    );
-    const activeCustomerEmails = demoCustomers
-      .filter((customer) => !("archived" in customer && customer.archived))
-      .map((customer) => customer.email);
-    const publicInvoiceUrls: string[] = [];
+      const activeCustomerEmails = demoCustomers
+        .filter((customer) => !("archived" in customer && customer.archived))
+        .map((customer) => customer.email);
+      const publicInvoiceUrls: string[] = [];
 
-    for (const [index, status] of invoiceStatuses.entries()) {
-      const sequenceNumber = index + 1;
-      const invoiceNumber = `INV-${sequenceNumber.toString().padStart(6, "0")}`;
-      const customerEmail = activeCustomerEmails[index % activeCustomerEmails.length];
+      for (const [index, status] of invoiceStatuses.entries()) {
+        const sequenceNumber = index + 1;
+        const invoiceNumber = `INV-${sequenceNumber.toString().padStart(6, "0")}`;
+        const customerEmail = activeCustomerEmails[index % activeCustomerEmails.length];
 
-      if (!customerEmail) {
-        throw new Error("No active demo customers were found for invoice seeding.");
-      }
-
-      const customer = activeCustomerByEmail.get(customerEmail);
-
-      if (!customer) {
-        throw new Error(`Seed customer was not found for invoice: ${customerEmail}`);
-      }
-
-      const issueDate =
-        status === "overdue" ? invoiceDate(-60 + index) : invoiceDate(-20 + index * 2);
-      const dueDate = status === "overdue" ? invoiceDate(-15 + index) : invoiceDate(10 + index * 2);
-      const itemCount = (index % 5) + 1;
-      const selectedLineItems = Array.from({ length: itemCount }, (_value, itemIndex) => {
-        const serviceLineItem = serviceLineItems[(index + itemIndex) % serviceLineItems.length];
-
-        if (!serviceLineItem) {
-          throw new Error("Seed line item was not found.");
+        if (!customerEmail) {
+          throw new Error("No active demo customers were found for invoice seeding.");
         }
 
-        const [description, quantity, unitPriceKobo] = serviceLineItem;
-        return {
-          description,
-          quantity,
-          unitPriceKobo
-        };
-      });
-      const discountKobo = index % 4 === 0 ? 10000 : 0;
-      const taxKobo = index % 3 === 0 ? 7500 : 0;
-      const totals = calculateSeedTotals(selectedLineItems, discountKobo, taxKobo);
-      const sentAt = ["sent", "viewed", "overdue", "cancelled", "void"].includes(status)
-        ? new Date(`${issueDate}T09:00:00.000Z`)
-        : null;
-      const viewedAt = ["viewed", "overdue"].includes(status)
-        ? new Date(`${issueDate}T12:00:00.000Z`)
-        : null;
-      const cancelledAt = status === "cancelled" ? new Date(`${dueDate}T10:00:00.000Z`) : null;
-      const voidedAt = status === "void" ? new Date(`${dueDate}T10:00:00.000Z`) : null;
-      const publicToken = createHmac("sha256", refreshSecret)
-        .update(`invoice:${invoiceNumber}`)
-        .digest("hex");
+        const customer = activeCustomerByEmail.get(customerEmail);
 
-      if (["sent", "viewed", "overdue"].includes(status) && publicInvoiceUrls.length < 3) {
-        publicInvoiceUrls.push(`${frontendUrl}/invoice/${publicToken}`);
+        if (!customer) {
+          throw new Error(`Seed customer was not found for invoice: ${customerEmail}`);
+        }
+
+        const issueDate =
+          status === "overdue" ? invoiceDate(-60 + index) : invoiceDate(-20 + index * 2);
+        const dueDate =
+          status === "overdue" ? invoiceDate(-15 + index) : invoiceDate(10 + index * 2);
+        const itemCount = (index % 5) + 1;
+        const selectedLineItems = Array.from({ length: itemCount }, (_value, itemIndex) => {
+          const serviceLineItem = serviceLineItems[(index + itemIndex) % serviceLineItems.length];
+
+          if (!serviceLineItem) {
+            throw new Error("Seed line item was not found.");
+          }
+
+          const [description, quantity, unitPriceKobo] = serviceLineItem;
+          return {
+            description,
+            quantity,
+            unitPriceKobo
+          };
+        });
+        const discountKobo = index % 4 === 0 ? 10000 : 0;
+        const taxKobo = index % 3 === 0 ? 7500 : 0;
+        const totals = calculateSeedTotals(selectedLineItems, discountKobo, taxKobo);
+        const sentAt = ["sent", "viewed", "overdue", "cancelled", "void"].includes(status)
+          ? new Date(`${issueDate}T09:00:00.000Z`)
+          : null;
+        const viewedAt = ["viewed", "overdue"].includes(status)
+          ? new Date(`${issueDate}T12:00:00.000Z`)
+          : null;
+        const cancelledAt = status === "cancelled" ? new Date(`${dueDate}T10:00:00.000Z`) : null;
+        const voidedAt = status === "void" ? new Date(`${dueDate}T10:00:00.000Z`) : null;
+        const publicToken = createHmac("sha256", refreshSecret)
+          .update(`invoice:${invoiceNumber}`)
+          .digest("hex");
+
+        if (["sent", "viewed", "overdue"].includes(status) && publicInvoiceUrls.length < 3) {
+          publicInvoiceUrls.push(`${frontendUrl}/invoice/${publicToken}`);
+        }
+
+        const [existingInvoice] = await db
+          .select()
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.organisationId, organisation.id),
+              eq(invoices.invoiceNumber, invoiceNumber)
+            )
+          )
+          .limit(1);
+
+        const invoiceValues = {
+          organisationId: organisation.id,
+          customerId: customer.id,
+          invoiceNumber,
+          publicToken,
+          publicAccessEnabled: ["sent", "viewed", "overdue"].includes(status),
+          status,
+          currency: "NGN",
+          issueDate,
+          dueDate,
+          notes: `Demo ${status.replace("_", " ")} invoice for portfolio walkthrough.`,
+          subtotalKobo: totals.subtotalKobo,
+          discountKobo,
+          taxKobo,
+          totalKobo: totals.totalKobo,
+          amountPaidKobo: 0,
+          balanceDueKobo: totals.balanceDueKobo,
+          sentAt,
+          viewedAt,
+          paidAt: null,
+          cancelledAt,
+          voidedAt,
+          createdByUserId: owner.id,
+          updatedAt: now
+        };
+
+        const [invoice] = existingInvoice
+          ? await db
+              .update(invoices)
+              .set(invoiceValues)
+              .where(eq(invoices.id, existingInvoice.id))
+              .returning()
+          : await db.insert(invoices).values(invoiceValues).returning();
+
+        if (!invoice) {
+          throw new Error(`Demo invoice could not be created: ${invoiceNumber}`);
+        }
+
+        const existingLineItems = await db
+          .select({ id: invoiceLineItems.id })
+          .from(invoiceLineItems)
+          .where(eq(invoiceLineItems.invoiceId, invoice.id));
+        if (existingLineItems.length === 0) {
+          await db.insert(invoiceLineItems).values(
+            selectedLineItems.map((lineItem, itemIndex) => ({
+              organisationId: organisation.id,
+              invoiceId: invoice.id,
+              description: lineItem.description,
+              quantity: lineItem.quantity.toFixed(2),
+              unitPriceKobo: lineItem.unitPriceKobo,
+              lineTotalKobo: totals.lineTotals[itemIndex] ?? 0,
+              sortOrder: itemIndex
+            }))
+          );
+        }
+
+        const events: SeedInvoiceEvent[] = [
+          {
+            fromStatus: null,
+            toStatus: "draft" as const,
+            reason: "invoice_created",
+            createdAt: new Date(`${issueDate}T08:00:00.000Z`)
+          }
+        ];
+
+        if (status !== "draft") {
+          events.push({
+            fromStatus: "draft",
+            toStatus: status === "cancelled" || status === "void" ? "sent" : status,
+            reason:
+              status === "sent" || status === "cancelled" || status === "void"
+                ? "invoice_sent"
+                : `invoice_${status}`,
+            createdAt: sentAt ?? now
+          });
+        }
+
+        if (status === "cancelled") {
+          events.push({
+            fromStatus: "sent",
+            toStatus: "cancelled",
+            reason: "Demo cancellation",
+            createdAt: cancelledAt ?? now
+          });
+        }
+
+        if (status === "void") {
+          events.push({
+            fromStatus: "sent",
+            toStatus: "void",
+            reason: "Demo void",
+            createdAt: voidedAt ?? now
+          });
+        }
+
+        const existingEvents = await db
+          .select({ reason: invoiceStatusEvents.reason, toStatus: invoiceStatusEvents.toStatus })
+          .from(invoiceStatusEvents)
+          .where(eq(invoiceStatusEvents.invoiceId, invoice.id));
+        for (const event of events) {
+          if (
+            existingEvents.some(
+              (item) => item.reason === event.reason && item.toStatus === event.toStatus
+            )
+          ) {
+            continue;
+          }
+          await db.insert(invoiceStatusEvents).values({
+            organisationId: organisation.id,
+            invoiceId: invoice.id,
+            fromStatus: event.fromStatus,
+            toStatus: event.toStatus,
+            reason: event.reason,
+            actorUserId: owner.id,
+            metadataRedacted: { invoiceNumber },
+            createdAt: event.createdAt
+          });
+        }
       }
 
-      const [existingInvoice] = await db
+      const [existingHistoricalPaymentAccount] = await db
         .select()
-        .from(invoices)
+        .from(organisationPaymentAccounts)
         .where(
           and(
-            eq(invoices.organisationId, organisation.id),
-            eq(invoices.invoiceNumber, invoiceNumber)
+            eq(organisationPaymentAccounts.organisationId, organisation.id),
+            eq(organisationPaymentAccounts.providerSubaccountCode, demoHistoricalSubaccountCode)
           )
         )
         .limit(1);
 
-      const invoiceValues = {
+      const historicalPaymentAccountValues = {
         organisationId: organisation.id,
-        customerId: customer.id,
-        invoiceNumber,
-        publicToken,
-        publicAccessEnabled: ["sent", "viewed", "overdue"].includes(status),
-        status,
-        currency: "NGN",
-        issueDate,
-        dueDate,
-        notes: `Demo ${status.replace("_", " ")} invoice for portfolio walkthrough.`,
-        subtotalKobo: totals.subtotalKobo,
-        discountKobo,
-        taxKobo,
-        totalKobo: totals.totalKobo,
-        amountPaidKobo: 0,
-        balanceDueKobo: totals.balanceDueKobo,
-        sentAt,
-        viewedAt,
-        paidAt: null,
-        cancelledAt,
-        voidedAt,
+        provider: "paystack" as const,
+        providerSubaccountCode: demoHistoricalSubaccountCode,
+        bankCode: "033",
+        bankName: "United Bank for Africa",
+        accountName: "Akin & Co Creative Services",
+        accountNumberLast4: "9090",
+        status: "disabled" as const,
+        verifiedAt: new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000),
+        disabledAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+        providerMetadataRedacted: {
+          provider: "paystack",
+          seed: "historical_demo_settlement_account"
+        },
         createdByUserId: owner.id,
         updatedAt: now
       };
 
-      const [invoice] = existingInvoice
+      const [historicalPaymentAccount] = existingHistoricalPaymentAccount
         ? await db
-            .update(invoices)
-            .set(invoiceValues)
-            .where(eq(invoices.id, existingInvoice.id))
+            .update(organisationPaymentAccounts)
+            .set(historicalPaymentAccountValues)
+            .where(eq(organisationPaymentAccounts.id, existingHistoricalPaymentAccount.id))
             .returning()
-        : await db.insert(invoices).values(invoiceValues).returning();
+        : await db
+            .insert(organisationPaymentAccounts)
+            .values(historicalPaymentAccountValues)
+            .returning();
 
-      if (!invoice) {
-        throw new Error(`Demo invoice could not be created: ${invoiceNumber}`);
+      if (!historicalPaymentAccount) {
+        throw new Error("Demo historical payment account could not be seeded.");
       }
 
-      await db.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, invoice.id));
-      await db.delete(invoiceStatusEvents).where(eq(invoiceStatusEvents.invoiceId, invoice.id));
-
-      await db.insert(invoiceLineItems).values(
-        selectedLineItems.map((lineItem, itemIndex) => ({
-          organisationId: organisation.id,
-          invoiceId: invoice.id,
-          description: lineItem.description,
-          quantity: lineItem.quantity.toFixed(2),
-          unitPriceKobo: lineItem.unitPriceKobo,
-          lineTotalKobo: totals.lineTotals[itemIndex] ?? 0,
-          sortOrder: itemIndex
-        }))
+      const seededInvoices = await db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.organisationId, organisation.id));
+      const invoiceByNumber = new Map(
+        seededInvoices.map((invoice) => [invoice.invoiceNumber, invoice])
       );
 
-      const events: SeedInvoiceEvent[] = [
-        {
-          fromStatus: null,
-          toStatus: "draft" as const,
-          reason: "invoice_created",
-          createdAt: new Date(`${issueDate}T08:00:00.000Z`)
-        }
+      const fullPaymentInvoiceNumbers = [
+        "INV-000011",
+        "INV-000012",
+        "INV-000013",
+        "INV-000014",
+        "INV-000015",
+        "INV-000016"
+      ];
+      const partialPaymentInvoiceNumbers = ["INV-000017", "INV-000018", "INV-000019", "INV-000020"];
+      const pendingPaymentInvoiceNumbers = ["INV-000007", "INV-000008", "INV-000009"];
+      const failedPaymentInvoiceNumbers = ["INV-000010"];
+      const abandonedPaymentInvoiceNumbers = ["INV-000021"];
+      const supersededRetryRows = [
+        { invoiceNumber: "INV-000011", status: "pending" as const, suffix: "RETRY_PENDING" },
+        { invoiceNumber: "INV-000012", status: "failed" as const, suffix: "RETRY_FAILED" },
+        { invoiceNumber: "INV-000013", status: "abandoned" as const, suffix: "RETRY_ABANDONED" }
       ];
 
-      if (status !== "draft") {
-        events.push({
-          fromStatus: "draft",
-          toStatus: status === "cancelled" || status === "void" ? "sent" : status,
-          reason:
-            status === "sent" || status === "cancelled" || status === "void"
-              ? "invoice_sent"
-              : `invoice_${status}`,
-          createdAt: sentAt ?? now
-        });
-      }
+      const seededPaymentRows: {
+        amountKobo: number;
+        eventErrorMessage?: string | null;
+        eventAmountKobo?: number;
+        eventType?: string;
+        invoiceNumber: string;
+        offsetDays: number;
+        referenceSuffix?: string;
+        status: "abandoned" | "failed" | "pending" | "successful";
+      }[] = [
+        ...fullPaymentInvoiceNumbers.map((invoiceNumber, index) => {
+          const invoice = invoiceByNumber.get(invoiceNumber);
 
-      if (status === "cancelled") {
-        events.push({
-          fromStatus: "sent",
-          toStatus: "cancelled",
-          reason: "Demo cancellation",
-          createdAt: cancelledAt ?? now
-        });
-      }
+          if (!invoice) {
+            throw new Error(`Seed invoice was not found for payment: ${invoiceNumber}`);
+          }
 
-      if (status === "void") {
-        events.push({
-          fromStatus: "sent",
-          toStatus: "void",
-          reason: "Demo void",
-          createdAt: voidedAt ?? now
-        });
-      }
+          return {
+            invoiceNumber,
+            amountKobo: invoice.totalKobo,
+            status: "successful" as const,
+            offsetDays: 18 - index
+          };
+        }),
+        ...partialPaymentInvoiceNumbers.map((invoiceNumber, index) => {
+          const invoice = invoiceByNumber.get(invoiceNumber);
 
-      await db.insert(invoiceStatusEvents).values(
-        events.map((event) => ({
-          organisationId: organisation.id,
-          invoiceId: invoice.id,
-          fromStatus: event.fromStatus,
-          toStatus: event.toStatus,
-          reason: event.reason,
-          actorUserId: owner.id,
-          metadataRedacted: { invoiceNumber },
-          createdAt: event.createdAt
-        }))
-      );
-    }
+          if (!invoice) {
+            throw new Error(`Seed invoice was not found for payment: ${invoiceNumber}`);
+          }
 
-    const [existingHistoricalPaymentAccount] = await db
-      .select()
-      .from(organisationPaymentAccounts)
-      .where(
-        and(
-          eq(organisationPaymentAccounts.organisationId, organisation.id),
-          eq(organisationPaymentAccounts.providerSubaccountCode, demoHistoricalSubaccountCode)
-        )
-      )
-      .limit(1);
+          return {
+            invoiceNumber,
+            amountKobo: Math.max(Math.floor(invoice.totalKobo * 0.4), 1000),
+            status: "successful" as const,
+            offsetDays: 12 - index
+          };
+        }),
+        ...pendingPaymentInvoiceNumbers.map((invoiceNumber, index) => ({
+          invoiceNumber,
+          amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
+          status: "pending" as const,
+          offsetDays: index === 0 ? 0 : 5 - index,
+          eventErrorMessage:
+            invoiceNumber === "INV-000009"
+              ? "Payment amount did not match the pending payment."
+              : null,
+          ...(invoiceNumber === "INV-000009"
+            ? {
+                eventAmountKobo: Math.max(
+                  (invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0) - 10000,
+                  0
+                )
+              }
+            : {})
+        })),
+        ...failedPaymentInvoiceNumbers.map((invoiceNumber, index) => ({
+          invoiceNumber,
+          amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
+          status: "failed" as const,
+          offsetDays: 4 - index,
+          eventType: "charge.failed"
+        })),
+        ...abandonedPaymentInvoiceNumbers.map((invoiceNumber) => ({
+          invoiceNumber,
+          amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
+          status: "abandoned" as const,
+          offsetDays: 2
+        })),
+        ...supersededRetryRows.map((row, index) => {
+          const paymentSeed = {
+            invoiceNumber: row.invoiceNumber,
+            amountKobo: invoiceByNumber.get(row.invoiceNumber)?.totalKobo ?? 0,
+            status: row.status,
+            offsetDays: 1 + index,
+            referenceSuffix: row.suffix
+          };
 
-    const historicalPaymentAccountValues = {
-      organisationId: organisation.id,
-      provider: "paystack" as const,
-      providerSubaccountCode: demoHistoricalSubaccountCode,
-      bankCode: "033",
-      bankName: "United Bank for Africa",
-      accountName: "Akin & Co Creative Services",
-      accountNumberLast4: "9090",
-      status: "disabled" as const,
-      verifiedAt: new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000),
-      disabledAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
-      providerMetadataRedacted: {
-        provider: "paystack",
-        seed: "historical_demo_settlement_account"
-      },
-      createdByUserId: owner.id,
-      updatedAt: now
-    };
+          return row.status === "failed"
+            ? { ...paymentSeed, eventType: "charge.failed" }
+            : paymentSeed;
+        })
+      ];
 
-    const [historicalPaymentAccount] = existingHistoricalPaymentAccount
-      ? await db
-          .update(organisationPaymentAccounts)
-          .set(historicalPaymentAccountValues)
-          .where(eq(organisationPaymentAccounts.id, existingHistoricalPaymentAccount.id))
-          .returning()
-      : await db
-          .insert(organisationPaymentAccounts)
-          .values(historicalPaymentAccountValues)
-          .returning();
-
-    if (!historicalPaymentAccount) {
-      throw new Error("Demo historical payment account could not be seeded.");
-    }
-
-    await db
-      .delete(receipts)
-      .where(
-        and(
-          eq(receipts.organisationId, organisation.id),
-          eq(receipts.paymentProvider, "paystack"),
-          sql`${receipts.paymentReference} like 'PAYSTACK_DEMO_%'`
-        )
-      );
-    await db
-      .delete(paymentEvents)
-      .where(
-        and(
-          eq(paymentEvents.provider, "paystack"),
-          sql`(${paymentEvents.providerReference} like 'PAYSTACK_DEMO_%' or ${paymentEvents.providerReference} like 'PAYSTACK_REVIEW_%')`
-        )
-      );
-    await db
-      .delete(payments)
-      .where(
-        and(
-          eq(payments.organisationId, organisation.id),
-          eq(payments.provider, "paystack"),
-          sql`${payments.providerReference} like 'PAYSTACK_DEMO_%'`
-        )
-      );
-
-    const seededInvoices = await db
-      .select()
-      .from(invoices)
-      .where(eq(invoices.organisationId, organisation.id));
-    const invoiceByNumber = new Map(
-      seededInvoices.map((invoice) => [invoice.invoiceNumber, invoice])
-    );
-
-    const fullPaymentInvoiceNumbers = [
-      "INV-000011",
-      "INV-000012",
-      "INV-000013",
-      "INV-000014",
-      "INV-000015",
-      "INV-000016"
-    ];
-    const partialPaymentInvoiceNumbers = ["INV-000017", "INV-000018", "INV-000019", "INV-000020"];
-    const pendingPaymentInvoiceNumbers = ["INV-000007", "INV-000008", "INV-000009"];
-    const failedPaymentInvoiceNumbers = ["INV-000010"];
-    const abandonedPaymentInvoiceNumbers = ["INV-000021"];
-    const supersededRetryRows = [
-      { invoiceNumber: "INV-000011", status: "pending" as const, suffix: "RETRY_PENDING" },
-      { invoiceNumber: "INV-000012", status: "failed" as const, suffix: "RETRY_FAILED" },
-      { invoiceNumber: "INV-000013", status: "abandoned" as const, suffix: "RETRY_ABANDONED" }
-    ];
-
-    const seededPaymentRows: {
-      amountKobo: number;
-      eventErrorMessage?: string | null;
-      eventAmountKobo?: number;
-      eventType?: string;
-      invoiceNumber: string;
-      offsetDays: number;
-      referenceSuffix?: string;
-      status: "abandoned" | "failed" | "pending" | "successful";
-    }[] = [
-      ...fullPaymentInvoiceNumbers.map((invoiceNumber, index) => {
-        const invoice = invoiceByNumber.get(invoiceNumber);
+      for (const paymentSeed of seededPaymentRows) {
+        const invoice = invoiceByNumber.get(paymentSeed.invoiceNumber);
 
         if (!invoice) {
-          throw new Error(`Seed invoice was not found for payment: ${invoiceNumber}`);
+          throw new Error(`Seed invoice was not found for payment: ${paymentSeed.invoiceNumber}`);
         }
 
-        return {
-          invoiceNumber,
-          amountKobo: invoice.totalKobo,
-          status: "successful" as const,
-          offsetDays: 18 - index
-        };
-      }),
-      ...partialPaymentInvoiceNumbers.map((invoiceNumber, index) => {
-        const invoice = invoiceByNumber.get(invoiceNumber);
+        const customer = activeCustomers.find((item) => item.id === invoice.customerId);
 
-        if (!invoice) {
-          throw new Error(`Seed invoice was not found for payment: ${invoiceNumber}`);
+        if (!customer) {
+          throw new Error(`Seed customer was not found for payment: ${paymentSeed.invoiceNumber}`);
         }
 
-        return {
-          invoiceNumber,
-          amountKobo: Math.max(Math.floor(invoice.totalKobo * 0.4), 1000),
-          status: "successful" as const,
-          offsetDays: 12 - index
-        };
-      }),
-      ...pendingPaymentInvoiceNumbers.map((invoiceNumber, index) => ({
-        invoiceNumber,
-        amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
-        status: "pending" as const,
-        offsetDays: index === 0 ? 0 : 5 - index,
-        eventErrorMessage:
-          invoiceNumber === "INV-000009"
-            ? "Payment amount did not match the pending payment."
-            : null,
-        ...(invoiceNumber === "INV-000009"
-          ? {
-              eventAmountKobo: Math.max(
-                (invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0) - 10000,
-                0
-              )
-            }
-          : {})
-      })),
-      ...failedPaymentInvoiceNumbers.map((invoiceNumber, index) => ({
-        invoiceNumber,
-        amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
-        status: "failed" as const,
-        offsetDays: 4 - index,
-        eventType: "charge.failed"
-      })),
-      ...abandonedPaymentInvoiceNumbers.map((invoiceNumber) => ({
-        invoiceNumber,
-        amountKobo: invoiceByNumber.get(invoiceNumber)?.balanceDueKobo ?? 0,
-        status: "abandoned" as const,
-        offsetDays: 2
-      })),
-      ...supersededRetryRows.map((row, index) => {
-        const paymentSeed = {
-          invoiceNumber: row.invoiceNumber,
-          amountKobo: invoiceByNumber.get(row.invoiceNumber)?.totalKobo ?? 0,
-          status: row.status,
-          offsetDays: 1 + index,
-          referenceSuffix: row.suffix
-        };
-
-        return row.status === "failed"
-          ? { ...paymentSeed, eventType: "charge.failed" }
-          : paymentSeed;
-      })
-    ];
-
-    for (const paymentSeed of seededPaymentRows) {
-      const invoice = invoiceByNumber.get(paymentSeed.invoiceNumber);
-
-      if (!invoice) {
-        throw new Error(`Seed invoice was not found for payment: ${paymentSeed.invoiceNumber}`);
-      }
-
-      const customer = activeCustomers.find((item) => item.id === invoice.customerId);
-
-      if (!customer) {
-        throw new Error(`Seed customer was not found for payment: ${paymentSeed.invoiceNumber}`);
-      }
-
-      const createdAt = new Date(now.getTime() - paymentSeed.offsetDays * 24 * 60 * 60 * 1000);
-      const providerReference = `PAYSTACK_DEMO_${paymentSeed.invoiceNumber.replace("-", "")}_${paymentSeed.referenceSuffix ?? paymentSeed.status.toUpperCase()}`;
-      const paidAt = paymentSeed.status === "successful" ? createdAt : null;
-      const failedAt = paymentSeed.status === "failed" ? createdAt : null;
-      const abandonedAt = paymentSeed.status === "abandoned" ? createdAt : null;
-
-      const [payment] = await db
-        .insert(payments)
-        .values({
+        const createdAt = new Date(now.getTime() - paymentSeed.offsetDays * 24 * 60 * 60 * 1000);
+        const providerReference = `PAYSTACK_DEMO_${paymentSeed.invoiceNumber.replace("-", "")}_${paymentSeed.referenceSuffix ?? paymentSeed.status.toUpperCase()}`;
+        const paidAt = paymentSeed.status === "successful" ? createdAt : null;
+        const failedAt = paymentSeed.status === "failed" ? createdAt : null;
+        const abandonedAt = paymentSeed.status === "abandoned" ? createdAt : null;
+        const paymentValues = {
           organisationId: organisation.id,
           invoiceId: invoice.id,
           customerId: customer.id,
@@ -833,148 +839,188 @@ async function main() {
           initializedAt: createdAt,
           createdAt,
           updatedAt: now
-        })
-        .returning();
+        } as const;
+        const [existingPayment] = await db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.provider, "paystack"),
+              eq(payments.providerReference, providerReference)
+            )
+          )
+          .limit(1);
+        const [payment] = existingPayment
+          ? await db
+              .update(payments)
+              .set(paymentValues)
+              .where(eq(payments.id, existingPayment.id))
+              .returning()
+          : await db.insert(payments).values(paymentValues).returning();
 
-      if (!payment) {
-        throw new Error(`Demo payment could not be seeded: ${providerReference}`);
+        if (!payment) {
+          throw new Error(`Demo payment could not be seeded: ${providerReference}`);
+        }
+
+        if (paymentSeed.status === "successful") {
+          const amountPaidKobo = paymentSeed.amountKobo;
+          const balanceDueKobo = Math.max(invoice.totalKobo - amountPaidKobo, 0);
+          const nextStatus = balanceDueKobo === 0 ? "paid" : "partially_paid";
+
+          await db
+            .update(invoices)
+            .set({
+              amountPaidKobo,
+              balanceDueKobo,
+              status: nextStatus,
+              paidAt: nextStatus === "paid" ? paidAt : null,
+              updatedAt: now
+            })
+            .where(eq(invoices.id, invoice.id));
+
+          const [existingPaymentEvent] = await db
+            .select({ id: invoiceStatusEvents.id })
+            .from(invoiceStatusEvents)
+            .where(
+              and(
+                eq(invoiceStatusEvents.invoiceId, invoice.id),
+                eq(invoiceStatusEvents.reason, "payment_webhook_reconciled"),
+                eq(invoiceStatusEvents.toStatus, nextStatus)
+              )
+            )
+            .limit(1);
+          if (!existingPaymentEvent) {
+            await db.insert(invoiceStatusEvents).values({
+              organisationId: organisation.id,
+              invoiceId: invoice.id,
+              fromStatus: invoice.status,
+              toStatus: nextStatus,
+              reason: "payment_webhook_reconciled",
+              actorUserId: null,
+              metadataRedacted: {
+                paymentId: payment.id,
+                providerReference,
+                amountPaidKobo,
+                balanceDueKobo
+              },
+              createdAt
+            });
+          }
+
+          await receiptsService.ensureReceiptForSuccessfulPayment(db as never, payment.id);
+        }
+
+        if (
+          paymentSeed.status === "successful" ||
+          paymentSeed.status === "failed" ||
+          paymentSeed.eventErrorMessage
+        ) {
+          await db
+            .insert(paymentEvents)
+            .values({
+              organisationId: organisation.id,
+              paymentId: payment.id,
+              provider: "paystack",
+              providerEventId: `demo_${providerReference}`,
+              providerReference,
+              eventType: paymentSeed.eventType ?? "charge.success",
+              signatureValid: true,
+              processed: true,
+              processedAt: createdAt,
+              payloadRedacted: {
+                event: paymentSeed.eventType ?? "charge.success",
+                data: {
+                  reference: providerReference,
+                  amount: paymentSeed.eventAmountKobo ?? paymentSeed.amountKobo,
+                  currency: "NGN",
+                  status: paymentSeed.status,
+                  gateway_response: payment.gatewayResponse,
+                  channel: payment.channel,
+                  paid_at: paidAt?.toISOString(),
+                  customer: {
+                    email: customer.email
+                  },
+                  metadata: {
+                    invoiceId: invoice.id,
+                    invoiceNumber: invoice.invoiceNumber,
+                    customerId: customer.id,
+                    organisationId: organisation.id,
+                    source: "seed"
+                  }
+                }
+              },
+              errorMessage:
+                paymentSeed.eventErrorMessage ??
+                (paymentSeed.status === "failed" ? "Unsupported Paystack event ignored." : null),
+              createdAt
+            })
+            .onConflictDoNothing();
+        }
       }
 
-      if (paymentSeed.status === "successful") {
-        const amountPaidKobo = paymentSeed.amountKobo;
-        const balanceDueKobo = Math.max(invoice.totalKobo - amountPaidKobo, 0);
-        const nextStatus = balanceDueKobo === 0 ? "paid" : "partially_paid";
-
-        await db
-          .update(invoices)
-          .set({
-            amountPaidKobo,
-            balanceDueKobo,
-            status: nextStatus,
-            paidAt: nextStatus === "paid" ? paidAt : null,
-            updatedAt: now
-          })
-          .where(eq(invoices.id, invoice.id));
-
-        await db.insert(invoiceStatusEvents).values({
+      await db
+        .insert(paymentEvents)
+        .values({
           organisationId: organisation.id,
-          invoiceId: invoice.id,
-          fromStatus: invoice.status,
-          toStatus: nextStatus,
-          reason: "payment_webhook_reconciled",
-          actorUserId: null,
-          metadataRedacted: {
-            paymentId: payment.id,
-            providerReference,
-            amountPaidKobo,
-            balanceDueKobo
-          },
-          createdAt
-        });
-      }
-
-      if (
-        paymentSeed.status === "successful" ||
-        paymentSeed.status === "failed" ||
-        paymentSeed.eventErrorMessage
-      ) {
-        await db.insert(paymentEvents).values({
-          organisationId: organisation.id,
-          paymentId: payment.id,
+          paymentId: null,
           provider: "paystack",
-          providerEventId: `demo_${providerReference}`,
-          providerReference,
-          eventType: paymentSeed.eventType ?? "charge.success",
+          providerEventId: "demo_PAYSTACK_REVIEW_UNKNOWN_REF",
+          providerReference: "PAYSTACK_REVIEW_UNKNOWN_REF",
+          eventType: "charge.success",
           signatureValid: true,
           processed: true,
-          processedAt: createdAt,
+          processedAt: now,
           payloadRedacted: {
-            event: paymentSeed.eventType ?? "charge.success",
+            event: "charge.success",
             data: {
-              reference: providerReference,
-              amount: paymentSeed.eventAmountKobo ?? paymentSeed.amountKobo,
+              reference: "PAYSTACK_REVIEW_UNKNOWN_REF",
+              amount: 100000,
               currency: "NGN",
-              status: paymentSeed.status,
-              gateway_response: payment.gatewayResponse,
-              channel: payment.channel,
-              paid_at: paidAt?.toISOString(),
-              customer: {
-                email: customer.email
-              },
-              metadata: {
-                invoiceId: invoice.id,
-                invoiceNumber: invoice.invoiceNumber,
-                customerId: customer.id,
-                organisationId: organisation.id,
-                source: "seed"
-              }
+              status: "success",
+              gateway_response: "Successful",
+              source: "seed"
             }
           },
-          errorMessage:
-            paymentSeed.eventErrorMessage ??
-            (paymentSeed.status === "failed" ? "Unsupported Paystack event ignored." : null),
-          createdAt
+          errorMessage: "Unknown payment reference.",
+          createdAt: now
+        })
+        .onConflictDoNothing();
+
+      await db
+        .insert(invoiceNumberSequences)
+        .values({ organisationId: organisation.id, nextNumber: 25, updatedAt: now })
+        .onConflictDoUpdate({
+          target: invoiceNumberSequences.organisationId,
+          set: {
+            nextNumber: sql`greatest(${invoiceNumberSequences.nextNumber}, 25)`,
+            updatedAt: now
+          }
         });
+
+      console.log("Development seed complete.");
+      console.log(`Demo organisation: ${organisationName}`);
+      console.log("Demo password for all seeded users: DemoPass123!");
+      console.log(`Seeded demo customers: ${demoCustomers.length}`);
+      console.log(`Seeded demo invoices: ${invoiceStatuses.length}`);
+      console.log("Sample public invoice URLs:");
+      for (const invoiceUrl of publicInvoiceUrls) {
+        console.log(`- ${invoiceUrl}`);
       }
-    }
-
-    await db.insert(paymentEvents).values({
-      organisationId: organisation.id,
-      paymentId: null,
-      provider: "paystack",
-      providerEventId: "demo_PAYSTACK_REVIEW_UNKNOWN_REF",
-      providerReference: "PAYSTACK_REVIEW_UNKNOWN_REF",
-      eventType: "charge.success",
-      signatureValid: true,
-      processed: true,
-      processedAt: now,
-      payloadRedacted: {
-        event: "charge.success",
-        data: {
-          reference: "PAYSTACK_REVIEW_UNKNOWN_REF",
-          amount: 100000,
-          currency: "NGN",
-          status: "success",
-          gateway_response: "Successful",
-          source: "seed"
-        }
-      },
-      errorMessage: "Unknown payment reference.",
-      createdAt: now
+      console.log(
+        "Dev-only pending invite URLs. Raw tokens are printed here only and are not stored:"
+      );
+      for (const inviteUrl of pendingInviteUrls) {
+        console.log(`- ${inviteUrl}`);
+      }
     });
-
-    await db
-      .insert(invoiceNumberSequences)
-      .values({ organisationId: organisation.id, nextNumber: 25, updatedAt: now })
-      .onConflictDoUpdate({
-        target: invoiceNumberSequences.organisationId,
-        set: {
-          nextNumber: sql`greatest(${invoiceNumberSequences.nextNumber}, 25)`,
-          updatedAt: now
-        }
-      });
-
-    console.log("Development seed complete.");
-    console.log(`Demo organisation: ${organisationName}`);
-    console.log("Demo password for all seeded users: DemoPass123!");
-    console.log(`Seeded demo customers: ${demoCustomers.length}`);
-    console.log(`Seeded demo invoices: ${invoiceStatuses.length}`);
-    console.log("Sample public invoice URLs:");
-    for (const invoiceUrl of publicInvoiceUrls) {
-      console.log(`- ${invoiceUrl}`);
-    }
-    console.log(
-      "Dev-only pending invite URLs. Raw tokens are printed here only and are not stored:"
-    );
-    for (const inviteUrl of pendingInviteUrls) {
-      console.log(`- ${inviteUrl}`);
-    }
   } finally {
     await pool.end();
   }
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (require.main === module) {
+  void seedDemo().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

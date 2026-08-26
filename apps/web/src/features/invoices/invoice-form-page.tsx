@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useState, type FormEvent } from "react";
+import React, { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Select } from "@/components/ui/select";
@@ -85,6 +85,11 @@ function InvoiceFormContent({
   const [pageError, setPageError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingAddedLineItem, setPendingAddedLineItem] = useState<number | null>(null);
+  const lineItemRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const animatedLineItem = useRef<number | null>(null);
+  const previewTotalRef = useRef<HTMLSpanElement | null>(null);
+  const reduceMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     async function load() {
@@ -129,6 +134,51 @@ function InvoiceFormContent({
     void load();
   }, [accessToken, invoiceId, mode]);
 
+  useEffect(() => {
+    const index = pendingAddedLineItem;
+    if (index === null || reduceMotion || animatedLineItem.current === index) {
+      return;
+    }
+
+    const row = lineItemRefs.current[index];
+    if (!row) {
+      return;
+    }
+
+    let disposed = false;
+    let revert: () => void = () => undefined;
+
+    void import("gsap")
+      .then(({ gsap }) => {
+        if (disposed) {
+          return;
+        }
+
+        const context = gsap.context(() => {
+          gsap.fromTo(
+            row,
+            { opacity: 0.55, y: 8 },
+            { duration: 0.24, ease: "power2.out", opacity: 1, y: 0 }
+          );
+          if (previewTotalRef.current) {
+            gsap.fromTo(
+              previewTotalRef.current,
+              { scale: 1.04 },
+              { duration: 0.24, ease: "power2.out", scale: 1 }
+            );
+          }
+        }, row);
+        revert = () => context.revert();
+        animatedLineItem.current = index;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      revert();
+    };
+  }, [pendingAddedLineItem, reduceMotion]);
+
   const preview = useMemo(() => {
     try {
       return getInvoicePreview(form);
@@ -165,6 +215,7 @@ function InvoiceFormContent({
   }
 
   function addLineItem() {
+    setPendingAddedLineItem(form.lineItems.length);
     setForm((current) => ({ ...current, lineItems: [...current.lineItems, { ...blankLineItem }] }));
   }
 
@@ -309,26 +360,41 @@ function InvoiceFormContent({
                 <div
                   className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_120px_160px_auto]"
                   key={index}
+                  ref={(node) => {
+                    lineItemRefs.current[index] = node;
+                  }}
                 >
+                  <label className="sr-only" htmlFor={`line-item-${index}-description`}>
+                    Line item {index + 1} description
+                  </label>
                   <input
                     className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                     disabled={isSubmitting}
+                    id={`line-item-${index}-description`}
                     onChange={(event) => updateLineItem(index, "description", event.target.value)}
                     placeholder="Description"
                     value={item.description}
                   />
+                  <label className="sr-only" htmlFor={`line-item-${index}-quantity`}>
+                    Line item {index + 1} quantity
+                  </label>
                   <input
                     className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                     disabled={isSubmitting}
+                    id={`line-item-${index}-quantity`}
                     min="0.01"
                     onChange={(event) => updateLineItem(index, "quantity", event.target.value)}
                     step="0.01"
                     type="number"
                     value={item.quantity}
                   />
+                  <label className="sr-only" htmlFor={`line-item-${index}-unit-price`}>
+                    Line item {index + 1} unit price in NGN
+                  </label>
                   <input
                     className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                     disabled={isSubmitting}
+                    id={`line-item-${index}-unit-price`}
                     min="0"
                     onChange={(event) =>
                       updateLineItem(index, "unitPriceNaira", event.target.value)
@@ -407,7 +473,11 @@ function InvoiceFormContent({
             <SummaryRow label="Subtotal" value={formatMoney(preview.subtotalKobo)} />
             <SummaryRow label="Discount" value={formatMoney(preview.discountKobo)} />
             <SummaryRow label="Tax" value={formatMoney(preview.taxKobo)} />
-            <SummaryRow strong label="Total" value={formatMoney(preview.totalKobo)} />
+            <SummaryRow
+              strong
+              label="Total"
+              value={<span ref={previewTotalRef}>{formatMoney(preview.totalKobo)}</span>}
+            />
           </dl>
           <p className="mt-4 text-xs text-slate-500">
             Preview totals are for usability. The API recalculates all totals server-side.
@@ -436,11 +506,37 @@ function Field({
   );
 }
 
-function SummaryRow({ label, strong, value }: { label: string; strong?: boolean; value: string }) {
+function SummaryRow({
+  label,
+  strong,
+  value
+}: {
+  label: string;
+  strong?: boolean;
+  value: React.ReactNode;
+}) {
   return (
     <div className={`flex justify-between gap-4 ${strong ? "text-base font-semibold" : ""}`}>
       <dt className="text-slate-600">{label}</dt>
       <dd className="text-slate-950">{value}</dd>
     </div>
   );
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  return reduced;
 }

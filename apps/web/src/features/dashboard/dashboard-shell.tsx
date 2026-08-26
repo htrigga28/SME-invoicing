@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import React, { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ATTEMPT_STATE_LABELS, RECONCILIATION_STATE_LABELS } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -57,6 +57,9 @@ function DashboardContent({
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [showSignupComplete, setShowSignupComplete] = useState(false);
+  const attentionRef = useRef<HTMLElement | null>(null);
+  const reduceMotion = usePrefersReducedMotion();
+  const animatedOverviewRef = useRef<DashboardOverviewResponse | null>(null);
 
   useEffect(() => {
     setShowSignupComplete(
@@ -102,6 +105,43 @@ function DashboardContent({
       active = false;
     };
   }, [accessToken, query]);
+
+  useEffect(() => {
+    if (!overview || state !== "ready" || animatedOverviewRef.current === overview) {
+      return;
+    }
+
+    animatedOverviewRef.current = overview;
+    const attention = attentionRef.current;
+    if (!attention || reduceMotion) {
+      return;
+    }
+
+    let disposed = false;
+    let revert: () => void = () => undefined;
+
+    void import("gsap")
+      .then(({ gsap }) => {
+        if (disposed) {
+          return;
+        }
+
+        const context = gsap.context(() => {
+          gsap.fromTo(
+            attention,
+            { opacity: 0.72, y: 6 },
+            { duration: 0.24, ease: "power2.out", opacity: 1, y: 0 }
+          );
+        }, attention);
+        revert = () => context.revert();
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      revert();
+    };
+  }, [overview, reduceMotion, state]);
 
   function applyPreset(range: Exclude<PresetRange, "custom">) {
     setSelectedRange(range);
@@ -236,7 +276,7 @@ function DashboardContent({
 
       {state === "ready" && overview ? (
         <>
-          <PaymentSetupPanel overview={overview} role={role} />
+          <AttentionRegion overview={overview} role={role} ref={attentionRef} />
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
@@ -270,6 +310,10 @@ function DashboardContent({
               detail={`${overview.currentPosition.activePendingPaymentCount} active pending`}
             />
           </section>
+
+          {overview.paymentSetup.status === "active" ? (
+            <PaymentSetupPanel overview={overview} role={role} />
+          ) : null}
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
@@ -320,6 +364,87 @@ function DashboardContent({
         </>
       ) : null}
     </section>
+  );
+}
+
+type AttentionRegionProps = {
+  overview: DashboardOverviewResponse;
+  role: Membership["role"];
+};
+
+const AttentionRegion = React.forwardRef<HTMLElement, AttentionRegionProps>(
+  function AttentionRegion({ overview, role }, ref) {
+    const setup = overview.paymentSetup;
+    const showSetup = setup.status !== "active";
+    const showReview = overview.currentPosition.unresolvedReviewCount > 0;
+    const showOverdue = overview.currentPosition.overdueInvoiceCount > 0;
+    const showPending = overview.currentPosition.activePendingPaymentCount > 0;
+
+    if (!showSetup && !showReview && !showOverdue && !showPending) {
+      return null;
+    }
+
+    return (
+      <section aria-label="Attention" className="space-y-3" ref={ref}>
+        {showSetup ? <PaymentSetupPanel overview={overview} role={role} /> : null}
+        {showReview ? (
+          <AttentionRow
+            description={`${overview.currentPosition.unresolvedReviewCount.toLocaleString("en-NG")} payment issue${overview.currentPosition.unresolvedReviewCount === 1 ? "" : "s"} need review.`}
+            href="/payments"
+            title="Needs review"
+            tone="danger"
+          />
+        ) : null}
+        {showOverdue ? (
+          <AttentionRow
+            description={`${overview.currentPosition.overdueInvoiceCount.toLocaleString("en-NG")} overdue invoice${overview.currentPosition.overdueInvoiceCount === 1 ? "" : "s"} need attention.`}
+            href="/invoices"
+            title="Overdue"
+            tone="warning"
+          />
+        ) : null}
+        {showPending ? (
+          <AttentionRow
+            description={`${overview.currentPosition.activePendingPaymentCount.toLocaleString("en-NG")} payment${overview.currentPosition.activePendingPaymentCount === 1 ? "" : "s"} awaiting confirmation.`}
+            href="/payments"
+            title="Pending confirmations"
+            tone="info"
+          />
+        ) : null}
+      </section>
+    );
+  }
+);
+
+function AttentionRow({
+  description,
+  href,
+  title,
+  tone
+}: {
+  description: string;
+  href: string;
+  title: string;
+  tone: "danger" | "info" | "warning";
+}) {
+  const className = {
+    danger: "border-[var(--danger-border)] bg-[var(--danger-muted)]",
+    info: "border-[var(--border-subtle)] bg-[var(--surface-card)]",
+    warning: "border-[var(--warning-border)] bg-[var(--warning-muted)]"
+  }[tone];
+
+  return (
+    <div
+      className={`flex min-w-0 flex-col gap-3 rounded-[var(--radius-card)] border p-4 sm:flex-row sm:items-center sm:justify-between ${className}`}
+    >
+      <div className="min-w-0">
+        <h2 className="font-semibold text-[var(--text-primary)]">{title}</h2>
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">{description}</p>
+      </div>
+      <LinkButton className="shrink-0" href={href} size="sm" variant="outline">
+        Review
+      </LinkButton>
+    </div>
   );
 }
 
@@ -468,7 +593,10 @@ function RecentPayments({ overview }: { overview: DashboardOverviewResponse }) {
       {overview.recentPayments.map((payment) => (
         <li className="flex items-center justify-between gap-3 py-3" key={payment.id}>
           <div className="min-w-0">
-            <Link className="truncate font-medium text-slate-950" href={`/payments/${payment.id}`}>
+            <Link
+              className="font-medium text-slate-950 [overflow-wrap:anywhere]"
+              href={`/payments/${payment.id}`}
+            >
               {payment.providerReference}
             </Link>
             <p className="truncate text-sm text-slate-600">
@@ -594,4 +722,22 @@ function formatDateTime(value: string) {
     month: "short",
     year: "numeric"
   }).format(new Date(value));
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  return reduced;
 }
