@@ -159,6 +159,12 @@ pnpm test:e2e
 pnpm payments:reconcile-invoices
 ```
 
+`pnpm test:e2e` needs `E2E_ADMIN_DATABASE_URL`, for example
+`postgresql://postgres@localhost:55432/postgres`. The runner creates a unique
+temporary database, runs migrations and the guarded demo seed twice, starts the
+built API and both web apps, runs Playwright, then drops the temporary database.
+Set `E2E_DATABASE_URL` only when you need to choose the temporary database name.
+
 `pnpm db:push` is available for local development experiments only. Migrations remain the source of truth.
 
 `pnpm payments:reconcile-invoices` recalculates invoice `amount_paid_kobo`, `balance_due_kobo`, and payment-derived status from persisted payment/refund truth. It is safe to run after local manual Paystack testing or seeded data changes.

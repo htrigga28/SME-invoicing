@@ -90,9 +90,10 @@ function start(command, args, name) {
     stdio: ["ignore", "pipe", "pipe"]
   });
   const log = [];
+  const closed = new Promise((resolve) => child.once("close", resolve));
   child.stdout?.on("data", (chunk) => log.push(chunk.toString()));
   child.stderr?.on("data", (chunk) => log.push(chunk.toString()));
-  children.push({ child, name, log });
+  children.push({ child, name, log, closed });
 }
 
 async function waitFor(url) {
@@ -109,15 +110,37 @@ async function waitFor(url) {
 
 async function teardown() {
   await mkdir(logDir, { recursive: true });
-  for (const { child, name, log } of children) {
+  for (const { child, name, log, closed } of children) {
     if (!child.killed && process.platform === "win32") {
       await run("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }).catch(() => undefined);
     } else if (!child.killed) {
       child.kill("SIGTERM");
     }
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 5_000))]);
     await writeFile(path.join(logDir, `${name}.log`), log.join(""), "utf8");
   }
   await run(psqlCommand, [adminDatabaseUrl, "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS ${databaseName}`], { shell: false, stdio: "ignore" });
+}
+
+async function snapshotSeedState() {
+  const query = `
+    SELECT json_build_object(
+      'receipts', COALESCE(json_agg(json_build_object(
+        'id', r.id,
+        'paymentId', r.payment_id,
+        'receiptNumber', r.receipt_number,
+        'publicToken', r.public_token
+      ) ORDER BY r.id) FILTER (WHERE r.id IS NOT NULL), '[]'::json),
+      'receiptSequence', (SELECT next_number FROM receipt_number_sequences WHERE organisation_id = o.id),
+      'auditCount', (SELECT count(*) FROM audit_logs WHERE organisation_id = o.id AND action = 'receipt_generated'),
+      'sentinel', (SELECT json_build_object('name', s.name, 'slug', s.slug) FROM organisations s WHERE s.slug = 'e2e-sentinel')
+    )
+    FROM organisations o
+    LEFT JOIN receipts r ON r.organisation_id = o.id
+    WHERE o.slug = 'akin-co-demo'
+    GROUP BY o.id;
+  `;
+  return (await run(psqlCommand, [databaseUrl, "-At", "-c", query], { shell: false, stdio: ["ignore", "pipe", "pipe"] })).trim();
 }
 
 let failure;
@@ -125,8 +148,14 @@ try {
   await run(psqlCommand, [adminDatabaseUrl, "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS ${databaseName}`], { shell: false, stdio: "ignore" });
   await run(psqlCommand, [adminDatabaseUrl, "-v", "ON_ERROR_STOP=1", "-c", `CREATE DATABASE ${databaseName}`], { shell: false, stdio: "ignore" });
   await run("pnpm", ["db:migrate"]);
+  await run(psqlCommand, [databaseUrl, "-v", "ON_ERROR_STOP=1", "-c", "INSERT INTO organisations (name, slug) VALUES ('E2E Sentinel', 'e2e-sentinel') ON CONFLICT (slug) DO NOTHING"], { shell: false, stdio: "ignore" });
   await run("pnpm", ["db:seed"]);
+  const firstSeedSnapshot = await snapshotSeedState();
   await run("pnpm", ["db:seed"]);
+  const secondSeedSnapshot = await snapshotSeedState();
+  if (firstSeedSnapshot !== secondSeedSnapshot) {
+    throw new Error("Demo seed is not repeat-stable; receipt or sentinel state changed between runs.");
+  }
   await run("pnpm", ["build"]);
   start("pnpm", ["--filter", "@sme-invoicing/api", "start"], "api");
   start("pnpm", ["--filter", "@sme-invoicing/web", "exec", "next", "start", "--port", "3100"], "web");
