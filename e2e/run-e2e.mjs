@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -6,17 +7,20 @@ import process from "node:process";
 const root = process.cwd();
 const adminDatabaseUrl = process.env.E2E_ADMIN_DATABASE_URL;
 const requestedDatabaseUrl = process.env.E2E_DATABASE_URL;
-const psqlCommand = process.env.E2E_PSQL_BIN ?? (process.platform === "win32"
-  ? "C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe"
+const psqlCommand = process.env.E2E_PSQL_BIN || (process.platform === "win32"
+  ? String.raw`C:\Program Files\PostgreSQL\17\bin\psql.exe`
   : "psql");
 
 if (!adminDatabaseUrl) {
   throw new Error("E2E_ADMIN_DATABASE_URL is required so the runner can drop only its unique database.");
 }
 
-const databaseName = requestedDatabaseUrl
-  ? new URL(requestedDatabaseUrl).pathname.slice(1)
-  : `sme_invoicing_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+let databaseName;
+if (requestedDatabaseUrl) {
+  databaseName = new URL(requestedDatabaseUrl).pathname.slice(1);
+} else {
+  databaseName = `sme_invoicing_e2e_${Date.now()}_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
 if (!/^sme_invoicing_e2e_[a-z0-9_]+$/.test(databaseName)) {
   throw new Error("E2E_DATABASE_URL must target a uniquely named sme_invoicing_e2e_* database.");
 }
