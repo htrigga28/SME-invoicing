@@ -4,19 +4,29 @@ import path from "node:path";
 import process from "node:process";
 
 const root = process.cwd();
-const databaseUrl = process.env.E2E_DATABASE_URL;
 const adminDatabaseUrl = process.env.E2E_ADMIN_DATABASE_URL;
-const databaseName = databaseUrl ? new URL(databaseUrl).pathname.slice(1) : "";
+const requestedDatabaseUrl = process.env.E2E_DATABASE_URL;
 const psqlCommand = process.env.E2E_PSQL_BIN ?? (process.platform === "win32"
   ? "C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe"
   : "psql");
 
-if (!databaseUrl || !/^sme_invoicing_e2e_[a-z0-9_]+$/.test(databaseName)) {
-  throw new Error("E2E_DATABASE_URL must target a uniquely named sme_invoicing_e2e_* database.");
-}
 if (!adminDatabaseUrl) {
   throw new Error("E2E_ADMIN_DATABASE_URL is required so the runner can drop only its unique database.");
 }
+
+const databaseName = requestedDatabaseUrl
+  ? new URL(requestedDatabaseUrl).pathname.slice(1)
+  : `sme_invoicing_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+if (!/^sme_invoicing_e2e_[a-z0-9_]+$/.test(databaseName)) {
+  throw new Error("E2E_DATABASE_URL must target a uniquely named sme_invoicing_e2e_* database.");
+}
+const databaseUrl = requestedDatabaseUrl
+  ? requestedDatabaseUrl
+  : (() => {
+      const url = new URL(adminDatabaseUrl);
+      url.pathname = `/${databaseName}`;
+      return url.toString();
+    })();
 
 const env = {
   ...process.env,
@@ -53,8 +63,21 @@ function run(command, args, options = {}) {
     child.stderr?.on("data", (chunk) => { output += chunk; });
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve(output);
-      else reject(new Error(`${command} ${args.join(" ")} exited ${code}\n${output}`));
+      if (code === 0) {
+        resolve(output);
+        return;
+      }
+      const safeArgs = args.map((arg) => {
+        if (!arg.includes("://")) return arg;
+        try {
+          const url = new URL(arg);
+          url.password = url.password ? "[redacted]" : "";
+          return url.toString();
+        } catch {
+          return "[redacted-url]";
+        }
+      });
+      reject(new Error(`${command} ${safeArgs.join(" ")} exited ${code}\n${output}`));
     });
   });
 }
@@ -99,6 +122,8 @@ async function teardown() {
 
 let failure;
 try {
+  await run(psqlCommand, [adminDatabaseUrl, "-v", "ON_ERROR_STOP=1", "-c", `DROP DATABASE IF EXISTS ${databaseName}`], { shell: false, stdio: "ignore" });
+  await run(psqlCommand, [adminDatabaseUrl, "-v", "ON_ERROR_STOP=1", "-c", `CREATE DATABASE ${databaseName}`], { shell: false, stdio: "ignore" });
   await run("pnpm", ["db:migrate"]);
   await run("pnpm", ["db:seed"]);
   await run("pnpm", ["db:seed"]);
@@ -122,5 +147,6 @@ try {
 }
 
 if (failure) {
+  console.error(`E2E logs are available in ${logDir}`);
   throw failure;
 }
