@@ -15,6 +15,7 @@ describe("Button", () => {
     const button = screen.getByRole("button", { name: "Save invoice" });
 
     expect(button).toHaveClass("bg-[var(--accent)]");
+    expect(button).toHaveClass("button-primary");
     expect(button).toHaveClass("text-[var(--accent-foreground)]");
   });
 

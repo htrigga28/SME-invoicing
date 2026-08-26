@@ -12,6 +12,7 @@ import { clearStoredSession, getStoredSession } from "@/features/auth/session";
 import type { MeResponse, Membership } from "@/features/auth/types";
 import { OnboardingProgress } from "@/features/onboarding/onboarding-progress";
 import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
+import { cn } from "@/lib/cn";
 
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -28,6 +29,7 @@ type AppShellProps = {
 };
 
 type ShellState = "loading" | "ready" | "denied" | "error";
+const SIDEBAR_STORAGE_KEY = "sme-invoicing.sidebar-expanded";
 
 export function AppShell({ children, deniedMessage, requiredRoles }: AppShellProps) {
   const pathname = usePathname();
@@ -35,6 +37,11 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
   const [context, setContext] = useState<AppShellContext | null>(null);
   const [state, setState] = useState<ShellState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+
+  useEffect(() => {
+    setSidebarExpanded(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true");
+  }, []);
 
   useEffect(() => {
     const session = getStoredSession();
@@ -92,11 +99,7 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
   }
 
   if (state === "loading") {
-    return (
-      <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
-        <Alert>Loading workspace...</Alert>
-      </main>
-    );
+    return <WorkspaceLoadingState />;
   }
 
   if (!context) {
@@ -119,11 +122,27 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
   }
 
   return (
-    <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] md:pl-20">
-      <Sidebar activePath={pathname} role={context.me.membership.role} />
+    <main
+      className={cn(
+        "min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-[padding] duration-200 ease-out",
+        sidebarExpanded ? "md:pl-64" : "md:pl-20"
+      )}
+    >
+      <Sidebar
+        activePath={pathname}
+        expanded={sidebarExpanded}
+        onToggle={() => {
+          setSidebarExpanded((current) => {
+            const next = !current;
+            window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+            return next;
+          });
+        }}
+        role={context.me.membership.role}
+      />
       <div className="min-w-0 flex-1">
         <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
-        <div className="mx-auto w-full max-w-[1440px] px-4 py-6 pb-24 lg:px-6">
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 lg:px-6">
           {state === "denied" ? (
             <StatusPanel
               message={deniedMessage ?? "You do not have access to this page."}
@@ -136,6 +155,62 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
           {state === "ready" ? children(context) : null}
         </div>
         <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
+      </div>
+    </main>
+  );
+}
+
+function WorkspaceLoadingState() {
+  return (
+    <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)]">
+      <aside
+        aria-hidden="true"
+        className="fixed inset-y-0 left-0 z-40 hidden w-20 border-r border-[var(--border-subtle)] bg-[var(--background-deep)] md:block"
+      >
+        <div className="flex h-16 items-center justify-center border-b border-[var(--border-subtle)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-border-subtle)] bg-[var(--accent-muted)] text-sm font-black text-[var(--accent)]">
+            SI
+          </div>
+        </div>
+        <div className="space-y-3 px-3 py-5">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div
+              className="h-11 w-14 animate-pulse rounded-[var(--radius-control)] bg-[var(--surface-raised)]"
+              key={index}
+            />
+          ))}
+        </div>
+      </aside>
+      <div className="md:pl-20">
+        <header className="border-b border-[var(--border-subtle)] bg-[var(--topbar-background)]">
+          <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center justify-between gap-3 px-4 lg:px-6">
+            <div className="space-y-2">
+              <div className="h-3 w-44 animate-pulse rounded-full bg-[var(--surface-raised)]" />
+              <div className="h-2.5 w-60 animate-pulse rounded-full bg-[var(--surface-raised)]" />
+            </div>
+            <div className="h-9 w-24 animate-pulse rounded-[var(--radius-control)] bg-[var(--surface-raised)]" />
+          </div>
+        </header>
+        <div
+          aria-busy="true"
+          aria-label="Loading workspace"
+          className="mx-auto w-full max-w-[1600px] space-y-6 px-4 py-8 pb-24 lg:px-6"
+          role="status"
+        >
+          <div className="space-y-3">
+            <div className="h-9 w-52 animate-pulse rounded-lg bg-[var(--surface-raised)]" />
+            <p className="text-sm text-[var(--text-muted)]">Preparing your workspace</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }, (_, index) => (
+              <div
+                className="h-32 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]"
+                key={index}
+              />
+            ))}
+          </div>
+          <div className="h-72 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]" />
+        </div>
       </div>
     </main>
   );

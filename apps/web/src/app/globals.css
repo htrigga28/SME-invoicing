@@ -130,6 +130,14 @@ textarea {
 }
 
 @media not print {
+  .button-primary {
+    color: var(--accent-foreground) !important;
+  }
+
+  .button-primary:disabled {
+    color: var(--text-muted) !important;
+  }
+
   .bg-white {
     background-color: var(--surface-card) !important;
   }
