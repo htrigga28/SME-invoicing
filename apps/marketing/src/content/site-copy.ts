@@ -101,7 +101,7 @@ export const hero = {
   copy: "Lumina connects every invoice, Paystack payment, payout route, refund, and receipt, so you always know what is settled, what is due, and what needs attention.",
   primaryCta: "Create account",
   secondaryCta: "See the payment trail",
-  trustNote: "Built for NGN invoices and Paystack settlement flows.",
+  trustNote: "Built for NGN invoices and Paystack payout flows.",
   previewLabel: "Connected payment trail",
   demoLabel: "Illustrative demo data"
 };

@@ -134,8 +134,8 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
             <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
           ) : null}
           {state === "ready" ? children(context) : null}
+          <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
         </div>
-        <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
       </div>
     </main>
   );
@@ -168,7 +168,7 @@ function CreateInvoiceQuickAction({
 
   return (
     <LinkButton
-      className="fixed bottom-4 right-4 z-30 rounded-full px-4 shadow-none md:bottom-6 md:right-6"
+      className="mt-5 w-full rounded-[var(--radius-control)] px-4 shadow-none md:fixed md:bottom-6 md:right-6 md:mt-0 md:w-auto md:rounded-full"
       href="/invoices/new"
       size="lg"
     >

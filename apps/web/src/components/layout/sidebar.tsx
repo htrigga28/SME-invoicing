@@ -17,6 +17,7 @@ import {
 
 import type { Membership } from "@/features/auth/types";
 import { cn } from "@/lib/cn";
+import { BrandMark } from "@/components/brand/brand-logo";
 
 import { getNavigationSections, type AppRoute } from "./navigation";
 
@@ -32,11 +33,11 @@ export function Sidebar({ activePath, role }: SidebarProps) {
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-20 shrink-0 border-r border-[var(--border-subtle)] bg-[var(--background-deep)] print:hidden md:flex md:flex-col">
       <div className="flex h-16 items-center justify-center border-b border-[var(--border-subtle)]">
         <Link
-          aria-label="SME Invoicing dashboard"
+          aria-label="Lumina dashboard"
           className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-border-subtle)] bg-[var(--accent-muted)] text-sm font-black text-[var(--accent)]"
           href="/dashboard"
         >
-          SI
+          <BrandMark className="h-8 w-8" />
         </Link>
       </div>
       <nav aria-label="Sidebar navigation" className="flex-1 space-y-7 px-3 py-5">

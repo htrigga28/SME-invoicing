@@ -21,7 +21,7 @@ const signupSteps = [
     icon: Landmark,
     label: "Payments",
     title: "Connect your payout account",
-    copy: "Resolve and confirm the Nigerian bank account used for Paystack settlements."
+    copy: "Resolve and confirm the Nigerian bank account used for Paystack payouts."
   }
 ] as const;
 

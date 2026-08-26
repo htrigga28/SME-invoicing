@@ -1,4 +1,8 @@
 node_modules
+.playwright/
+playwright-report/
+test-results/
+.e2e-logs/
 .turbo
 dist
 coverage

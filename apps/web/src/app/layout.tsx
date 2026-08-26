@@ -7,7 +7,7 @@ import { AppToaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SME Invoice & Payment Reconciliation Platform",
+  title: "Lumina - Invoice Payment Clarity for Nigerian SMEs",
   description: "Invoice and payment reconciliation workspace for Nigerian SMEs."
 };
 

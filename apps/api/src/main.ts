@@ -33,8 +33,8 @@ async function bootstrap() {
   );
 
   const openApiConfig = new DocumentBuilder()
-    .setTitle("SME Invoice API")
-    .setDescription("API foundation for the SME Invoice & Payment Reconciliation Platform.")
+    .setTitle("Lumina API")
+    .setDescription("API for Lumina invoice payment clarity and reconciliation.")
     .setVersion("0.1.0")
     .build();
   const document = SwaggerModule.createDocument(app, openApiConfig);
