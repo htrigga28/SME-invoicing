@@ -30,6 +30,9 @@ type AppShellProps = {
 
 type ShellState = "loading" | "ready" | "denied" | "error";
 const SIDEBAR_STORAGE_KEY = "sme-invoicing.sidebar-expanded";
+const ME_CACHE_TTL_MS = 30_000;
+
+const meCache = new Map<string, { loadedAt: number; response: MeResponse }>();
 
 export function AppShell({ children, deniedMessage, requiredRoles }: AppShellProps) {
   const pathname = usePathname();
@@ -56,27 +59,20 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
       refreshToken: session.refreshToken
     };
 
+    const cached = meCache.get(sessionContext.accessToken);
+    if (cached && Date.now() - cached.loadedAt < ME_CACHE_TTL_MS) {
+      applyWorkspaceResponse(cached.response);
+      return;
+    }
+
     getMe(sessionContext.accessToken)
       .then((response) => {
-        const isAllowedPaymentSetupRoute =
-          response.onboardingStep === "payment_setup" && pathname === "/settings/payment-setup";
-
-        if (response.onboardingStep && !isAllowedPaymentSetupRoute) {
-          router.replace(getOnboardingPath(response.onboardingStep));
-          return;
-        }
-
-        setContext({ accessToken: sessionContext.accessToken, me: response });
-
-        if (requiredRoles?.length && !requiredRoles.includes(response.membership.role)) {
-          setState("denied");
-          return;
-        }
-
-        setState("ready");
+        meCache.set(sessionContext.accessToken, { loadedAt: Date.now(), response });
+        applyWorkspaceResponse(response);
       })
       .catch((loadError) => {
         if (isApiRequestError(loadError) && loadError.status === 401) {
+          meCache.delete(sessionContext.accessToken);
           clearStoredSession();
           router.replace("/login");
           return;
@@ -85,6 +81,25 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
         setError(getApiErrorMessage(loadError, "Could not load workspace."));
         setState("error");
       });
+
+    function applyWorkspaceResponse(response: MeResponse) {
+      const isAllowedPaymentSetupRoute =
+        response.onboardingStep === "payment_setup" && pathname === "/settings/payment-setup";
+
+      if (response.onboardingStep && !isAllowedPaymentSetupRoute) {
+        router.replace(getOnboardingPath(response.onboardingStep));
+        return;
+      }
+
+      setContext({ accessToken: sessionContext.accessToken, me: response });
+
+      if (requiredRoles?.length && !requiredRoles.includes(response.membership.role)) {
+        setState("denied");
+        return;
+      }
+
+      setState("ready");
+    }
   }, [pathname, requiredRoles, router]);
 
   async function handleLogout() {
@@ -95,6 +110,7 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
     }
 
     clearStoredSession();
+    meCache.delete(session?.accessToken ?? "");
     router.push("/login");
   }
 
@@ -163,54 +179,31 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
 function WorkspaceLoadingState() {
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)]">
-      <aside
+      <div
         aria-hidden="true"
-        className="fixed inset-y-0 left-0 z-40 hidden w-20 border-r border-[var(--border-subtle)] bg-[var(--background-deep)] md:block"
+        className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-[var(--accent-muted)]"
       >
-        <div className="flex h-16 items-center justify-center border-b border-[var(--border-subtle)]">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-border-subtle)] bg-[var(--accent-muted)] text-sm font-black text-[var(--accent)]">
-            SI
-          </div>
+        <div className="h-full w-2/5 animate-pulse bg-[var(--accent)]" />
+      </div>
+      <div
+        aria-busy="true"
+        aria-label="Loading page"
+        className="mx-auto w-full max-w-[1600px] space-y-6 px-4 py-8 pb-24 lg:px-6"
+        role="status"
+      >
+        <div className="space-y-3">
+          <div className="h-9 w-52 animate-pulse rounded-lg bg-[var(--surface-raised)]" />
+          <p className="text-sm text-[var(--text-muted)]">Preparing this page</p>
         </div>
-        <div className="space-y-3 px-3 py-5">
-          {Array.from({ length: 5 }, (_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
             <div
-              className="h-11 w-14 animate-pulse rounded-[var(--radius-control)] bg-[var(--surface-raised)]"
+              className="h-32 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]"
               key={index}
             />
           ))}
         </div>
-      </aside>
-      <div className="md:pl-20">
-        <header className="border-b border-[var(--border-subtle)] bg-[var(--topbar-background)]">
-          <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center justify-between gap-3 px-4 lg:px-6">
-            <div className="space-y-2">
-              <div className="h-3 w-44 animate-pulse rounded-full bg-[var(--surface-raised)]" />
-              <div className="h-2.5 w-60 animate-pulse rounded-full bg-[var(--surface-raised)]" />
-            </div>
-            <div className="h-9 w-24 animate-pulse rounded-[var(--radius-control)] bg-[var(--surface-raised)]" />
-          </div>
-        </header>
-        <div
-          aria-busy="true"
-          aria-label="Loading workspace"
-          className="mx-auto w-full max-w-[1600px] space-y-6 px-4 py-8 pb-24 lg:px-6"
-          role="status"
-        >
-          <div className="space-y-3">
-            <div className="h-9 w-52 animate-pulse rounded-lg bg-[var(--surface-raised)]" />
-            <p className="text-sm text-[var(--text-muted)]">Preparing your workspace</p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }, (_, index) => (
-              <div
-                className="h-32 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]"
-                key={index}
-              />
-            ))}
-          </div>
-          <div className="h-72 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]" />
-        </div>
+        <div className="h-72 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]" />
       </div>
     </main>
   );
