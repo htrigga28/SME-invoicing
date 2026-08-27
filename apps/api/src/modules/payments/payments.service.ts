@@ -350,6 +350,47 @@ export class PaymentsService {
     const rows = await this.findPaymentsWithRelations(context.activeOrganisation.id, query);
     const contextRows = await this.findPaymentsWithRelations(context.activeOrganisation.id, {});
     const classifications = this.computePaymentClassifications(rows, contextRows);
+    return this.buildPaymentSummary(rows, classifications);
+  }
+
+  /**
+   * Load the payment data needed by the dashboard in one relation query.
+   *
+   * The dashboard needs a summary, recent payments, and review issues. Calling
+   * the public list/summary methods separately used to repeat the full payment,
+   * event, and refund scans three times on every dashboard request.
+   */
+  async getDashboardPaymentData(context: ActiveOrganisationContext) {
+    const rows = await this.findPaymentsWithRelations(context.activeOrganisation.id, {});
+    const classifications = this.computePaymentClassifications(rows, rows);
+    const reconciliationRows = this.applyPaymentView(rows, classifications, "reconciliation");
+    const reviewRows = this.applyPaymentView(rows, classifications, "review_required");
+
+    return {
+      paymentSummary: this.buildPaymentSummary(rows, classifications),
+      recentPayments: reconciliationRows
+        .slice(0, 5)
+        .map((row) =>
+          this.toPaymentListItem(
+            row,
+            classifications.get(row.payment.id) ?? this.unknownClassification()
+          )
+        ),
+      reviewPayments: reviewRows
+        .slice(0, 5)
+        .map((row) =>
+          this.toPaymentListItem(
+            row,
+            classifications.get(row.payment.id) ?? this.unknownClassification()
+          )
+        )
+    };
+  }
+
+  private buildPaymentSummary(
+    rows: PaymentWithRelations[],
+    classifications: Map<string, PaymentClassification>
+  ) {
     const totals = {
       collectedKobo: 0,
       pendingKobo: 0,

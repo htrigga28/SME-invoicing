@@ -86,9 +86,7 @@ export class DashboardService {
       cashflowTrend,
       operational,
       recentInvoiceRows,
-      paymentSummary,
-      recentPaymentsResponse,
-      reviewPaymentsResponse,
+      dashboardPaymentData,
       recentReceipts,
       paymentSetup
     ] = await Promise.all([
@@ -96,17 +94,7 @@ export class DashboardService {
       this.getCashflowTrend(organisationId, period),
       this.getOperationalInvoiceMetrics(organisationId),
       this.findRecentInvoiceRows(organisationId),
-      this.paymentsService.getPaymentSummary(context, {}),
-      this.paymentsService.listPayments(context, {
-        limit: 5,
-        page: 1,
-        view: "reconciliation"
-      }),
-      this.paymentsService.listPayments(context, {
-        limit: 5,
-        page: 1,
-        view: "review_required"
-      }),
+      this.paymentsService.getDashboardPaymentData(context),
       this.findRecentReceipts(organisationId),
       this.findPaymentSetup(organisationId)
     ]);
@@ -125,14 +113,15 @@ export class DashboardService {
         outstandingInvoiceCount: operational.outstandingInvoiceCount,
         overdueInvoiceCount: operational.overdueInvoiceCount,
         activePendingPaymentCount:
-          paymentSummary.totals.pendingCount + paymentSummary.totals.stalePendingCount,
-        unresolvedReviewCount: paymentSummary.totals.reviewRequiredCount
+          dashboardPaymentData.paymentSummary.totals.pendingCount +
+          dashboardPaymentData.paymentSummary.totals.stalePendingCount,
+        unresolvedReviewCount: dashboardPaymentData.paymentSummary.totals.reviewRequiredCount
       },
       invoiceStatusBreakdown: operational.invoiceStatusBreakdown,
       outstandingAging: operational.outstandingAging,
       cashflowTrend,
       recentInvoices: this.toRecentInvoices(recentInvoiceRows),
-      recentPayments: recentPaymentsResponse.payments.map((payment) => ({
+      recentPayments: dashboardPaymentData.recentPayments.map((payment) => ({
         id: payment.id,
         providerReference: payment.providerReference,
         amountKobo: payment.amountKobo,
@@ -155,7 +144,7 @@ export class DashboardService {
           : null
       })),
       recentReceipts,
-      reviewIssues: reviewPaymentsResponse.payments.map((payment) => ({
+      reviewIssues: dashboardPaymentData.reviewPayments.map((payment) => ({
         id: payment.id,
         type: "payment" as const,
         summary: payment.reviewReason ?? "Payment requires reconciliation review.",

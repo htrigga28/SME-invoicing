@@ -139,44 +139,31 @@ export class AuthRepository {
   }
 
   async getActiveContextForUser(userId: string): Promise<ActiveOrganisationContext | undefined> {
-    const user = await this.findUserById(userId);
-
-    if (!user) {
-      return undefined;
-    }
-
-    const [membership] = await this.databaseService.db
+    const [row] = await this.databaseService.db
       .select()
-      .from(organisationMembers)
-      .where(and(eq(organisationMembers.userId, userId), eq(organisationMembers.status, "active")))
+      .from(users)
+      .innerJoin(
+        organisationMembers,
+        and(eq(organisationMembers.userId, users.id), eq(organisationMembers.status, "active"))
+      )
+      .innerJoin(organisations, eq(organisations.id, organisationMembers.organisationId))
+      .innerJoin(
+        businessProfiles,
+        eq(businessProfiles.organisationId, organisationMembers.organisationId)
+      )
+      .where(eq(users.id, userId))
       .orderBy(asc(organisationMembers.createdAt))
       .limit(1);
 
-    if (!membership) {
-      return undefined;
-    }
-
-    const [organisation] = await this.databaseService.db
-      .select()
-      .from(organisations)
-      .where(eq(organisations.id, membership.organisationId))
-      .limit(1);
-
-    const [businessProfile] = await this.databaseService.db
-      .select()
-      .from(businessProfiles)
-      .where(eq(businessProfiles.organisationId, membership.organisationId))
-      .limit(1);
-
-    if (!organisation || !businessProfile) {
+    if (!row) {
       return undefined;
     }
 
     return {
-      user: this.toSafeUser(user),
-      activeOrganisation: organisation,
-      membership,
-      businessProfile
+      user: this.toSafeUser(row.users),
+      activeOrganisation: row.organisations,
+      membership: row.organisation_members,
+      businessProfile: row.business_profiles
     };
   }
 
