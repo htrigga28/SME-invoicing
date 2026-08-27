@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { FilePlus2 } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 import { LinkButton } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
@@ -23,7 +23,7 @@ export type AppShellContext = {
 };
 
 type AppShellProps = {
-  children: (context: AppShellContext) => React.ReactNode;
+  children: ((context: AppShellContext) => React.ReactNode) | React.ReactNode;
   deniedMessage?: string;
   requiredRoles?: readonly Membership["role"][];
 };
@@ -34,7 +34,45 @@ const ME_CACHE_TTL_MS = 30_000;
 
 const meCache = new Map<string, { loadedAt: number; response: MeResponse }>();
 
+const AppShellContextProvider = createContext<AppShellContext | null>(null);
+
 export function AppShell({ children, deniedMessage, requiredRoles }: AppShellProps) {
+  const parentContext = useContext(AppShellContextProvider);
+
+  if (parentContext) {
+    const isDenied =
+      requiredRoles?.length && !requiredRoles.includes(parentContext.me.membership.role);
+
+    if (isDenied) {
+      return (
+        <StatusPanel
+          message={deniedMessage ?? "You do not have access to this page."}
+          tone="warning"
+        />
+      );
+    }
+
+    return <>{renderShellChildren(children, parentContext)}</>;
+  }
+
+  return (
+    <WorkspaceShell
+      deniedMessage={deniedMessage}
+      requiredRoles={requiredRoles}
+      renderChildren={(context) => renderShellChildren(children, context)}
+    />
+  );
+}
+
+function WorkspaceShell({
+  deniedMessage,
+  requiredRoles,
+  renderChildren
+}: {
+  deniedMessage?: string | undefined;
+  requiredRoles?: readonly Membership["role"][] | undefined;
+  renderChildren: (context: AppShellContext) => React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [context, setContext] = useState<AppShellContext | null>(null);
@@ -131,7 +169,9 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
       <main className="min-h-screen bg-[var(--background)] px-4 py-10 text-[var(--text-primary)] sm:px-6">
         <section className="mx-auto w-full max-w-4xl">
           <OnboardingProgress currentStep={3} />
-          <div className="mt-8">{children(context)}</div>
+          <AppShellContextProvider.Provider value={context}>
+            <div className="mt-8">{renderChildren(context)}</div>
+          </AppShellContextProvider.Provider>
         </section>
       </main>
     );
@@ -156,24 +196,33 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
         }}
         role={context.me.membership.role}
       />
-      <div className="min-w-0 flex-1">
-        <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
-        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 lg:px-6">
-          {state === "denied" ? (
-            <StatusPanel
-              message={deniedMessage ?? "You do not have access to this page."}
-              tone="warning"
-            />
-          ) : null}
-          {state === "error" ? (
-            <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
-          ) : null}
-          {state === "ready" ? children(context) : null}
+      <AppShellContextProvider.Provider value={context}>
+        <div className="min-w-0 flex-1">
+          <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 lg:px-6">
+            {state === "denied" ? (
+              <StatusPanel
+                message={deniedMessage ?? "You do not have access to this page."}
+                tone="warning"
+              />
+            ) : null}
+            {state === "error" ? (
+              <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
+            ) : null}
+            {state === "ready" ? renderChildren(context) : null}
+          </div>
+          <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
         </div>
-        <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
-      </div>
+      </AppShellContextProvider.Provider>
     </main>
   );
+}
+
+function renderShellChildren(
+  children: AppShellProps["children"],
+  context: AppShellContext
+): React.ReactNode {
+  return typeof children === "function" ? children(context) : children;
 }
 
 function WorkspaceLoadingState() {
