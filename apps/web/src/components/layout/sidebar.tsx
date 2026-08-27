@@ -43,8 +43,10 @@ export function Sidebar({ activePath, expanded = false, onToggle, role }: Sideba
     >
       <div
         className={cn(
-          "flex h-16 items-center border-b border-[var(--border-subtle)]",
-          expanded ? "justify-between gap-3 px-4" : "justify-center px-1"
+          "flex border-b border-[var(--border-subtle)]",
+          expanded
+            ? "h-16 items-center justify-between gap-3 px-4"
+            : "min-h-16 flex-col items-center justify-center gap-2 px-1 py-3"
         )}
       >
         <Link
@@ -75,7 +77,10 @@ export function Sidebar({ activePath, expanded = false, onToggle, role }: Sideba
           </button>
         ) : null}
       </div>
-      <nav aria-label="Sidebar navigation" className="flex-1 space-y-7 overflow-y-auto px-3 py-5">
+      <nav
+        aria-label="Sidebar navigation"
+        className="min-w-0 flex-1 space-y-7 overflow-x-hidden overflow-y-auto px-3 py-5"
+      >
         {sections.map((section) => (
           <div className="space-y-2" key={section.label}>
             <p
