@@ -12,6 +12,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
 
+import { assertKoboAmount, isKoboAmount } from "../../common/money-limits";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import type { AppDatabase } from "../../database/database.service";
 import { DatabaseService } from "../../database/database.service";
@@ -548,6 +549,7 @@ export class PaymentsService {
     input: CreatePaymentRefundDto
   ) {
     const reason = input.reason.trim();
+    assertKoboAmount(input.amountKobo, "Refund amount", 1);
 
     if (!reason) {
       throw new BadRequestException("Refund reason is required.");
@@ -2158,13 +2160,17 @@ export class PaymentsService {
       await this.linkEventToPayment(tx, event.id, payment);
     }
 
-    if (input.amountKobo !== payment.amountKobo) {
+    const paymentAmountMessage = !isKoboAmount(input.amountKobo, 1)
+      ? "Payment amount is outside the supported money limit."
+      : "Payment amount did not match the pending payment.";
+
+    if (!isKoboAmount(input.amountKobo, 1) || input.amountKobo !== payment.amountKobo) {
       if (event) {
         await this.markMismatch(tx, {
           event,
           payment,
           invoice,
-          message: "Payment amount did not match the pending payment.",
+          message: paymentAmountMessage,
           expectedAmountKobo: payment.amountKobo,
           receivedAmountKobo: input.amountKobo,
           currency: input.currency
@@ -2229,6 +2235,14 @@ export class PaymentsService {
       throw new UnprocessableEntityException(
         "Payment verification did not match the initialized payment."
       );
+    }
+
+    if (await this.wouldReconciliationOverflow(tx, invoice, payment)) {
+      return this.handleReconciliationReview(tx, payment, invoice, event, input, {
+        message:
+          "Confirmed payment requires reconciliation review because the invoice money limit would be exceeded.",
+        action: "payment_reconciliation_overflow"
+      });
     }
 
     if (payment.status === "successful") {
@@ -2502,6 +2516,67 @@ export class PaymentsService {
     return this.buildFinancialSummary(invoice, invoicePayments, refunds);
   }
 
+  private async wouldReconciliationOverflow(tx: AppDatabase, invoice: Invoice, payment: Payment) {
+    const financialSummary = await this.calculateInvoiceFinancialSummary(tx, invoice);
+    const prospectiveNetReceivedKobo =
+      payment.status === "successful"
+        ? financialSummary.netReceivedKobo
+        : financialSummary.netReceivedKobo + payment.amountKobo;
+
+    return !isKoboAmount(prospectiveNetReceivedKobo);
+  }
+
+  private async handleReconciliationReview(
+    tx: AppDatabase,
+    payment: Payment,
+    invoice: Invoice,
+    event: PaymentEvent | null,
+    input: NormalizedSuccessfulPaystackPayment,
+    review: { action: string; message: string }
+  ): Promise<ReconciliationResult> {
+    const wasAlreadySuccessful = payment.status === "successful";
+
+    if (!wasAlreadySuccessful) {
+      await this.markPaymentSuccessful(tx, payment, input);
+    }
+
+    if (event) {
+      await this.markEventProcessed(tx, event.id, { errorMessage: review.message });
+    } else if (!wasAlreadySuccessful) {
+      await tx.insert(paymentEvents).values({
+        organisationId: payment.organisationId,
+        paymentId: payment.id,
+        provider: paystackProvider,
+        providerEventId: null,
+        providerReference: payment.providerReference,
+        eventType: "payment_verification_processing_error",
+        signatureValid: true,
+        processed: true,
+        processedAt: new Date(),
+        duplicateOfEventId: null,
+        payloadRedacted: { source: input.source },
+        errorMessage: review.message
+      });
+    }
+
+    await this.createAuditLog(tx, {
+      organisationId: payment.organisationId,
+      action: review.action,
+      entityType: "payment",
+      entityId: payment.id,
+      metadataRedacted: {
+        eventId: event?.id ?? null,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        providerReference: payment.providerReference,
+        source: input.source
+      }
+    });
+    this.logWebhookResult(input, { matchedPayment: true, result: "review_required" });
+
+    return { invoiceUpdated: false, status: "successful" };
+  }
+
   async recalculateInvoiceFinancialState(
     tx: AppDatabase,
     invoiceId: string,
@@ -2522,6 +2597,8 @@ export class PaymentsService {
     }
 
     const financialSummary = await this.calculateInvoiceFinancialSummary(tx, invoice);
+    assertKoboAmount(financialSummary.netReceivedKobo, "Invoice amount paid");
+    assertKoboAmount(financialSummary.balanceDueKobo, "Invoice balance due");
     const nextStatus = this.nextInvoiceStatusFromFinancialSummary(invoice, financialSummary);
     const statusChanged = nextStatus !== invoice.status;
     const invoicePaidAt =

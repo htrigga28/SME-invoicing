@@ -69,6 +69,15 @@ export class InvoicesController {
     return this.invoicesService.sendInvoice(context, id);
   }
 
+  @Post(":id/duplicate")
+  @Roles("owner", "admin", "accountant")
+  duplicateInvoice(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string
+  ) {
+    return this.invoicesService.duplicateInvoice(context, id);
+  }
+
   @Post(":id/cancel")
   @Roles("owner", "admin")
   cancelInvoice(

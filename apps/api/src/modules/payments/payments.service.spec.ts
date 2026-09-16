@@ -6,6 +6,7 @@ import {
   UnauthorizedException
 } from "@nestjs/common";
 
+import { MAX_KOBO } from "../../common/money-limits";
 import type {
   Invoice,
   OrganisationPaymentAccount,
@@ -69,6 +70,7 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     currency: "NGN",
     issueDate: "2026-06-01",
     dueDate: "2026-07-01",
+    customerReference: null,
     notes: null,
     subtotalKobo: 97500,
     discountKobo: 0,
@@ -1188,6 +1190,75 @@ describe("PaymentsService reconciliation helpers", () => {
       overpaymentKobo: 0
     });
     expect(internals.nextInvoiceStatusFromFinancialSummary(invoice, summary)).toBe("paid");
+  });
+
+  it("routes an overflowing confirmed payment to reconciliation review without an invoice write", async () => {
+    const { service } = setup();
+    const internals = service as unknown as {
+      calculateInvoiceFinancialSummary: jest.Mock;
+      createAuditLog: jest.Mock;
+      handleReconciliationReview: (
+        tx: unknown,
+        payment: Payment,
+        invoice: Invoice,
+        event: PaymentEvent,
+        input: Record<string, unknown>,
+        review: { action: string; message: string }
+      ) => Promise<{ invoiceUpdated: boolean; status: string }>;
+      logWebhookResult: jest.Mock;
+      markEventProcessed: jest.Mock;
+      markPaymentSuccessful: jest.Mock;
+      wouldReconciliationOverflow: (
+        tx: unknown,
+        invoice: Invoice,
+        payment: Payment
+      ) => Promise<boolean>;
+    };
+    internals.calculateInvoiceFinancialSummary = jest.fn().mockResolvedValue({
+      netReceivedKobo: MAX_KOBO
+    });
+    internals.markPaymentSuccessful = jest.fn().mockResolvedValue(undefined);
+    internals.markEventProcessed = jest.fn().mockResolvedValue(undefined);
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.logWebhookResult = jest.fn();
+    const invoice = createInvoice({ totalKobo: MAX_KOBO, balanceDueKobo: 0 });
+    const payment = createPayment({ amountKobo: 1 });
+    const event = createPaymentEvent();
+
+    await expect(internals.wouldReconciliationOverflow({}, invoice, payment)).resolves.toBe(true);
+    await expect(
+      internals.handleReconciliationReview(
+        {},
+        payment,
+        invoice,
+        event,
+        {
+          amountKobo: 1,
+          channel: "card",
+          currency: "NGN",
+          gatewayResponse: "Successful",
+          paidAt: now,
+          providerStatus: "success",
+          reference: payment.providerReference,
+          source: "webhook"
+        },
+        {
+          action: "payment_reconciliation_overflow",
+          message:
+            "Confirmed payment requires reconciliation review because the invoice money limit would be exceeded."
+        }
+      )
+    ).resolves.toEqual({ invoiceUpdated: false, status: "successful" });
+
+    expect(internals.markPaymentSuccessful).toHaveBeenCalledWith(
+      {},
+      payment,
+      expect.objectContaining({ source: "webhook" })
+    );
+    expect(internals.markEventProcessed).toHaveBeenCalledWith({}, event.id, {
+      errorMessage:
+        "Confirmed payment requires reconciliation review because the invoice money limit would be exceeded."
+    });
   });
 
   it("preserves the initialized provider subaccount code when marking payment successful", async () => {

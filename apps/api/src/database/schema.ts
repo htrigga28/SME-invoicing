@@ -241,6 +241,30 @@ export const customers = pgTable(
   })
 );
 
+export const catalogueItems = pgTable(
+  "catalogue_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 200 }).notNull(),
+    description: text("description"),
+    defaultUnitPriceKobo: integer("default_unit_price_kobo").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    ...timestamps
+  },
+  (table) => ({
+    organisationArchivedIndex: index("catalogue_items_org_archived_at_idx").on(
+      table.organisationId,
+      table.archivedAt
+    )
+  })
+);
+
 export const invoiceNumberSequences = pgTable(
   "invoice_number_sequences",
   {
@@ -286,6 +310,7 @@ export const invoices = pgTable(
     currency: varchar("currency", { length: 3 }).notNull().default("NGN"),
     issueDate: date("issue_date").notNull(),
     dueDate: date("due_date").notNull(),
+    customerReference: varchar("customer_reference", { length: 120 }),
     notes: text("notes"),
     subtotalKobo: integer("subtotal_kobo").notNull().default(0),
     discountKobo: integer("discount_kobo").notNull().default(0),
@@ -633,6 +658,7 @@ export const marketingWaitlistEntries = pgTable(
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(organisationMembers),
   sentInvitations: many(organisationInvitations),
+  catalogueItems: many(catalogueItems),
   refreshTokens: many(refreshTokens)
 }));
 
@@ -641,6 +667,7 @@ export const organisationsRelations = relations(organisations, ({ many, one }) =
   invitations: many(organisationInvitations),
   paymentAccounts: many(organisationPaymentAccounts),
   customers: many(customers),
+  catalogueItems: many(catalogueItems),
   invoices: many(invoices),
   paymentEvents: many(paymentEvents),
   paymentRefunds: many(paymentRefunds),
@@ -701,6 +728,17 @@ export const customersRelations = relations(customers, ({ one }) => ({
   }),
   createdBy: one(users, {
     fields: [customers.createdByUserId],
+    references: [users.id]
+  })
+}));
+
+export const catalogueItemsRelations = relations(catalogueItems, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [catalogueItems.organisationId],
+    references: [organisations.id]
+  }),
+  createdBy: one(users, {
+    fields: [catalogueItems.createdByUserId],
     references: [users.id]
   })
 }));
@@ -854,6 +892,7 @@ export type BusinessProfile = typeof businessProfiles.$inferSelect;
 export type OrganisationPaymentAccount = typeof organisationPaymentAccounts.$inferSelect;
 export type NewOrganisationPaymentAccount = typeof organisationPaymentAccounts.$inferInsert;
 export type Customer = typeof customers.$inferSelect;
+export type CatalogueItem = typeof catalogueItems.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;

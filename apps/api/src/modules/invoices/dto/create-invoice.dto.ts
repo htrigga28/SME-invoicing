@@ -8,11 +8,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateNested
 } from "class-validator";
 
+import { MAX_KOBO } from "../../../common/money-limits";
 import { InvoiceLineItemDto } from "./invoice-line-item.dto";
 
 export class CreateInvoiceDto {
@@ -28,6 +30,12 @@ export class CreateInvoiceDto {
   @IsDateString()
   dueDate!: string;
 
+  @ApiPropertyOptional({ example: "PO-2026-042" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  customerReference?: string | null;
+
   @ApiPropertyOptional({ example: "Payment due within 14 days." })
   @IsOptional()
   @IsString()
@@ -39,6 +47,7 @@ export class CreateInvoiceDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(MAX_KOBO)
   discountKobo?: number;
 
   @ApiPropertyOptional({ example: 0 })
@@ -46,6 +55,7 @@ export class CreateInvoiceDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(MAX_KOBO)
   taxKobo?: number;
 
   @ApiProperty({ type: [InvoiceLineItemDto] })
