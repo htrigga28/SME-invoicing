@@ -102,7 +102,7 @@ describe("PublicInvoicePage", () => {
     expect(screen.getByText("Lagos Bright Prints")).toBeInTheDocument();
     expect(screen.getByText("Design retainer")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Pay .* online/ })).toBeEnabled();
-    expect(screen.getByText("Powered by SME Invoicing")).toBeInTheDocument();
+    expect(screen.getByText("Powered by Lumina")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Dashboard/ })).not.toBeInTheDocument();
   });
 

@@ -1,6 +1,5 @@
 const DEFAULT_SITE_URL = "http://localhost:3002";
 const DEFAULT_APP_URL = "http://localhost:3000";
-const DEFAULT_API_URL = "http://localhost:4000";
 
 export function getSiteUrl() {
   return getRequiredPublicUrl(
@@ -15,14 +14,6 @@ export function getAppUrl() {
     "NEXT_PUBLIC_APP_URL",
     process.env.NEXT_PUBLIC_APP_URL,
     DEFAULT_APP_URL
-  );
-}
-
-export function getApiUrl() {
-  return getRequiredPublicUrl(
-    "NEXT_PUBLIC_API_URL",
-    process.env.NEXT_PUBLIC_API_URL,
-    DEFAULT_API_URL
   );
 }
 
@@ -41,9 +32,12 @@ function getRequiredPublicUrl(
 
   return developmentFallback;
 }
-
 export function getAppLoginUrl() {
   return `${getAppUrl()}/login`;
+}
+
+export function getAppRegisterUrl() {
+  return `${getAppUrl()}/register`;
 }
 
 export function getAbsoluteSiteUrl(path = "/") {

@@ -132,7 +132,7 @@ export function PublicReceiptPage({ token }: { token: string }) {
             />
           </section>
           <footer className="border-t border-slate-200 pt-5 text-center text-xs text-slate-500">
-            Powered by SME Invoicing
+            Powered by Lumina
           </footer>
         </article>
       </div>

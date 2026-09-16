@@ -9,8 +9,14 @@ describe("MarketingFooter", () => {
   it("keeps product anchors local on the homepage", () => {
     render(<MarketingFooter />);
 
-    expect(screen.getByRole("link", { name: "Payment trail" })).toHaveAttribute("href", "#payment-trail");
-    expect(screen.getByRole("link", { name: "Early access" })).toHaveAttribute("href", "#waitlist");
+    expect(screen.getByRole("link", { name: "Payment trail" })).toHaveAttribute(
+      "href",
+      "#payment-trail"
+    );
+    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute(
+      "href",
+      "#get-started"
+    );
   });
 
   it("routes section links through the homepage from legal routes", () => {
@@ -18,6 +24,9 @@ describe("MarketingFooter", () => {
     render(<MarketingFooter />);
 
     expect(screen.getByRole("link", { name: "Outcomes" })).toHaveAttribute("href", "/#outcomes");
-    expect(screen.getByRole("link", { name: "Early access" })).toHaveAttribute("href", "/#waitlist");
+    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute(
+      "href",
+      "/#get-started"
+    );
   });
 });

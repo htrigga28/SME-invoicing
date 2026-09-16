@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ThrottlerGuard } from "@nestjs/throttler";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -16,6 +17,7 @@ export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Post("auth/register")
+  @UseGuards(ThrottlerGuard)
   register(@Body() body: RegisterDto) {
     return this.authService.register(body);
   }

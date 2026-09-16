@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe("MarketingHeader", () => {
-  it("renders the focused Product menu, sign-in URL, and waitlist CTA", () => {
+  it("renders the focused Product menu, sign-in URL, and signup CTA", () => {
     process.env.NEXT_PUBLIC_APP_URL = "https://app.lumina.test";
 
     render(<MarketingHeader />);
@@ -26,15 +26,18 @@ describe("MarketingHeader", () => {
     expect(productButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(productButton);
     expect(productButton).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: /Payment trail/i })).toHaveAttribute("href", "#payment-trail");
+    expect(screen.getByRole("link", { name: /Payment trail/i })).toHaveAttribute(
+      "href",
+      "#payment-trail"
+    );
     expect(screen.getByText("Follow money from invoice to receipt")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Sign In" })[0]).toHaveAttribute(
       "href",
       "https://app.lumina.test/login"
     );
-    expect(screen.getAllByRole("link", { name: /join waitlist/i })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: /create account/i })[0]).toHaveAttribute(
       "href",
-      "#waitlist"
+      "https://app.lumina.test/register"
     );
   });
 
@@ -46,7 +49,10 @@ describe("MarketingHeader", () => {
 
     expect(screen.getByText("Run the day from financial truth")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.getByRole("button", { name: "Product" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Product" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
   });
 
   it("opens the mobile navigation drawer", () => {
@@ -66,10 +72,13 @@ describe("MarketingHeader", () => {
     render(<MarketingHeader />);
 
     fireEvent.click(screen.getByRole("button", { name: "Product" }));
-    expect(screen.getByRole("link", { name: /Payment trail/i })).toHaveAttribute("href", "/#payment-trail");
-    expect(screen.getAllByRole("link", { name: /join waitlist/i })[0]).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Payment trail/i })).toHaveAttribute(
       "href",
-      "/?waitlist_source=nav#waitlist"
+      "/#payment-trail"
+    );
+    expect(screen.getAllByRole("link", { name: /create account/i })[0]).toHaveAttribute(
+      "href",
+      "http://localhost:3000/register"
     );
   });
 });

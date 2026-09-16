@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardShell } from "./dashboard-shell";
@@ -36,7 +36,8 @@ const appShellContext = {
       logoFileId: null,
       setupCompletedAt: "2026-06-30T00:00:00.000Z"
     },
-    onboardingRequired: false
+    onboardingRequired: false,
+    onboardingStep: null
   }
 };
 
@@ -71,9 +72,22 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.history.pushState({}, "", "/");
 });
 
 describe("DashboardShell", () => {
+  it("shows the first-invoice action after signup completes", async () => {
+    window.history.pushState({}, "", "/dashboard?onboarding=complete");
+
+    render(<DashboardShell />);
+
+    expect(await screen.findByText("Your workspace is ready")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create first invoice" })).toHaveAttribute(
+      "href",
+      "/invoices/new"
+    );
+  });
+
   it("shows a payment setup CTA for owners when online payments are not configured", async () => {
     render(<DashboardShell />);
 
@@ -112,6 +126,23 @@ describe("DashboardShell", () => {
     expect(screen.getByText("Outstanding")).toBeInTheDocument();
     expect(screen.getByText("NGN 45,000.00")).toBeInTheDocument();
     expect(screen.getByTestId("cashflow-chart")).toBeInTheDocument();
+  });
+
+  it("keeps dashboard attention in setup, review, overdue, pending order", async () => {
+    render(<DashboardShell />);
+
+    const attention = await screen.findByRole("region", { name: "Attention" });
+    const headings = within(attention)
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent);
+
+    expect(headings).toEqual(["Needs review", "Overdue", "Pending confirmations"]);
+    expect(within(attention).getByText("Online payments are not configured")).toBeInTheDocument();
+    expect(within(attention).getByRole("link", { name: "Set up online payments" })).toHaveAttribute(
+      "href",
+      "/settings/payment-setup"
+    );
+    expect(within(attention).getAllByRole("link", { name: "Review" })).toHaveLength(3);
   });
 });
 

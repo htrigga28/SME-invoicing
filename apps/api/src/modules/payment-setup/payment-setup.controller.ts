@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
+import { AllowIncompleteOnboarding } from "../../common/decorators/allow-incomplete-onboarding.decorator";
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -16,6 +17,7 @@ import { PaymentSetupService } from "./payment-setup.service";
 @ApiBearerAuth()
 @Controller("payment-setup")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@AllowIncompleteOnboarding()
 export class PaymentSetupController {
   constructor(
     @Inject(PaymentSetupService) private readonly paymentSetupService: PaymentSetupService

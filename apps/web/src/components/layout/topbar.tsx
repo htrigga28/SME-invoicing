@@ -59,7 +59,7 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--topbar-background)] backdrop-blur-xl print:hidden">
-      <div className="mx-auto flex min-h-16 w-full max-w-[1440px] items-center justify-between gap-3 px-4 lg:px-6">
+      <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center justify-between gap-3 px-4 lg:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <button
             aria-expanded={mobileOpen}

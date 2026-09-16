@@ -30,6 +30,8 @@ export type BusinessProfile = {
   setupCompletedAt: string | null;
 };
 
+export type OnboardingStep = "business_profile" | "payment_setup" | null;
+
 export type AuthResponse = {
   user: SafeUser;
   activeOrganisation: Organisation;
@@ -38,6 +40,7 @@ export type AuthResponse = {
   accessToken: string;
   refreshToken: string;
   onboardingRequired: boolean;
+  onboardingStep: OnboardingStep;
 };
 
 export type MeResponse = Omit<AuthResponse, "accessToken" | "refreshToken">;

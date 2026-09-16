@@ -31,7 +31,8 @@ vi.mock("./payment-setup-api", () => ({
 vi.mock("sonner", () => ({
   toast: {
     error: vi.fn(),
-    success: vi.fn()
+    success: vi.fn(),
+    warning: vi.fn()
   }
 }));
 
@@ -146,7 +147,9 @@ describe("PaymentSetupContent", () => {
       target: { value: "123" }
     });
 
-    expect(screen.getByText("Enter a 10-digit Nigerian account number.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Enter the complete 10-digit Nigerian account number.")
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Resolve account" })).toBeDisabled();
   });
 
@@ -178,9 +181,35 @@ describe("PaymentSetupContent", () => {
     expect(
       await screen.findByText("Public invoice payments use this Paystack payout account.")
     ).toBeInTheDocument();
-    expect(toast.success).toHaveBeenCalledWith("Payment setup activated.", {
-      id: "payment-setup-activated"
+    expect(toast.success).toHaveBeenCalledWith(
+      "Payment Setup activated. You're ready to create your first invoice.",
+      {
+        id: "payment-setup-activated"
+      }
+    );
+  });
+
+  it("presents verification delay as a warning after submission", async () => {
+    vi.mocked(createPaymentSetupSubaccount).mockResolvedValueOnce({
+      paymentAccount: { ...activeAccount, status: "verification_delayed", verifiedAt: null }
     });
+
+    render(<PaymentSetupContent accessToken="token" role="owner" />);
+
+    await fillValidSetupForm();
+    fireEvent.click(screen.getByRole("button", { name: "Resolve account" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm and activate payouts" }));
+
+    expect(await screen.findByText("Verification delayed")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Paystack may require additional verification before settlement is fully active."
+      )
+    ).toHaveAttribute("role", "status");
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Payment Setup submitted. Paystack verification is still in progress.",
+      { id: "payment-setup-activated" }
+    );
   });
 
   it("renders active account details without the provider subaccount code", async () => {

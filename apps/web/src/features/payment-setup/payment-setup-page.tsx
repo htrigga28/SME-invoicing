@@ -6,15 +6,13 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader as SharedPageHeader } from "@/components/layout/page";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Alert, type AlertTone } from "@/components/ui/feedback";
+import { FieldError, FieldHint, FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { StatusBadge as SharedStatusBadge } from "@/components/ui/status-badge";
-import {
-  compactPrimaryActionClassName,
-  destructiveActionClassName,
-  primaryActionClassName
-} from "@/components/ui/styles";
 import type { Membership } from "@/features/auth/types";
 import { clearStoredSession } from "@/features/auth/session";
 import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
@@ -42,7 +40,11 @@ export function PaymentSetupPage() {
   return (
     <AppShell>
       {({ accessToken, me }) => (
-        <PaymentSetupContent accessToken={accessToken} role={me.membership.role} />
+        <PaymentSetupContent
+          accessToken={accessToken}
+          onboardingMode={me.onboardingStep === "payment_setup"}
+          role={me.membership.role}
+        />
       )}
     </AppShell>
   );
@@ -50,13 +52,15 @@ export function PaymentSetupPage() {
 
 export function PaymentSetupContent({
   accessToken,
+  onboardingMode = false,
   role
 }: {
   accessToken: string;
+  onboardingMode?: boolean;
   role: Membership["role"];
 }) {
   const searchParams = useSearchParams();
-  const fromOnboarding = searchParams.get("source") === "onboarding";
+  const fromOnboarding = onboardingMode || searchParams.get("source") === "onboarding";
   const [accountResponse, setAccountResponse] = useState<PaymentSetupAccountResponse | null>(null);
   const [accountState, setAccountState] = useState<LoadState>("loading");
   const [pageError, setPageError] = useState<string | null>(null);
@@ -211,11 +215,26 @@ export function PaymentSetupContent({
         status: response.paymentAccount.status,
         paymentAccount: response.paymentAccount
       });
-      toast.success("Payment setup activated.", { id: "payment-setup-activated" });
+      const verificationDelayed = response.paymentAccount.status === "verification_delayed";
+      if (verificationDelayed) {
+        toast.warning("Payment Setup submitted. Paystack verification is still in progress.", {
+          id: "payment-setup-activated"
+        });
+      } else {
+        toast.success("Payment Setup activated. You're ready to create your first invoice.", {
+          id: "payment-setup-activated"
+        });
+      }
       resetWizard();
       setShowDifferentAccountSetup(false);
       setBankState("idle");
       setBankLoadError(null);
+
+      if (fromOnboarding) {
+        window.setTimeout(() => {
+          window.location.assign("/dashboard?onboarding=complete");
+        }, 600);
+      }
     } catch (createError) {
       handleAuthError(createError);
       const message = getApiErrorMessage(createError, "Could not activate payment setup.");
@@ -298,16 +317,20 @@ export function PaymentSetupContent({
   return (
     <section className="space-y-5">
       <PageHeader
-        description="Configure where invoice payments should settle."
-        eyebrow="Settings"
+        description={
+          fromOnboarding
+            ? "Connect the Nigerian bank account where confirmed invoice payments should settle."
+            : "Configure where invoice payments should settle."
+        }
+        eyebrow={fromOnboarding ? "Signup" : "Settings"}
         title="Payment Setup"
       />
 
       {fromOnboarding ? (
         <StatusPanel
-          message="You can create invoices now, but customers cannot pay online until payouts are configured."
-          title="Next: activate online payments"
-          tone="warning"
+          message="Resolve and confirm your payout account to finish signup. If Paystack needs more time to verify it, you can still enter the workspace after submission."
+          title="Final step: connect payouts"
+          tone="info"
         />
       ) : null}
 
@@ -321,13 +344,9 @@ export function PaymentSetupContent({
       {accountState === "error" ? (
         <StatusPanel
           action={
-            <button
-              className={compactPrimaryActionClassName}
-              onClick={() => void loadAccount()}
-              type="button"
-            >
+            <Button onClick={() => void loadAccount()} size="sm" type="button">
               Retry
-            </button>
+            </Button>
           }
           message={pageError ?? "Please try loading Payment Setup again."}
           title="Could not load payment setup"
@@ -454,90 +473,103 @@ function SetupWizard({
         resolvedAccount ? "xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]" : ""
       }`}
     >
-      <form className="rounded-lg border border-slate-200 bg-white p-5" onSubmit={onResolve}>
-        <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Step 1</p>
-          <h2 className="text-xl font-semibold text-slate-950">
-            Select bank and enter account number
-          </h2>
-        </div>
+      <Card className="p-5">
+        <form onSubmit={onResolve}>
+          <div>
+            <p className="text-sm font-semibold text-[var(--accent)]">Resolve account</p>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
+              Select bank and enter account number
+            </h2>
+          </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_220px]">
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Bank</span>
-            <Select
-              disabled={bankState === "loading"}
-              onChange={(event) => onSelectedBankChange(event.target.value)}
-              value={selectedBankCode}
-              wrapperClassName="mt-1"
-            >
-              <option value="">
-                {bankState === "loading" ? "Loading banks..." : "Select bank"}
-              </option>
-              {banks.map((bank) => (
-                <option key={bank.code} value={bank.code}>
-                  {bank.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Account number</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => onAccountNumberChange(event.target.value)}
-              placeholder="10 digits"
-              value={accountNumber}
-            />
-          </label>
-        </div>
-
-        {accountNumber && !accountNumberIsValid ? (
-          <p className="mt-3 text-sm text-red-700">Enter a 10-digit Nigerian account number.</p>
-        ) : null}
-
-        {resolveError ? <p className="mt-3 text-sm text-red-700">{resolveError}</p> : null}
-
-        {bankState === "error" ? (
-          <StatusPanel
-            action={
-              <button
-                className={compactPrimaryActionClassName}
-                onClick={onRetryBanks}
-                type="button"
+          <div className="mt-5 grid gap-4 md:grid-cols-[1fr_220px]">
+            <FormField htmlFor="payment-setup-bank">
+              <FieldLabel>Bank</FieldLabel>
+              <Select
+                id="payment-setup-bank"
+                disabled={bankState === "loading"}
+                onChange={(event) => onSelectedBankChange(event.target.value)}
+                value={selectedBankCode}
+                wrapperClassName="mt-1"
               >
-                Retry
-              </button>
-            }
-            message={bankLoadError ?? "Please try loading the bank list again."}
-            title="Could not load banks"
-            tone="error"
-          />
-        ) : null}
+                <option value="">
+                  {bankState === "loading" ? "Loading banks..." : "Select bank"}
+                </option>
+                {banks.map((bank) => (
+                  <option key={bank.code} value={bank.code}>
+                    {bank.name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button
-            className={primaryActionClassName}
-            disabled={!selectedBankCode || !accountNumberIsValid || isResolving || isCreating}
-            type="submit"
-          >
-            {isResolving ? "Resolving..." : "Resolve account"}
-          </button>
-        </div>
-        {!resolvedAccount ? (
-          <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Step 2 appears after Paystack resolves the account name.
-          </p>
-        ) : null}
-      </form>
+            <FormField htmlFor="payment-setup-account-number">
+              <FieldLabel>Account number</FieldLabel>
+              <Input
+                aria-describedby={
+                  accountNumber && !accountNumberIsValid
+                    ? "payment-account-number-error"
+                    : undefined
+                }
+                aria-invalid={Boolean(accountNumber && !accountNumberIsValid)}
+                autoComplete="off"
+                className="mt-1 font-mono tabular-nums"
+                id="payment-setup-account-number"
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(event) => onAccountNumberChange(event.target.value)}
+                placeholder="10 digits"
+                value={accountNumber}
+              />
+            </FormField>
+          </div>
+
+          {accountNumber && !accountNumberIsValid ? (
+            <FieldError id="payment-account-number-error">
+              Enter the complete 10-digit Nigerian account number.
+            </FieldError>
+          ) : null}
+
+          {resolveError ? <FieldError role="alert">{resolveError}</FieldError> : null}
+
+          {bankState === "error" ? (
+            <StatusPanel
+              action={
+                <Button onClick={onRetryBanks} size="sm" type="button">
+                  Retry
+                </Button>
+              }
+              message={bankLoadError ?? "Please try loading the bank list again."}
+              title="Could not load banks"
+              tone="error"
+            />
+          ) : null}
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Button
+              disabled={!selectedBankCode || !accountNumberIsValid || isResolving || isCreating}
+              isLoading={isResolving}
+              loadingLabel="Resolving account..."
+              type="submit"
+            >
+              Resolve account
+            </Button>
+          </div>
+          {!resolvedAccount ? (
+            <FieldHint className="mt-4">
+              Confirmation appears after Paystack resolves the account name. Lumina stores only the
+              masked account details after activation.
+            </FieldHint>
+          ) : null}
+        </form>
+      </Card>
 
       {resolvedAccount ? (
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Step 2</p>
-          <h2 className="text-xl font-semibold text-slate-950">Confirm resolved account</h2>
+        <Card className="p-5">
+          <p className="text-sm font-semibold text-[var(--accent)]">Confirm account</p>
+          <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
+            Confirm resolved account
+          </h2>
 
           <div className="mt-5 space-y-4">
             <dl className="grid gap-3 text-sm">
@@ -548,18 +580,22 @@ function SetupWizard({
               />
               <InfoRow label="Account name" value={resolvedAccount.accountName} />
             </dl>
-            <p className="text-sm text-slate-600">Confirm this is your business payout account.</p>
-            {activationError ? <p className="text-sm text-red-700">{activationError}</p> : null}
-            <button
-              className={primaryActionClassName}
+            <p className="text-sm text-[var(--text-secondary)]">
+              Confirm this is your business payout account before activation.
+            </p>
+            {activationError ? <FieldError role="alert">{activationError}</FieldError> : null}
+            <Button
               disabled={isCreating || !accountNumberIsValid || !selectedBank}
+              isLoading={isCreating}
+              loadingLabel="Activating payouts..."
               onClick={onConfirm}
+              size="lg"
               type="button"
             >
-              {isCreating ? "Activating..." : "Confirm and activate payouts"}
-            </button>
+              Confirm and activate payouts
+            </Button>
           </div>
-        </section>
+        </Card>
       ) : null}
     </div>
   );
@@ -583,25 +619,25 @@ function PaymentAccountStatusCard({
   showDifferentAccountSetup: boolean;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5">
+    <Card className="p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-semibold text-slate-950">Payout account</h2>
+            <h2 className="text-xl font-semibold text-[var(--text-primary)]">Payout account</h2>
             <StatusBadge status={account.status} />
           </div>
           {account.status === "active" ? (
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
               Public invoice payments use this Paystack payout account.
             </p>
           ) : null}
           {account.status === "verification_delayed" ? (
-            <p className="mt-2 text-sm text-amber-800">
+            <p className="mt-2 text-sm text-[var(--warning)]" role="status">
               Paystack may require additional verification before settlement is fully active.
             </p>
           ) : null}
           {account.status === "disabled" ? (
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
               This payout account is disabled. You can reactivate it or set up a different payout
               account.
             </p>
@@ -611,30 +647,26 @@ function PaymentAccountStatusCard({
           <div className="flex flex-wrap gap-2">
             {account.status === "disabled" ? (
               <>
-                <button className={primaryActionClassName} onClick={onReactivate} type="button">
+                <Button onClick={onReactivate} type="button">
                   Reactivate this account
-                </button>
-                <button
-                  className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-                  onClick={onSetupDifferent}
-                  type="button"
-                >
+                </Button>
+                <Button onClick={onSetupDifferent} type="button" variant="outline">
                   Set up a different account
-                </button>
+                </Button>
               </>
             ) : (
-              <button className={destructiveActionClassName} onClick={onDisable} type="button">
+              <Button onClick={onDisable} type="button" variant="destructive">
                 Disable account
-              </button>
+              </Button>
             )}
           </div>
         ) : null}
       </div>
 
       {errorMessage ? (
-        <p className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <Alert className="mt-4" role="alert" tone="error">
           {errorMessage}
-        </p>
+        </Alert>
       ) : null}
 
       <dl className="mt-5 grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
@@ -650,19 +682,21 @@ function PaymentAccountStatusCard({
       </dl>
 
       {account.status === "disabled" && canManage && showDifferentAccountSetup ? (
-        <p className="mt-5 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <p className="mt-5 text-sm text-[var(--text-secondary)]">
           Use this if you want payments to settle to a different bank account.
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 break-words font-medium text-slate-950">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words font-medium text-[var(--text-primary)]">{value}</dd>
     </div>
   );
 }

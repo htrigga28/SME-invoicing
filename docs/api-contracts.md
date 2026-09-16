@@ -17,11 +17,11 @@ All protected endpoints derive organisation access from the authenticated user's
 
 | Endpoint | Auth | Role | Request | Response | Important errors |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | None | `{ email, password, name }` | `{ user, organisation, membership, onboardingRequired: true }` | Duplicate email, weak password. |
-| `POST /auth/login` | Public | None | `{ email, password }` | `{ user, accessToken, refreshToken, onboardingRequired }` | Invalid credentials. |
+| `POST /auth/register` | Public | None | `{ email, password, name }` | `{ user, activeOrganisation, membership, businessProfile, accessToken, refreshToken, onboardingRequired: true, onboardingStep: "business_profile" }` | Duplicate email, weak password, throttled request. |
+| `POST /auth/login` | Public | None | `{ email, password }` | `{ user, accessToken, refreshToken, onboardingRequired, onboardingStep }` | Invalid credentials. |
 | `POST /auth/refresh` | Refresh token | Member | `{ refreshToken }` | `{ accessToken, refreshToken }` | Invalid/expired refresh token. |
 | `POST /auth/logout` | Required | Member | `{ refreshToken? }` | `{ success: true }` | Invalid session. |
-| `GET /me` | Required | Member | None | `{ user, activeOrganisation, membership, businessProfile }` | No active membership. |
+| `GET /me` | Required | Member | None | `{ user, activeOrganisation, membership, businessProfile, onboardingRequired, onboardingStep }` | No active membership. |
 | `POST /me/active-organisation` | Required | Member | `{ organisationId }` | `{ activeOrganisation, membership }` | Organisation not in authenticated user's active memberships. |
 
 Registration rules:
@@ -33,7 +33,9 @@ Registration rules:
 - Refresh should rotate the refresh token, revoke the old token hash, and return a new raw refresh token once.
 - Logout should revoke the submitted refresh token hash when provided.
 - Response must not return password hash.
-- New users with incomplete business profile should be directed to onboarding.
+- `onboardingStep` is `business_profile` until profile and organisation onboarding timestamps are set, `payment_setup` until any organisation payment-account record exists, and `null` afterward.
+- `onboardingRequired` remains `onboardingStep !== null` for compatibility.
+- Any submitted payment-account record completes onboarding, including `verification_delayed`; disabling it later does not restart onboarding.
 
 Active organisation rules:
 
@@ -54,7 +56,7 @@ Rules:
 
 - Only Owner/Admin can update business profile.
 - Completing business profile sets `setup_completed_at` and organisation `onboarding_completed_at`.
-- Dashboard access is blocked until business profile setup is complete.
+- After business profile setup, the owner advances to Payment Setup; dashboard access remains blocked until a payment account is submitted.
 
 ## Payment Setup
 
@@ -619,7 +621,7 @@ Dashboard overview derives organisation scope from the authenticated membership 
 
 Dashboard cashflow grouping uses `Africa/Lagos` calendar buckets for display. Default range is the last 30 days, resolved as `dateTo = today` and `dateFrom = 29 days before dateTo`; ranges beyond 2 years are rejected.
 
-Dashboard and exports are blocked until business profile setup is complete.
+Dashboard and exports are blocked while `onboardingStep` is not `null`.
 
 CSV exports are generated synchronously and are not persisted. All export endpoints derive organisation scope from the authenticated membership and enforce backend RBAC. Viewer cannot export. Audit-log CSV export is Owner/Admin only; Accountant can export customers, invoices, payments, and receipts only.
 

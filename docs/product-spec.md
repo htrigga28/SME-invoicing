@@ -70,8 +70,8 @@ register
 -> owner membership created
 -> blank business profile created
 -> business profile setup
--> dashboard available
 -> payment setup
+-> dashboard available
 -> customer creation
 -> invoice creation
 -> public invoice link
@@ -103,15 +103,14 @@ business profile complete
 
 Direct public registration must create the user, organisation/workspace, Owner membership, and blank business profile in one database transaction.
 
-New users with incomplete business profile setup should be directed to onboarding. Dashboard access should remain blocked until the business profile is complete.
+New owners should resume at the first incomplete signup step. Dashboard access remains blocked until the business profile is complete and the organisation has submitted a Payment Setup account.
 
 After business profile completion:
 
-- Dashboard access becomes available.
-- Payment Setup must be highlighted as required before accepting online payments.
-- Customer and invoice creation can continue before Payment Setup is complete.
-- Sending and sharing invoices can continue before Payment Setup is complete if desired.
-- Public invoice viewing remains available without Payment Setup.
+- The owner advances directly to required Payment Setup.
+- Dashboard, customer, and invoice workflows remain gated until a payout account is submitted.
+- An `active` or `verification_delayed` account submission completes signup.
+- Disabling that account later does not restart onboarding.
 - Public invoice payment initialization must be blocked until an active payment account exists.
 
 Completing the business profile:

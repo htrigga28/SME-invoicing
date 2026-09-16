@@ -64,6 +64,7 @@ describe("PublicReceiptPage", () => {
     expect(screen.getByText("Akin & Co Creative Services")).toBeInTheDocument();
     expect(screen.getByText("Lagos Bright Prints")).toBeInTheDocument();
     expect(screen.getByText("PAYSTACK_REF")).toBeInTheDocument();
+    expect(screen.getByText("Powered by Lumina")).toBeInTheDocument();
     expect(screen.queryByText("Operations workspace")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Print receipt" }));

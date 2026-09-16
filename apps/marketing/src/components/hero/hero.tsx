@@ -1,7 +1,7 @@
 import { ArrowDown } from "lucide-react";
 
 import { PaymentTrailVisual } from "@/components/hero/payment-trail-visual";
-import { WaitlistAnchor } from "@/components/ui/waitlist-anchor";
+import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { hero } from "@/content/site-copy";
 
 export function Hero() {
@@ -18,9 +18,7 @@ export function Hero() {
         <h1 id="hero-title">{hero.title}</h1>
         <p className="hero-support">{hero.copy}</p>
         <div className="hero-actions">
-          <WaitlistAnchor size="lg" source="hero">
-            {hero.primaryCta}
-          </WaitlistAnchor>
+          <SignupAnchor size="lg">{hero.primaryCta}</SignupAnchor>
           <a className="text-action" href="#payment-trail">
             <span>{hero.secondaryCta}</span>
             <ArrowDown aria-hidden="true" className="h-4 w-4" />

@@ -2,14 +2,17 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { FilePlus2 } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 import { LinkButton } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { getMe, logout } from "@/features/auth/auth-api";
+import { getOnboardingPath } from "@/features/auth/onboarding";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
 import type { MeResponse, Membership } from "@/features/auth/types";
+import { OnboardingProgress } from "@/features/onboarding/onboarding-progress";
 import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
+import { cn } from "@/lib/cn";
 
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -20,19 +23,66 @@ export type AppShellContext = {
 };
 
 type AppShellProps = {
-  children: (context: AppShellContext) => React.ReactNode;
+  children: ((context: AppShellContext) => React.ReactNode) | React.ReactNode;
   deniedMessage?: string;
   requiredRoles?: readonly Membership["role"][];
 };
 
 type ShellState = "loading" | "ready" | "denied" | "error";
+const SIDEBAR_STORAGE_KEY = "sme-invoicing.sidebar-expanded";
+const ME_CACHE_TTL_MS = 30_000;
+
+const meCache = new Map<string, { loadedAt: number; response: MeResponse }>();
+
+const AppShellContextProvider = createContext<AppShellContext | null>(null);
 
 export function AppShell({ children, deniedMessage, requiredRoles }: AppShellProps) {
+  const parentContext = useContext(AppShellContextProvider);
+
+  if (parentContext) {
+    const isDenied =
+      requiredRoles?.length && !requiredRoles.includes(parentContext.me.membership.role);
+
+    if (isDenied) {
+      return (
+        <StatusPanel
+          message={deniedMessage ?? "You do not have access to this page."}
+          tone="warning"
+        />
+      );
+    }
+
+    return <>{renderShellChildren(children, parentContext)}</>;
+  }
+
+  return (
+    <WorkspaceShell
+      deniedMessage={deniedMessage}
+      requiredRoles={requiredRoles}
+      renderChildren={(context) => renderShellChildren(children, context)}
+    />
+  );
+}
+
+function WorkspaceShell({
+  deniedMessage,
+  requiredRoles,
+  renderChildren
+}: {
+  deniedMessage?: string | undefined;
+  requiredRoles?: readonly Membership["role"][] | undefined;
+  renderChildren: (context: AppShellContext) => React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [context, setContext] = useState<AppShellContext | null>(null);
   const [state, setState] = useState<ShellState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+
+  useEffect(() => {
+    setSidebarExpanded(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true");
+  }, []);
 
   useEffect(() => {
     const session = getStoredSession();
@@ -47,24 +97,20 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
       refreshToken: session.refreshToken
     };
 
+    const cached = meCache.get(sessionContext.accessToken);
+    if (cached && Date.now() - cached.loadedAt < ME_CACHE_TTL_MS) {
+      applyWorkspaceResponse(cached.response);
+      return;
+    }
+
     getMe(sessionContext.accessToken)
       .then((response) => {
-        if (response.onboardingRequired) {
-          router.replace("/onboarding/business");
-          return;
-        }
-
-        setContext({ accessToken: sessionContext.accessToken, me: response });
-
-        if (requiredRoles?.length && !requiredRoles.includes(response.membership.role)) {
-          setState("denied");
-          return;
-        }
-
-        setState("ready");
+        meCache.set(sessionContext.accessToken, { loadedAt: Date.now(), response });
+        applyWorkspaceResponse(response);
       })
       .catch((loadError) => {
         if (isApiRequestError(loadError) && loadError.status === 401) {
+          meCache.delete(sessionContext.accessToken);
           clearStoredSession();
           router.replace("/login");
           return;
@@ -73,7 +119,26 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
         setError(getApiErrorMessage(loadError, "Could not load workspace."));
         setState("error");
       });
-  }, [requiredRoles, router]);
+
+    function applyWorkspaceResponse(response: MeResponse) {
+      const isAllowedPaymentSetupRoute =
+        response.onboardingStep === "payment_setup" && pathname === "/settings/payment-setup";
+
+      if (response.onboardingStep && !isAllowedPaymentSetupRoute) {
+        router.replace(getOnboardingPath(response.onboardingStep));
+        return;
+      }
+
+      setContext({ accessToken: sessionContext.accessToken, me: response });
+
+      if (requiredRoles?.length && !requiredRoles.includes(response.membership.role)) {
+        setState("denied");
+        return;
+      }
+
+      setState("ready");
+    }
+  }, [pathname, requiredRoles, router]);
 
   async function handleLogout() {
     const session = getStoredSession();
@@ -83,15 +148,12 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
     }
 
     clearStoredSession();
+    meCache.delete(session?.accessToken ?? "");
     router.push("/login");
   }
 
   if (state === "loading") {
-    return (
-      <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
-        <Alert>Loading workspace...</Alert>
-      </main>
-    );
+    return <WorkspaceLoadingState />;
   }
 
   if (!context) {
@@ -102,24 +164,95 @@ export function AppShell({ children, deniedMessage, requiredRoles }: AppShellPro
     );
   }
 
+  if (context.me.onboardingStep === "payment_setup") {
+    return (
+      <main className="min-h-screen bg-[var(--background)] px-4 py-10 text-[var(--text-primary)] sm:px-6">
+        <section className="mx-auto w-full max-w-4xl">
+          <OnboardingProgress currentStep={3} />
+          <AppShellContextProvider.Provider value={context}>
+            <div className="mt-8">{renderChildren(context)}</div>
+          </AppShellContextProvider.Provider>
+        </section>
+      </main>
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)] md:pl-20">
-      <Sidebar activePath={pathname} role={context.me.membership.role} />
-      <div className="min-w-0 flex-1">
-        <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
-        <div className="mx-auto w-full max-w-[1440px] px-4 py-6 pb-24 lg:px-6">
-          {state === "denied" ? (
-            <StatusPanel
-              message={deniedMessage ?? "You do not have access to this page."}
-              tone="warning"
-            />
-          ) : null}
-          {state === "error" ? (
-            <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
-          ) : null}
-          {state === "ready" ? children(context) : null}
+    <main
+      className={cn(
+        "min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-[padding] duration-200 ease-out",
+        sidebarExpanded ? "md:pl-64" : "md:pl-20"
+      )}
+    >
+      <Sidebar
+        activePath={pathname}
+        expanded={sidebarExpanded}
+        onToggle={() => {
+          setSidebarExpanded((current) => {
+            const next = !current;
+            window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+            return next;
+          });
+        }}
+        role={context.me.membership.role}
+      />
+      <AppShellContextProvider.Provider value={context}>
+        <div className="min-w-0 flex-1">
+          <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 lg:px-6">
+            {state === "denied" ? (
+              <StatusPanel
+                message={deniedMessage ?? "You do not have access to this page."}
+                tone="warning"
+              />
+            ) : null}
+            {state === "error" ? (
+              <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
+            ) : null}
+            {state === "ready" ? renderChildren(context) : null}
+          </div>
+          <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
         </div>
-        <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
+      </AppShellContextProvider.Provider>
+    </main>
+  );
+}
+
+function renderShellChildren(
+  children: AppShellProps["children"],
+  context: AppShellContext
+): React.ReactNode {
+  return typeof children === "function" ? children(context) : children;
+}
+
+function WorkspaceLoadingState() {
+  return (
+    <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)]">
+      <div
+        aria-hidden="true"
+        className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-[var(--accent-muted)]"
+      >
+        <div className="h-full w-2/5 animate-pulse bg-[var(--accent)]" />
+      </div>
+      <div
+        aria-busy="true"
+        aria-label="Loading page"
+        className="mx-auto w-full max-w-[1600px] space-y-6 px-4 py-8 pb-24 lg:px-6"
+        role="status"
+      >
+        <div className="space-y-3">
+          <div className="h-9 w-52 animate-pulse rounded-lg bg-[var(--surface-raised)]" />
+          <p className="text-sm text-[var(--text-muted)]">Preparing this page</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div
+              className="h-32 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]"
+              key={index}
+            />
+          ))}
+        </div>
+        <div className="h-72 animate-pulse rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)]" />
       </div>
     </main>
   );

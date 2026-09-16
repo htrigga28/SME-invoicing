@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MeResponse } from "@/features/auth/types";
@@ -36,7 +36,8 @@ const me = {
     logoFileId: null,
     setupCompletedAt: "2026-01-01T00:00:00.000Z"
   },
-  onboardingRequired: false
+  onboardingRequired: false,
+  onboardingStep: null
 } satisfies MeResponse;
 
 afterEach(() => {
@@ -82,5 +83,17 @@ describe("app shell navigation components", () => {
     const mainSection = screen.getByText("Main").closest("div");
 
     expect(mainSection).not.toHaveTextContent("Payment Setup");
+  });
+
+  it("supports an expanded sidebar with an accessible toggle", () => {
+    const onToggle = vi.fn();
+
+    render(<Sidebar activePath="/dashboard" expanded onToggle={onToggle} role="owner" />);
+
+    expect(screen.getByText("Lumina")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Invoices" })).toHaveTextContent("Invoices");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(onToggle).toHaveBeenCalledOnce();
   });
 });

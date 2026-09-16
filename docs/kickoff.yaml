@@ -1,0 +1,14 @@
+version: 1
+implementation_delegation_default: "always"
+plan_it:
+  workers:
+    codex:
+      agent: "sol_high"
+plan_review:
+  workers:
+    codex:
+      agent: "sol_high"
+ship_it:
+  workers:
+    codex:
+      agent: "terra_xhigh"

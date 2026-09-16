@@ -28,16 +28,18 @@ vi.mock("@/features/auth/session", () => ({
   })
 }));
 
-const getBusinessProfile = vi.fn();
+const getMe = vi.fn();
 const updateBusinessProfile = vi.fn();
 
 vi.mock("@/features/auth/auth-api", () => ({
-  getBusinessProfile: (...args: unknown[]) => getBusinessProfile(...args),
+  getMe: (...args: unknown[]) => getMe(...args),
   updateBusinessProfile: (...args: unknown[]) => updateBusinessProfile(...args)
 }));
 
 beforeEach(() => {
-  getBusinessProfile.mockResolvedValue({
+  getMe.mockResolvedValue({
+    onboardingStep: "business_profile",
+    membership: { role: "owner" },
     businessProfile: {
       businessName: "Demo Business Ltd",
       email: "billing@demo.test",
@@ -62,7 +64,7 @@ describe("BusinessOnboardingForm", () => {
 
     await screen.findByDisplayValue("Demo Business Ltd");
 
-    fireEvent.click(screen.getByRole("button", { name: "Complete business profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to Payment Setup" }));
 
     await waitFor(() =>
       expect(updateBusinessProfile).toHaveBeenCalledWith("token", {
@@ -76,5 +78,33 @@ describe("BusinessOnboardingForm", () => {
       "Business profile completed. Next, activate online payments."
     );
     expect(push).toHaveBeenCalledWith("/settings/payment-setup?source=onboarding");
+  });
+
+  it("shows a focused permission state for non-managing members", async () => {
+    getMe.mockResolvedValueOnce({
+      onboardingStep: "business_profile",
+      membership: { role: "viewer" },
+      businessProfile: {
+        businessName: null,
+        email: null,
+        phone: null,
+        address: null
+      }
+    });
+
+    render(<BusinessOnboardingForm />);
+
+    expect(
+      await screen.findByRole("heading", { name: "An Owner or Admin must finish setup" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your workspace is still being configured. Ask an Owner or Admin to complete the business profile before you continue."
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Continue to Payment Setup" })
+    ).not.toBeInTheDocument();
+    expect(updateBusinessProfile).not.toHaveBeenCalled();
   });
 });

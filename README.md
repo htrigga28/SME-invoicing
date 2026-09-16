@@ -1,6 +1,6 @@
-# SME Invoice & Payment Reconciliation Platform
+# Lumina
 
-A standalone B2B SaaS portfolio project for Nigerian SMEs, freelancers, agencies, and service providers. The MVP will support invoices, organisation Payment Setup, public invoice payment links, Paystack test payments, webhook-based payment reconciliation, receipts, exports, and audit logs.
+Lumina is an invoice payment clarity workspace for Nigerian SMEs, freelancers, agencies, and service providers. It connects invoices, Paystack test payments, reconciliation, receipts, exports, and audit logs.
 
 ## Stack
 
@@ -55,7 +55,7 @@ Marketing notes:
 
 - `NEXT_PUBLIC_SITE_URL` controls canonical marketing metadata and sitemap URLs.
 - `NEXT_PUBLIC_APP_URL` controls Sign In links and should point to the authenticated product app.
-- `NEXT_PUBLIC_API_URL` controls waitlist submissions.
+- `NEXT_PUBLIC_API_URL` controls product-app API requests.
 - `NEXT_PUBLIC_CONTACT_EMAIL` is displayed on marketing legal pages.
 - Local API CORS should include both `http://localhost:3000` and `http://localhost:3002`.
 
@@ -154,8 +154,16 @@ pnpm db:migrate
 pnpm db:studio
 pnpm db:test:migrate
 pnpm db:seed
+pnpm receipts:backfill -- --organisation-slug akin-co-demo
+pnpm test:e2e
 pnpm payments:reconcile-invoices
 ```
+
+`pnpm test:e2e` needs `E2E_ADMIN_DATABASE_URL`, for example
+`postgresql://postgres@localhost:55432/postgres`. The runner creates a unique
+temporary database, runs migrations and the guarded demo seed twice, starts the
+built API and both web apps, runs Playwright, then drops the temporary database.
+Set `E2E_DATABASE_URL` only when you need to choose the temporary database name.
 
 `pnpm db:push` is available for local development experiments only. Migrations remain the source of truth.
 
@@ -163,7 +171,7 @@ pnpm payments:reconcile-invoices
 
 ## Demo Login
 
-Run `pnpm db:migrate` and `pnpm db:seed` first. The seed is idempotent and can be run multiple times without duplicating the demo organisation, users, memberships, business profile, seeded invitations, demo customers, or demo invoices.
+Run `pnpm db:migrate` and `pnpm db:seed` first. Set `ALLOW_DEMO_SEED=true` only for a local development database. The guarded seed is idempotent and can be run multiple times without duplicating demo records or changing receipt identity.
 
 | Role       | Email                 | Password       |
 | ---------- | --------------------- | -------------- |
@@ -234,15 +242,17 @@ The Payments module separates checkout attempts from reconciliation records, hid
 
 T014 issues one immutable receipt for each provider-confirmed successful payment. Receipts snapshot business, customer, invoice number, payment reference, channel, paid date, and original payment amount. Processed refunds are shown as a derived refund summary; the original receipt amount is not rewritten.
 
-Backfill existing successful payments after migrations and seed data:
+Backfill existing successful payments for one organisation after migrations or historical data repair:
 
 ```bash
-pnpm receipts:backfill
+pnpm receipts:backfill -- --organisation-slug akin-co-demo
 ```
+
+`pnpm db:seed` already creates missing receipts for the fixed demo organisation. The explicit backfill command requires `--organisation-id`, `--organisation-slug`, or the matching `RECEIPTS_ORGANISATION_*` environment variable so it cannot scan unrelated organisations.
 
 Manual receipt QA:
 
-1. Run `pnpm db:seed`, then `pnpm receipts:backfill`.
+1. Run `pnpm db:seed`.
 2. Log in as any demo user and open `/receipts`.
 3. Confirm successful demo payments have `RCT-000001` style receipt numbers.
 4. Open a receipt detail page and confirm invoice, payment, customer, refund summary, public link, copy action, and print action render.
@@ -262,7 +272,7 @@ Dashboard metrics use payment/refund financial truth:
 
 Manual dashboard QA:
 
-1. Run `pnpm db:seed`, then `pnpm receipts:backfill`.
+1. Run `pnpm db:seed`.
 2. Log in as any demo user and open `/dashboard`.
 3. Confirm Net collected, Outstanding, Overdue, Review required, cashflow trend, invoice status, aging, recent invoices, payments, receipts, and review issues render.
 4. Switch between Last 7 days, Last 30 days, Last 90 days, and a custom range.
@@ -329,7 +339,7 @@ Manual overpayment/refund check:
 5. Confirm the refund shows pending/processing until Paystack sends a processed refund event.
 6. Simulate or receive `refund.processed` and confirm the invoice financial summary recalculates from successful payments minus processed refunds.
 
-## Marketing Site and Waitlist
+## Marketing Site and Signup
 
 The public Lumina marketing site lives in `apps/marketing` and is intended for the root domain. The authenticated product app remains in `apps/web` and is intended for `app.<root-domain>`.
 
@@ -340,7 +350,7 @@ pnpm dev:marketing
 pnpm build:marketing
 ```
 
-The waitlist form posts to `POST /public/waitlist`. The API stores normalized email, optional profile fields, CTA source, UTM fields, and referrer in `marketing_waitlist_entries`. Duplicate emails and honeypot submissions return the same generic success response so the public endpoint does not reveal whether an email is already on the list.
+Marketing CTAs resolve through `NEXT_PUBLIC_APP_URL` to the product app's `/register` route. Signup creates the owner account and workspace, collects the business profile, and requires Payment Setup submission before dashboard access. The former `POST /public/waitlist` endpoint and `marketing_waitlist_entries` data remain retained but are dormant and are not called by the marketing site.
 
 Marketing documentation:
 

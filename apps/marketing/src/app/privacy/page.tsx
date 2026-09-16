@@ -5,28 +5,38 @@ import { siteConfig } from "@/content/site-copy";
 
 export const metadata: Metadata = {
   title: "Privacy",
-  description: "How Lumina handles early-access waitlist information.",
+  description: "How Lumina handles account and business information.",
   alternates: { canonical: "/privacy" }
 };
 
 export default function PrivacyPage() {
   return (
-    <LegalPage eyebrow="Privacy" title="Waitlist privacy notice">
+    <LegalPage eyebrow="Privacy" title="Privacy notice">
       <section>
         <h2>Data we collect</h2>
-        <p>The Lumina waitlist collects your work email and, where provided, your name, business name, role, referral URL, UTM context, and waitlist CTA source.</p>
+        <p>
+          Lumina collects the account, business profile, invoice, customer, and payment-operation
+          information needed to provide the workspace. Passwords are stored as hashes, and payout
+          account details are masked after Paystack setup.
+        </p>
       </section>
       <section>
         <h2>How we use it</h2>
-        <p>We use waitlist information to manage early-access interest, understand which public pages or campaigns are working, and contact you when Lumina early access opens.</p>
+        <p>
+          We use this information to secure your workspace, generate invoices and receipts, connect
+          provider-confirmed payments, and show your organisation&apos;s operational records.
+        </p>
       </section>
       <section>
         <h2>Selling information</h2>
-        <p>Lumina does not sell waitlist information.</p>
+        <p>Lumina does not sell account or business information.</p>
       </section>
       <section>
         <h2>Removal requests</h2>
-        <p>You can request removal from the waitlist by contacting <a href={`mailto:${siteConfig.contactEmail}`}>{siteConfig.contactEmail}</a>.</p>
+        <p>
+          You can ask about your information or request account removal by contacting{" "}
+          <a href={`mailto:${siteConfig.contactEmail}`}>{siteConfig.contactEmail}</a>.
+        </p>
       </section>
     </LegalPage>
   );

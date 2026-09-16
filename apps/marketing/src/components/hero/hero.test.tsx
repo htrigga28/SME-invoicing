@@ -15,9 +15,9 @@ describe("Hero", () => {
         name: "Know what got paid—without the spreadsheet chase."
       })
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /join the waitlist/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /create account/i })).toHaveAttribute(
       "href",
-      "#waitlist"
+      "http://localhost:3000/register"
     );
     expect(screen.getByRole("link", { name: /see the payment trail/i })).toHaveAttribute(
       "href",

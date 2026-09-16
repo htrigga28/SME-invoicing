@@ -1,14 +1,10 @@
 "use client";
 
 import { CheckCircle2, CreditCard, FileText, ReceiptText, ShieldCheck } from "lucide-react";
-import { LazyMotion, useReducedMotion, useScroll } from "motion/react";
-import * as m from "motion/react-m";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { paymentTrail } from "@/content/site-copy";
-
-const loadMotionFeatures = () => import("@/lib/motion-features").then((module) => module.default);
 
 const stageIcons = {
   invoice: FileText,
@@ -20,11 +16,27 @@ const stageIcons = {
 
 export function ConnectedPaymentTrail() {
   const sectionRef = useRef<HTMLElement>(null);
-  const reduceMotion = useReducedMotion();
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ["start 72%", "end 42%"]
-  });
+  const reduceMotion = usePrefersReducedMotion();
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const section = sectionRef.current;
+      const progressBar = progressRef.current;
+      if (!section || !progressBar) return;
+      const range = Math.max(section.offsetHeight - window.innerHeight * 0.3, 1);
+      const progress = Math.max(0, Math.min(1, (window.innerHeight * 0.72 - section.getBoundingClientRect().top) / range));
+      progressBar.style.transform = `scaleX(${reduceMotion ? 1 : progress})`;
+    };
+    update();
+    if (reduceMotion) return;
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [reduceMotion]);
 
   return (
     <section className="story-section" id="payment-trail" ref={sectionRef}>
@@ -41,13 +53,12 @@ export function ConnectedPaymentTrail() {
           </p>
         </div>
 
-        <LazyMotion features={loadMotionFeatures} strict>
-          <div className="stage-rail-wrap">
+        <div className="stage-rail-wrap">
             <div aria-hidden="true" className="stage-rail" />
-            <m.div
+            <div
               aria-hidden="true"
               className="stage-rail-progress"
-              style={{ scaleX: reduceMotion ? 1 : scrollYProgress }}
+              ref={progressRef}
             />
             <ol className="stage-list">
               {paymentTrail.map((stage) => {
@@ -64,7 +75,6 @@ export function ConnectedPaymentTrail() {
               })}
             </ol>
           </div>
-        </LazyMotion>
 
         <div className="settlement-branch">
           <span className="branch-route" aria-hidden="true" />
@@ -77,4 +87,19 @@ export function ConnectedPaymentTrail() {
       </div>
     </section>
   );
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!media) return;
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  return reduced;
 }

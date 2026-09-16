@@ -28,7 +28,7 @@ Users work with customer invoices, public payment links, Nigerian bank accounts,
 - Lumina supports Nigerian businesses, Nigerian payout accounts, NGN invoices, and Paystack in the initial product.
 - Lumina does not hold funds, provide wallet balances, collect merchant Paystack secret keys, or replace full bookkeeping, payroll, inventory, or tax software.
 - Payment amounts and payout routing are server-derived. Signed webhooks and server-side verification are the provider-truth mechanisms.
-- The primary marketing conversion is joining the early-access waitlist; sign in is secondary.
+- The primary marketing conversion is creating a Lumina workspace in the product app; sign in is secondary.
 
 ## Brand Commitments
 
