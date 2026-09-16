@@ -90,7 +90,7 @@ describe("app shell navigation components", () => {
 
     render(<Sidebar activePath="/dashboard" expanded onToggle={onToggle} role="owner" />);
 
-    expect(screen.getByText("SME Invoicing")).toBeInTheDocument();
+    expect(screen.getByText("Lumina")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Invoices" })).toHaveTextContent("Invoices");
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
