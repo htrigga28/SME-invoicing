@@ -71,57 +71,49 @@ describe("DashboardService", () => {
       [{ paymentId: "payment-1", amountKobo: 10000, status: "pending" }]
     ]);
     const paymentsService = {
-      getPaymentSummary: jest.fn().mockResolvedValue({
-        totals: {
-          pendingCount: 2,
-          stalePendingCount: 1,
-          reviewRequiredCount: 4
-        }
-      }),
-      listPayments: jest
-        .fn()
-        .mockResolvedValueOnce({
-          payments: [
-            {
-              id: "payment-1",
-              providerReference: "SME-INV-000001-ABC",
-              amountKobo: 120000,
-              currency: "NGN",
-              attemptState: "successful",
-              status: "successful",
-              paidAt: new Date("2026-07-01T10:00:00.000Z"),
-              createdAt: new Date("2026-07-01T09:58:00.000Z"),
-              invoice: {
-                id: "invoice-1",
-                invoiceNumber: "INV-000001"
-              },
-              customer: {
-                id: "customer-1",
-                name: "Lagos Bright Prints"
-              }
+      getDashboardPaymentData: jest.fn().mockResolvedValue({
+        paymentSummary: {
+          totals: { pendingCount: 2, stalePendingCount: 1, reviewRequiredCount: 4 }
+        },
+        recentPayments: [
+          {
+            id: "payment-1",
+            providerReference: "SME-INV-000001-ABC",
+            amountKobo: 120000,
+            currency: "NGN",
+            attemptState: "successful",
+            status: "successful",
+            paidAt: new Date("2026-07-01T10:00:00.000Z"),
+            createdAt: new Date("2026-07-01T09:58:00.000Z"),
+            invoice: {
+              id: "invoice-1",
+              invoiceNumber: "INV-000001"
+            },
+            customer: {
+              id: "customer-1",
+              name: "Lagos Bright Prints"
             }
-          ]
-        })
-        .mockResolvedValueOnce({
-          payments: [
-            {
-              id: "payment-review-1",
-              reviewReason: "Successful payments exceed the invoice total.",
-              reconciliationState: "overpaid",
-              reviewState: "open",
-              amountKobo: 120000,
-              createdAt: new Date("2026-07-01T10:00:00.000Z"),
-              invoice: {
-                id: "invoice-1",
-                invoiceNumber: "INV-000001"
-              },
-              customer: {
-                id: "customer-1",
-                name: "Lagos Bright Prints"
-              }
+          }
+        ],
+        reviewPayments: [
+          {
+            id: "payment-review-1",
+            reviewReason: "Successful payments exceed the invoice total.",
+            reconciliationState: "overpaid",
+            reviewState: "open",
+            amountKobo: 120000,
+            createdAt: new Date("2026-07-01T10:00:00.000Z"),
+            invoice: {
+              id: "invoice-1",
+              invoiceNumber: "INV-000001"
+            },
+            customer: {
+              id: "customer-1",
+              name: "Lagos Bright Prints"
             }
-          ]
-        })
+          }
+        ]
+      })
     };
     const service = new DashboardService(databaseService as never, paymentsService as never);
 
@@ -131,7 +123,7 @@ describe("DashboardService", () => {
     });
 
     expect(select).toHaveBeenCalledTimes(12);
-    expect(paymentsService.getPaymentSummary).toHaveBeenCalledWith(createContext(), {});
+    expect(paymentsService.getDashboardPaymentData).toHaveBeenCalledWith(createContext());
     expect(response.financialActivity).toEqual({
       grossCollectedKobo: 120000,
       processedRefundsKobo: 20000,
@@ -171,6 +163,7 @@ describe("DashboardService", () => {
     const service = new DashboardService(
       databaseService as never,
       {
+        getDashboardPaymentData: jest.fn(),
         getPaymentSummary: jest.fn(),
         listPayments: jest.fn()
       } as never

@@ -11,7 +11,7 @@ const baseButtonClassName =
 
 const variantClassNames: Record<ButtonVariant, string> = {
   primary:
-    "bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:bg-[var(--surface-elevated)] disabled:text-[var(--text-muted)]",
+    "button-primary bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:bg-[var(--surface-elevated)] disabled:text-[var(--text-muted)]",
   secondary:
     "border border-[var(--accent-border)] bg-[var(--accent-muted)] text-[var(--accent)] hover:border-[var(--accent-border-strong)] hover:bg-[var(--accent-glow)]",
   outline:
