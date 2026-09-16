@@ -18,9 +18,7 @@ The interface should prioritize financial truth, workflow state, exceptions, and
 
 ## 2. Product vs Marketing Visual Language
 
-The current dark graphite + signal-lime identity is strong for the marketing site and portfolio presentation.
-
-For the product application, move toward a more workday-oriented finance UI:
+Lumina v2 uses a lighter, more approachable finance language across both the product and the marketing site, but the two surfaces have different motion and density requirements.
 
 ### Product workspace direction
 
@@ -31,10 +29,21 @@ For the product application, move toward a more workday-oriented finance UI:
 - Dark mode may remain available or may be implemented later, but **dark-only should no longer be treated as mandatory product identity**.
 - Avoid excessive rounded cards and glow effects.
 - Tables, ledgers, split views, drawers and timelines should dominate where appropriate.
+- Product motion remains restrained and functional.
 
 ### Marketing direction
 
-Keep the existing “Payment Trail” story and dark, expressive brand system unless a future marketing-specific redesign says otherwise.
+The old dark graphite + neon-lime marketing treatment is superseded.
+
+Marketing should use a **light, warm, inviting editorial-fintech system** with richer scroll choreography and product-led storytelling.
+
+The Payment Trail remains the narrative idea, but it should be expressed as a continuous invoice-to-cash transformation while the visitor scrolls rather than as a glowing trail in a dark environment.
+
+For all marketing-site visual, motion, palette, homepage-story, and responsive-choreography decisions, use:
+
+`docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`
+
+That document is authoritative for `apps/marketing`.
 
 ---
 
@@ -45,7 +54,7 @@ Codex has access to Mobbin MCP. Use these references actively during implementat
 ### Stripe — invoice authoring and preview
 
 Mobbin flow:
-https://mobbin.com/flows/03c71446-31eb-497b-b715-3419cf8cd922
+https://mobbin.com/flows/03c71446-31eb-497b-b715-3419cf90933ea
 
 Borrow:
 
@@ -612,11 +621,15 @@ Use motion for:
 
 Avoid decorative scroll animation inside the authenticated application.
 
+The marketing site is the exception: it should use richer scroll-driven storytelling according to `05_MARKETING_SITE_REDESIGN.md`.
+
 ---
 
 ## 20. Implementation Rule for Codex
 
-When implementing a flagship surface, use Mobbin MCP to inspect the linked reference flows/screens before coding.
+When implementing a flagship product surface, use Mobbin MCP to inspect the linked reference flows/screens before coding.
+
+When implementing `apps/marketing`, read `05_MARKETING_SITE_REDESIGN.md` first and inspect its linked marketing references through Mobbin MCP.
 
 Do not clone any one product. Synthesize the strongest patterns into Lumina’s information architecture, current domain model and brand.
 
