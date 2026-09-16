@@ -39,9 +39,17 @@ Important existing strengths include:
 - CSV exports.
 - Audit logs.
 - Shared UI primitives and an existing design system.
-- Lumina marketing site and the existing “Payment Trail” brand idea.
+- Lumina marketing site and the existing “Payment Trail” narrative idea.
 
 Preserve financial correctness, tenant isolation, payment idempotency, auditability, receipt immutability, safe exports, and server-authoritative totals.
+
+### Marketing visual direction update
+
+The original dark graphite + neon-lime marketing treatment is no longer authoritative.
+
+The **Payment Trail narrative remains**, but the marketing site should now express it through a light, warm, inviting editorial-fintech system with product-led scroll storytelling. See `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`.
+
+The marketing redesign should not be interpreted as a reason to rewrite product domain behavior.
 
 ## 3. Source-of-Truth / Precedence
 
@@ -51,8 +59,14 @@ For Lumina v2 work, use this order when documents disagree:
 2. `docs/lumina-v2/01_FEATURE_AND_BUILD_SEQUENCE.md`
 3. `docs/lumina-v2/02_UI_UX_DIRECTION.md`
 4. `docs/lumina-v2/03_CODEX_EXECUTION_GUIDE.md`
-5. Existing domain-specific docs such as `product-spec.md`, `status-rules.md`, `rbac-matrix.md`, `database-schema.md`, `api-contracts.md`.
-6. Existing T017 design docs where they do not conflict with the v2 UI direction.
+5. `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md` for all marketing-site visual, motion, and homepage-story decisions.
+6. Existing domain-specific docs such as `product-spec.md`, `status-rules.md`, `rbac-matrix.md`, `database-schema.md`, `api-contracts.md`.
+7. Existing T017 design docs where they do not conflict with the v2 UI direction.
+8. `apps/marketing/DESIGN.md` only where it has been updated to match the Lumina v2 marketing direction.
+
+Special precedence rule:
+
+> For `apps/marketing`, `05_MARKETING_SITE_REDESIGN.md` overrides any older dark-first marketing assumptions anywhere else in the repository.
 
 The old MVP documents remain useful for existing behavior and invariants. They are not the ceiling for future scope.
 
@@ -170,6 +184,8 @@ The first major vertical slices are:
 5. **Collections Workspace** — action queue, promise-to-pay, collector notes/tasks and direct collection actions.
 
 Do not wait for the entire roadmap to be designed before starting item 1.
+
+The marketing redesign may run as a separate workstream using `05_MARKETING_SITE_REDESIGN.md`; it does not need to block these product slices.
 
 ## 8. What Not to Prioritise Yet
 
