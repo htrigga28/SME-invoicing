@@ -723,6 +723,7 @@ function InvoiceFormContent({
                       Line {index + 1} description
                     </label>
                     <Input
+                      aria-label={`Line item ${index + 1} description`}
                       className="mt-1"
                       disabled={isSubmitting}
                       id={`line-item-${index}-description`}
@@ -737,6 +738,7 @@ function InvoiceFormContent({
                       Qty
                     </label>
                     <Input
+                      aria-label={`Line item ${index + 1} quantity`}
                       className="mt-1"
                       disabled={isSubmitting}
                       id={`line-item-${index}-quantity`}
@@ -752,6 +754,7 @@ function InvoiceFormContent({
                       Unit price (NGN)
                     </label>
                     <Input
+                      aria-label={`Line item ${index + 1} unit price in NGN`}
                       className="mt-1"
                       disabled={isSubmitting}
                       id={`line-item-${index}-unit-price`}

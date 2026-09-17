@@ -218,10 +218,11 @@ Customer rules:
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
 | `GET /invoices` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?`, `customerId?`, `fromDate?`, `toDate?`, `page?`, `limit?` | `{ invoices, pagination }` |
-| `POST /invoices` | Required | Owner/Admin/Accountant | `{ customerId, issueDate, dueDate, lineItems, discount?, tax?, notes? }` | `{ invoice }` |
+| `POST /invoices` | Required | Owner/Admin/Accountant | `{ customerId, issueDate, dueDate, customerReference?, lineItems, discount?, tax?, notes? }` | `{ invoice }` |
 | `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary }` |
 | `PATCH /invoices/:id` | Required | Owner/Admin/Accountant | Draft-only editable invoice fields | `{ invoice }` |
 | `POST /invoices/:id/send` | Required | Owner/Admin/Accountant | None | `{ invoice, publicUrl }` |
+| `POST /invoices/:id/duplicate` | Required | Owner/Admin/Accountant | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary }` in the authenticated detail shape for the new draft |
 | `POST /invoices/:id/cancel` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
 | `POST /invoices/:id/void` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
 
@@ -233,11 +234,30 @@ Rules:
 - Created invoices start as private drafts. Sending a draft enables public access and returns the generated public URL for T007.
 - MVP uses invoice-level `discount_kobo` and `tax_kobo`; line items do not have per-line tax or discount.
 - Invoice `subtotal_kobo` is the sum of server-calculated line totals, and `total_kobo` is `subtotal_kobo - discount_kobo + tax_kobo`.
-- Accountant can create, edit, and send invoices but cannot cancel or void invoices.
+- `customerReference` is an optional customer-facing reference/PO number (maximum 120 characters) returned in authenticated detail and the public response. `notes` is the customer-facing memo.
+- Accountant can create, edit, send, and duplicate invoices but cannot cancel or void invoices.
 - Draft edit replaces line items transactionally and recalculates totals server-side.
+- Updating a draft with an unchanged customer keeps that customer even if archived since; replacing the customer requires an active customer.
+- Duplicate builds an allow-listed create input from the source and delegates to the existing creation path: new number, token, IDs, draft status, zeroed paid amount, issue date of today with the source issue-to-due interval preserved, copied lines/discount/tax/memo, and cleared `customerReference`. Payments, receipts, tokens, timestamps, and history are never copied. Duplication against an archived source customer returns `422` with `Archived customers cannot be used for duplicated invoices. Reactivate the customer or choose an active customer.`
 - Cancel requires Owner/Admin, a reason, and status `draft`, `sent`, `viewed`, or `overdue`.
 - Void requires Owner/Admin, a reason, and status `draft`, `sent`, `viewed`, `overdue`, or `cancelled`; public access is disabled.
 - Mutations are blocked for invoices in incompatible statuses.
+
+## Catalogue Items
+
+| Endpoint | Auth | Role | Request | Response |
+| --- | --- | --- | --- | --- |
+| `GET /catalogue-items` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?=active\|archived\|all` (default `active`) | `{ catalogueItems }` |
+| `POST /catalogue-items` | Required | Owner/Admin/Accountant | `{ name, description?, defaultUnitPriceKobo }` | `{ catalogueItem }` |
+| `PATCH /catalogue-items/:id` | Required | Owner/Admin/Accountant | `{ name?, description?, defaultUnitPriceKobo? }` | `{ catalogueItem }` |
+| `POST /catalogue-items/:id/archive` | Required | Owner/Admin/Accountant | None | `{ catalogueItem }` |
+| `POST /catalogue-items/:id/restore` | Required | Owner/Admin/Accountant | None | `{ catalogueItem }` |
+
+Rules:
+
+- Organisation scope derives from the active membership; foreign IDs return a safe not-found result.
+- Name is required (maximum 200 characters); description is optional (maximum 2,000 characters); price is integer kobo within the signed-integer ceiling.
+- Archived items cannot be updated; archive/restore is reversible and audited. Saved invoices never read live catalogue values.
 
 ## Public Invoice and Paystack Initialization
 
@@ -254,7 +274,7 @@ Rules:
 - Token must be unguessable.
 - Public invoice lookup requires a valid `public_token`, `public_access_enabled = true`, and an invoice that is not `draft`, `cancelled`, or `void`.
 - Invalid, disabled, cancelled, void, or otherwise unavailable invoice links return the same safe not-found response.
-- Public response exposes only customer-facing invoice data: invoice display fields, business contact fields, customer billing fields, line items, and a safe payment summary.
+- Public response exposes only customer-facing invoice data: invoice display fields (including `customerReference` and the customer memo in `notes`), business contact fields, customer billing fields, line items, and a safe payment summary.
 - Public page must not expose internal organisation/member data.
 - Public view tracking moves `sent` to `viewed` only once and writes a safe status event and audit log.
 - Repeated public views must not create duplicate viewed transitions.

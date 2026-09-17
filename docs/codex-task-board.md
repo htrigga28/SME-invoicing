@@ -1,6 +1,6 @@
 # Codex Task Board
 
-This board tracks the planned milestone execution for the SME Invoice & Payment Reconciliation Platform. Each task should be completed on its own branch and reviewed through a pull request into `main`.
+This board tracks the planned milestone execution for the SME Invoice & Payment Reconciliation Platform. Each task should be completed on its own branch and reviewed through a pull request into `dev`.
 
 Status values:
 
@@ -31,6 +31,7 @@ Status values:
 | T017 App-Wide UI/UX Redesign and Design System Migration | In Progress | `codex/T017-ui-redesign-design-system` | [#17](https://github.com/htrigga28/SME-invoicing/pull/17) | Redesign the full frontend around a reusable dark fintech design system spanning shells, public pages, tables, forms, status, charts, print, and responsive states. | Semantic tokens, fonts, shared primitives, shell redesign, route migrations, docs, and validation pass without changing backend/business/payment/auth behavior. |
 | T018 Marketing Website, Waitlist and SEO Foundation | In Review | `codex/T018-marketing-website-waitlist-seo` | [#18](https://github.com/htrigga28/SME-invoicing/pull/18) | Create the public Lumina marketing app, waitlist flow, SEO foundation, and marketing documentation. | `apps/marketing` exists, waitlist submissions are API-backed, SEO routes/metadata are implemented, and validation passes without renaming `apps/web`. |
 | T019 Deployment, Portfolio and Launch Hardening | Not Started | `task/T019-deployment-portfolio-launch-hardening` | TBD | Finalize deployment configuration, portfolio-facing docs, demo safety, launch hardening, and production operations checklist. | The project is deployable, documented, and safe to present with realistic payment-setup and marketing-domain assumptions. |
+| T020 Invoice Experience 2.0 | In Progress | `feat/t020-invoice-experience` | TBD | Add reusable products/services, richer invoice metadata, responsive editor and live preview, safe duplication, and coherent invoice management polish. | Authorised users can create, preview, save/send, and duplicate professional invoices with catalogue or ad-hoc lines while current financial and payment rules remain intact. |
 
 ## Task Execution Notes
 

@@ -9,6 +9,7 @@ import { Pool } from "pg";
 
 import {
   businessProfiles,
+  catalogueItems,
   customers,
   invoiceLineItems,
   invoiceNumberSequences,
@@ -174,6 +175,39 @@ const serviceLineItems = [
 ] as const;
 
 const demoHistoricalSubaccountCode = "ACCT_demo_historical";
+
+const demoCatalogueItems = [
+  {
+    name: "Brand strategy workshop",
+    description: "Full-day brand positioning workshop with stakeholder interviews and a strategy brief.",
+    defaultUnitPriceKobo: 180000
+  },
+  {
+    name: "Monthly bookkeeping support",
+    description: "Monthly transaction categorisation, bank reconciliation, and management report.",
+    defaultUnitPriceKobo: 220000
+  },
+  {
+    name: "Social media campaign design",
+    description: "Campaign concept, ad creatives, and copy for one product launch.",
+    defaultUnitPriceKobo: 95000
+  },
+  {
+    name: "Website maintenance retainer",
+    description: "Monthly updates, backups, uptime monitoring, and small content changes.",
+    defaultUnitPriceKobo: 150000
+  },
+  {
+    name: "Business advisory session",
+    description: "One-hour finance and operations advisory call with written follow-up notes.",
+    defaultUnitPriceKobo: 60000
+  },
+  {
+    name: "Staff training session",
+    description: "Half-day on-site team training with materials and attendance record.",
+    defaultUnitPriceKobo: 80000
+  }
+] as const;
 
 function invoiceDate(daysFromNow: number) {
   const date = new Date();
@@ -438,6 +472,40 @@ export async function seedDemo() {
         }
       }
 
+      for (const catalogueItem of demoCatalogueItems) {
+        const [existingCatalogueItem] = await db
+          .select()
+          .from(catalogueItems)
+          .where(
+            and(
+              eq(catalogueItems.organisationId, organisation.id),
+              eq(catalogueItems.name, catalogueItem.name)
+            )
+          )
+          .limit(1);
+
+        if (existingCatalogueItem) {
+          await db
+            .update(catalogueItems)
+            .set({
+              description: catalogueItem.description,
+              defaultUnitPriceKobo: catalogueItem.defaultUnitPriceKobo,
+              archivedAt: null,
+              updatedAt: now
+            })
+            .where(eq(catalogueItems.id, existingCatalogueItem.id));
+        } else {
+          await db.insert(catalogueItems).values({
+            organisationId: organisation.id,
+            createdByUserId: owner.id,
+            name: catalogueItem.name,
+            description: catalogueItem.description,
+            defaultUnitPriceKobo: catalogueItem.defaultUnitPriceKobo,
+            archivedAt: null
+          });
+        }
+      }
+
       const activeCustomers = await db
         .select()
         .from(customers)
@@ -635,6 +703,141 @@ export async function seedDemo() {
           });
         }
       }
+
+      const showcaseCustomer = activeCustomerByEmail.get("accounts@lagosbrightprints.com");
+
+      if (!showcaseCustomer) {
+        throw new Error("Seed showcase customer was not found for the T020 invoice.");
+      }
+
+      const showcaseInvoiceNumber = "INV-000025";
+      const showcaseIssueDate = invoiceDate(-4);
+      const showcaseDueDate = invoiceDate(10);
+      const showcaseLines = [
+        { description: "Monthly bookkeeping support", quantity: 1, unitPriceKobo: 220000 },
+        { description: "Website maintenance retainer", quantity: 1, unitPriceKobo: 150000 },
+        {
+          description: "On-site handover and team walkthrough (ad-hoc)",
+          quantity: 2,
+          unitPriceKobo: 45000
+        }
+      ];
+      const showcaseTotals = calculateSeedTotals(showcaseLines, 15000, 22500);
+      const showcasePublicToken = createHmac("sha256", refreshSecret)
+        .update(`invoice:${showcaseInvoiceNumber}`)
+        .digest("hex");
+      const showcaseSentAt = new Date(`${showcaseIssueDate}T09:00:00.000Z`);
+
+      const [existingShowcaseInvoice] = await db
+        .select()
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.organisationId, organisation.id),
+            eq(invoices.invoiceNumber, showcaseInvoiceNumber)
+          )
+        )
+        .limit(1);
+
+      const showcaseInvoiceValues = {
+        organisationId: organisation.id,
+        customerId: showcaseCustomer.id,
+        invoiceNumber: showcaseInvoiceNumber,
+        publicToken: showcasePublicToken,
+        publicAccessEnabled: true,
+        status: "sent" as const,
+        currency: "NGN",
+        issueDate: showcaseIssueDate,
+        dueDate: showcaseDueDate,
+        customerReference: "PO-2026-042",
+        notes: "Thank you for your business. Payment due within 14 days of issue.",
+        subtotalKobo: showcaseTotals.subtotalKobo,
+        discountKobo: 15000,
+        taxKobo: 22500,
+        totalKobo: showcaseTotals.totalKobo,
+        amountPaidKobo: 0,
+        balanceDueKobo: showcaseTotals.balanceDueKobo,
+        sentAt: showcaseSentAt,
+        viewedAt: null,
+        paidAt: null,
+        cancelledAt: null,
+        voidedAt: null,
+        createdByUserId: owner.id,
+        updatedAt: now
+      };
+
+      const [showcaseInvoice] = existingShowcaseInvoice
+        ? await db
+            .update(invoices)
+            .set(showcaseInvoiceValues)
+            .where(eq(invoices.id, existingShowcaseInvoice.id))
+            .returning()
+        : await db.insert(invoices).values(showcaseInvoiceValues).returning();
+
+      if (!showcaseInvoice) {
+        throw new Error(`Demo invoice could not be created: ${showcaseInvoiceNumber}`);
+      }
+
+      const existingShowcaseLines = await db
+        .select({ id: invoiceLineItems.id })
+        .from(invoiceLineItems)
+        .where(eq(invoiceLineItems.invoiceId, showcaseInvoice.id));
+
+      if (existingShowcaseLines.length === 0) {
+        await db.insert(invoiceLineItems).values(
+          showcaseLines.map((lineItem, itemIndex) => ({
+            organisationId: organisation.id,
+            invoiceId: showcaseInvoice.id,
+            description: lineItem.description,
+            quantity: lineItem.quantity.toFixed(2),
+            unitPriceKobo: lineItem.unitPriceKobo,
+            lineTotalKobo: showcaseTotals.lineTotals[itemIndex] ?? 0,
+            sortOrder: itemIndex
+          }))
+        );
+      }
+
+      for (const showcaseEvent of [
+        {
+          fromStatus: null,
+          toStatus: "draft" as const,
+          reason: "invoice_created",
+          createdAt: new Date(`${showcaseIssueDate}T08:00:00.000Z`)
+        },
+        {
+          fromStatus: "draft" as const,
+          toStatus: "sent" as const,
+          reason: "invoice_sent",
+          createdAt: showcaseSentAt
+        }
+      ]) {
+        const [existingShowcaseEvent] = await db
+          .select({ id: invoiceStatusEvents.id })
+          .from(invoiceStatusEvents)
+          .where(
+            and(
+              eq(invoiceStatusEvents.invoiceId, showcaseInvoice.id),
+              eq(invoiceStatusEvents.reason, showcaseEvent.reason),
+              eq(invoiceStatusEvents.toStatus, showcaseEvent.toStatus)
+            )
+          )
+          .limit(1);
+
+        if (!existingShowcaseEvent) {
+          await db.insert(invoiceStatusEvents).values({
+            organisationId: organisation.id,
+            invoiceId: showcaseInvoice.id,
+            fromStatus: showcaseEvent.fromStatus,
+            toStatus: showcaseEvent.toStatus,
+            reason: showcaseEvent.reason,
+            actorUserId: owner.id,
+            metadataRedacted: { invoiceNumber: showcaseInvoiceNumber },
+            createdAt: showcaseEvent.createdAt
+          });
+        }
+      }
+
+      publicInvoiceUrls.push(`${frontendUrl}/invoice/${showcasePublicToken}`);
 
       const [existingHistoricalPaymentAccount] = await db
         .select()
@@ -988,11 +1191,11 @@ export async function seedDemo() {
 
       await db
         .insert(invoiceNumberSequences)
-        .values({ organisationId: organisation.id, nextNumber: 25, updatedAt: now })
+        .values({ organisationId: organisation.id, nextNumber: 26, updatedAt: now })
         .onConflictDoUpdate({
           target: invoiceNumberSequences.organisationId,
           set: {
-            nextNumber: sql`greatest(${invoiceNumberSequences.nextNumber}, 25)`,
+            nextNumber: sql`greatest(${invoiceNumberSequences.nextNumber}, 26)`,
             updatedAt: now
           }
         });
@@ -1001,7 +1204,8 @@ export async function seedDemo() {
       console.log(`Demo organisation: ${organisationName}`);
       console.log("Demo password for all seeded users: DemoPass123!");
       console.log(`Seeded demo customers: ${demoCustomers.length}`);
-      console.log(`Seeded demo invoices: ${invoiceStatuses.length}`);
+      console.log(`Seeded demo catalogue items: ${demoCatalogueItems.length}`);
+      console.log(`Seeded demo invoices: ${invoiceStatuses.length + 1}`);
       console.log("Sample public invoice URLs:");
       for (const invoiceUrl of publicInvoiceUrls) {
         console.log(`- ${invoiceUrl}`);
