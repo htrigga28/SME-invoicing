@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -15,7 +16,7 @@ import {
 } from "@/features/payments/payment-ui";
 import { isApiRequestError } from "@/lib/api";
 
-import { cancelInvoice, getInvoice, sendInvoice, voidInvoice } from "./invoices-api";
+import { cancelInvoice, duplicateInvoice, getInvoice, sendInvoice, voidInvoice } from "./invoices-api";
 import { formatDate, formatMoney, InvoiceStatusBadge, PageHeader, StatusPanel } from "./invoice-ui";
 import type { InvoiceDetailResponse } from "./types";
 import { canCancelOrVoidInvoices, canManageInvoices } from "./types";
@@ -54,6 +55,8 @@ export function InvoiceDetailContent({
   const [dialogAction, setDialogAction] = useState<DialogAction>(null);
   const [reason, setReason] = useState("");
   const [isMutating, setIsMutating] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  const router = useRouter();
   const invoice = response?.invoice;
   const canManage = canManageInvoices(role);
   const canCancelVoid = canCancelOrVoidInvoices(role);
@@ -123,6 +126,29 @@ export function InvoiceDetailContent({
     }
   }
 
+  async function handleDuplicate() {
+    if (!invoice) {
+      return;
+    }
+
+    setIsDuplicating(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const duplicated = await duplicateInvoice(accessToken, invoice.id);
+      setSuccess(`Duplicated as draft ${duplicated.invoice.invoiceNumber}.`);
+      router.push(`/invoices/${duplicated.invoice.id}/edit`);
+    } catch (duplicateError) {
+      handleAuthError(duplicateError);
+      setError(
+        duplicateError instanceof Error ? duplicateError.message : "Could not duplicate invoice."
+      );
+    } finally {
+      setIsDuplicating(false);
+    }
+  }
+
   async function handleCopyPublicUrl(publicUrl: string) {
     setCopySuccess(null);
 
@@ -162,6 +188,8 @@ export function InvoiceDetailContent({
     canCancelVoid && ["draft", "sent", "viewed", "overdue"].includes(invoice.status);
   const canVoid =
     canCancelVoid && ["draft", "sent", "viewed", "overdue", "cancelled"].includes(invoice.status);
+  const canDuplicate = canManage;
+  const isSourceCustomerArchived = Boolean(invoice.customer.archivedAt);
   const canManagePaymentSetup = role === "owner" || role === "admin";
   const financialSummary = response.financialSummary;
   const canSharePublicUrl =
@@ -201,10 +229,14 @@ export function InvoiceDetailContent({
                   <DetailItem label="Issue date" value={formatDate(invoice.issueDate)} />
                   <DetailItem label="Due date" value={formatDate(invoice.dueDate)} />
                   <DetailItem
+                    label="Customer reference"
+                    value={invoice.customerReference || "No reference"}
+                  />
+                  <DetailItem
                     label="Paid at"
                     value={invoice.paidAt ? formatDate(invoice.paidAt) : "Not paid yet"}
                   />
-                  <DetailItem label="Notes" value={invoice.notes || "No notes"} />
+                  <DetailItem label="Customer memo" value={invoice.notes || "No memo"} />
                 </dl>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -215,6 +247,21 @@ export function InvoiceDetailContent({
                   >
                     Edit
                   </Link>
+                ) : null}
+                {canDuplicate ? (
+                  <button
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={isDuplicating || isSourceCustomerArchived}
+                    onClick={() => void handleDuplicate()}
+                    title={
+                      isSourceCustomerArchived
+                        ? "Archived customers cannot be used for duplicated invoices. Reactivate the customer or choose an active customer."
+                        : "Create a new draft from this invoice"
+                    }
+                    type="button"
+                  >
+                    {isDuplicating ? "Duplicating..." : "Duplicate"}
+                  </button>
                 ) : null}
                 {canSend ? (
                   <button
@@ -245,6 +292,12 @@ export function InvoiceDetailContent({
                 ) : null}
               </div>
             </div>
+            {canDuplicate && isSourceCustomerArchived ? (
+              <p className="mt-3 text-sm text-amber-800">
+                Archived customers cannot be used for duplicated invoices. Reactivate the customer
+                or choose an active customer.
+              </p>
+            ) : null}
           </div>
 
           <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">

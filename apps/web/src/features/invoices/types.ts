@@ -32,6 +32,7 @@ export type Invoice = {
   currency: string;
   issueDate: string;
   dueDate: string;
+  customerReference?: string | null;
   notes?: string | null;
   publicToken?: string;
   subtotalKobo: number;
@@ -118,6 +119,7 @@ export type InvoiceFormState = {
   customerId: string;
   issueDate: string;
   dueDate: string;
+  customerReference: string;
   notes: string;
   discountNaira: string;
   taxNaira: string;
@@ -128,6 +130,7 @@ export type InvoiceMutationPayload = {
   customerId: string;
   issueDate: string;
   dueDate: string;
+  customerReference?: string | null;
   notes?: string | null;
   discountKobo?: number;
   taxKobo?: number;

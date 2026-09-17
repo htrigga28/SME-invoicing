@@ -8,9 +8,14 @@ import type { InvoiceDetailResponse } from "./types";
 
 vi.mock("./invoices-api", () => ({
   cancelInvoice: vi.fn(),
+  duplicateInvoice: vi.fn(),
   getInvoice: vi.fn(),
   sendInvoice: vi.fn(),
   voidInvoice: vi.fn()
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() })
 }));
 
 const invoiceResponse = {
@@ -32,6 +37,7 @@ const invoiceResponse = {
     currency: "NGN",
     issueDate: "2026-06-01",
     dueDate: "2026-06-15",
+    customerReference: "PO-2026-042",
     notes: "Payment due in 14 days.",
     publicToken: "public-token",
     subtotalKobo: 100000,

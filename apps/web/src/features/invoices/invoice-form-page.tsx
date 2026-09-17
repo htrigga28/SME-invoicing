@@ -5,19 +5,30 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
+import { FieldError, FieldHint, FieldLabel, FormField, Input, Textarea } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
-import { primaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
+import { listCatalogueItems, createCatalogueItem } from "@/features/catalogue/catalogue-api";
+import type { CatalogueItem } from "@/features/catalogue/types";
 import { listCustomers } from "@/features/customers/customers-api";
 import type { Customer } from "@/features/customers/types";
 import { isApiRequestError } from "@/lib/api";
 import type { InvoiceStatus } from "@sme-invoicing/shared";
+import { convertNairaToKobo } from "@sme-invoicing/shared";
 
-import { createInvoice, getInvoice, updateInvoice } from "./invoices-api";
+import { InvoiceDocument } from "./invoice-document";
+import { createInvoice, getInvoice, sendInvoice, updateInvoice } from "./invoices-api";
 import { formatMoney, InvoiceStatusBadge, PageHeader, StatusPanel } from "./invoice-ui";
 import type { InvoiceFormState } from "./types";
 import { invoiceManagerRoles } from "./types";
-import { getInvoicePreview, toInvoicePayload, validateInvoiceForm } from "./validation";
+import {
+  applyDueDatePreset,
+  DUE_DATE_PRESETS,
+  getInvoicePreview,
+  toInvoicePayload,
+  validateInvoiceForm
+} from "./validation";
 
 type InvoiceFormPageProps =
   | {
@@ -29,6 +40,11 @@ type InvoiceFormPageProps =
     };
 
 type LoadState = "loading" | "ready" | "error";
+type SaveMode = "draft" | "send";
+type SendOutcome =
+  | { kind: "confirmed-failure"; invoiceId: string }
+  | { kind: "committed"; invoiceId: string }
+  | { kind: "ambiguous"; invoiceId: string };
 
 const blankLineItem = {
   description: "",
@@ -41,15 +57,14 @@ function todayDate() {
 }
 
 function defaultDueDate() {
-  const dueDate = new Date();
-  dueDate.setDate(dueDate.getDate() + 14);
-  return dueDate.toISOString().slice(0, 10);
+  return applyDueDatePreset(todayDate(), 14);
 }
 
 const initialForm: InvoiceFormState = {
   customerId: "",
   issueDate: todayDate(),
   dueDate: defaultDueDate(),
+  customerReference: "",
   notes: "",
   discountNaira: "0",
   taxNaira: "0",
@@ -78,18 +93,27 @@ function InvoiceFormContent({
 }) {
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "error">("loading");
   const [form, setForm] = useState<InvoiceFormState>(initialForm);
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pageError, setPageError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [sendOutcome, setSendOutcome] = useState<SendOutcome | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pendingAddedLineItem, setPendingAddedLineItem] = useState<number | null>(null);
-  const lineItemRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const animatedLineItem = useRef<number | null>(null);
-  const previewTotalRef = useRef<HTMLSpanElement | null>(null);
-  const reduceMotion = usePrefersReducedMotion();
+  const [saveMode, setSaveMode] = useState<SaveMode | null>(null);
+  const [showPreviewTablet, setShowPreviewTablet] = useState(false);
+  const [showPreviewMobile, setShowPreviewMobile] = useState(false);
+  const [cataloguePickerId, setCataloguePickerId] = useState("");
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreate, setQuickCreate] = useState({ name: "", unitPriceNaira: "" });
+  const [quickCreateError, setQuickCreateError] = useState<string | null>(null);
+  const [isQuickCreating, setIsQuickCreating] = useState(false);
+  const mobilePreviewCloseRef = useRef<HTMLButtonElement | null>(null);
+  const mobilePreviewTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const pendingSaveModeRef = useRef<SaveMode>("draft");
 
   useEffect(() => {
     async function load() {
@@ -97,19 +121,34 @@ function InvoiceFormContent({
       setPageError(null);
 
       try {
-        const customersResponse = await listCustomers(accessToken, {
-          status: "active",
-          limit: 100
-        });
-        setCustomers(customersResponse.customers);
+        const [customersResponse, catalogueResponse] = await Promise.all([
+          listCustomers(accessToken, { status: "active", limit: 100 }),
+          listCatalogueItems(accessToken, { status: "active" }).catch(() => ({
+            catalogueItems: [] as CatalogueItem[]
+          }))
+        ]);
+
+        let nextCustomers = customersResponse.customers;
+        setCatalogue(catalogueResponse.catalogueItems);
+        setCatalogueState("ready");
 
         if (mode === "edit" && invoiceId) {
           const invoiceResponse = await getInvoice(accessToken, invoiceId);
           setInvoiceStatus(invoiceResponse.invoice.status);
+
+          if (
+            invoiceResponse.invoice.customer.archivedAt &&
+            !nextCustomers.some((item) => item.id === invoiceResponse.invoice.customer.id)
+          ) {
+            nextCustomers = [...nextCustomers, invoiceResponse.invoice.customer];
+          }
+
+          setCustomers(nextCustomers);
           setForm({
             customerId: invoiceResponse.invoice.customer.id,
             issueDate: invoiceResponse.invoice.issueDate,
             dueDate: invoiceResponse.invoice.dueDate,
+            customerReference: invoiceResponse.invoice.customerReference ?? "",
             notes: invoiceResponse.invoice.notes ?? "",
             discountNaira: String(invoiceResponse.invoice.discountKobo / 100),
             taxNaira: String(invoiceResponse.invoice.taxKobo / 100),
@@ -119,6 +158,8 @@ function InvoiceFormContent({
               unitPriceNaira: String(item.unitPriceKobo / 100)
             }))
           });
+        } else {
+          setCustomers(nextCustomers);
         }
 
         setState("ready");
@@ -135,49 +176,12 @@ function InvoiceFormContent({
   }, [accessToken, invoiceId, mode]);
 
   useEffect(() => {
-    const index = pendingAddedLineItem;
-    if (index === null || reduceMotion || animatedLineItem.current === index) {
-      return;
+    if (showPreviewMobile) {
+      mobilePreviewCloseRef.current?.focus();
+    } else {
+      mobilePreviewTriggerRef.current?.focus();
     }
-
-    const row = lineItemRefs.current[index];
-    if (!row) {
-      return;
-    }
-
-    let disposed = false;
-    let revert: () => void = () => undefined;
-
-    void import("gsap")
-      .then(({ gsap }) => {
-        if (disposed) {
-          return;
-        }
-
-        const context = gsap.context(() => {
-          gsap.fromTo(
-            row,
-            { opacity: 0.55, y: 8 },
-            { duration: 0.24, ease: "power2.out", opacity: 1, y: 0 }
-          );
-          if (previewTotalRef.current) {
-            gsap.fromTo(
-              previewTotalRef.current,
-              { scale: 1.04 },
-              { duration: 0.24, ease: "power2.out", scale: 1 }
-            );
-          }
-        }, row);
-        revert = () => context.revert();
-        animatedLineItem.current = index;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      revert();
-    };
-  }, [pendingAddedLineItem, reduceMotion]);
+  }, [showPreviewMobile]);
 
   const preview = useMemo(() => {
     try {
@@ -190,14 +194,39 @@ function InvoiceFormContent({
         totalKobo: 0,
         amountPaidKobo: 0,
         balanceDueKobo: 0,
-        lineTotalsKobo: []
+        lineTotalsKobo: [] as number[]
       };
     }
   }, [form]);
 
+  const selectedCustomer = customers.find((item) => item.id === form.customerId) ?? null;
+
+  const documentLineItems = form.lineItems
+    .filter((item) => item.description.trim())
+    .map((item, index) => {
+      let unitPriceKobo = 0;
+      let lineTotalKobo = 0;
+
+      try {
+        unitPriceKobo = convertNairaToKobo(item.unitPriceNaira || "0");
+        lineTotalKobo = preview.lineTotalsKobo[index] ?? Math.round(Number(item.quantity || "0") * unitPriceKobo);
+      } catch {
+        unitPriceKobo = 0;
+        lineTotalKobo = 0;
+      }
+
+      return {
+        description: item.description.trim(),
+        quantity: Number(item.quantity || "0"),
+        unitPriceKobo,
+        lineTotalKobo
+      };
+    });
+
   function updateField(field: keyof InvoiceFormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: "" }));
+    setSendOutcome(null);
   }
 
   function updateLineItem(
@@ -212,11 +241,26 @@ function InvoiceFormContent({
       )
     }));
     setErrors((current) => ({ ...current, lineItems: "" }));
+    setSendOutcome(null);
   }
 
   function addLineItem() {
-    setPendingAddedLineItem(form.lineItems.length);
     setForm((current) => ({ ...current, lineItems: [...current.lineItems, { ...blankLineItem }] }));
+  }
+
+  function addCatalogueLine(item: CatalogueItem) {
+    setForm((current) => ({
+      ...current,
+      lineItems: [
+        ...current.lineItems.filter((line) => line.description.trim()),
+        {
+          description: item.name,
+          quantity: "1",
+          unitPriceNaira: String(item.defaultUnitPriceKobo / 100)
+        }
+      ]
+    }));
+    setErrors((current) => ({ ...current, lineItems: "" }));
   }
 
   function removeLineItem(index: number) {
@@ -229,10 +273,59 @@ function InvoiceFormContent({
     }));
   }
 
+  async function handleQuickCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setQuickCreateError(null);
+
+    const name = quickCreate.name.trim();
+
+    if (!name) {
+      setQuickCreateError("Name is required.");
+      return;
+    }
+
+    if (name.length > 200) {
+      setQuickCreateError("Name must be 200 characters or fewer.");
+      return;
+    }
+
+    let unitPriceKobo = 0;
+
+    try {
+      unitPriceKobo = convertNairaToKobo(quickCreate.unitPriceNaira.trim() || "0");
+    } catch {
+      setQuickCreateError("Enter a valid NGN amount with at most 2 decimal places.");
+      return;
+    }
+
+    setIsQuickCreating(true);
+
+    try {
+      const response = await createCatalogueItem(accessToken, {
+        name,
+        description: null,
+        defaultUnitPriceKobo: unitPriceKobo
+      });
+      setCatalogue((current) => [...current, response.catalogueItem].sort((a, b) => a.name.localeCompare(b.name)));
+      addCatalogueLine(response.catalogueItem);
+      setQuickCreate({ name: "", unitPriceNaira: "" });
+      setQuickCreateOpen(false);
+    } catch (createError) {
+      handleAuthError(createError);
+      setQuickCreateError(
+        createError instanceof Error ? createError.message : "Could not create catalogue item."
+      );
+    } finally {
+      setIsQuickCreating(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const nextSaveMode = pendingSaveModeRef.current;
     setPageError(null);
     setSuccess(null);
+    setSendOutcome(null);
 
     const validationErrors = validateInvoiceForm(form);
     setErrors(validationErrors);
@@ -242,6 +335,7 @@ function InvoiceFormContent({
     }
 
     setIsSubmitting(true);
+    setSaveMode(nextSaveMode);
 
     try {
       const payload = toInvoicePayload(form);
@@ -249,11 +343,70 @@ function InvoiceFormContent({
         mode === "create"
           ? await createInvoice(accessToken, payload)
           : await updateInvoice(accessToken, invoiceId!, payload);
-      setSuccess(mode === "create" ? "Invoice created." : "Invoice updated.");
-      router.push(`/invoices/${response.invoice.id}`);
+
+      if (nextSaveMode === "draft") {
+        setSuccess(mode === "create" ? "Draft saved." : "Draft updated.");
+        router.push(`/invoices/${response.invoice.id}`);
+        return;
+      }
+
+      try {
+        const sent = await sendInvoice(accessToken, response.invoice.id);
+        setSuccess(`Invoice ${sent.invoice.invoiceNumber} sent.`);
+        router.push(`/invoices/${sent.invoice.id}`);
+      } catch (sendError) {
+        handleAuthError(sendError);
+
+        try {
+          const refreshed = await getInvoice(accessToken, response.invoice.id);
+
+          if (refreshed.invoice.status === "draft") {
+            setSendOutcome({ kind: "confirmed-failure", invoiceId: refreshed.invoice.id });
+            setPageError(
+              sendError instanceof Error
+                ? `Saved as draft, but sending failed: ${sendError.message}`
+                : "Saved as draft, but sending failed."
+            );
+          } else {
+            setSendOutcome({ kind: "committed", invoiceId: refreshed.invoice.id });
+            setSuccess(
+              `Invoice ${refreshed.invoice.invoiceNumber} was sent. The send response was not received, but the invoice status is ${refreshed.invoice.status}.`
+            );
+          }
+        } catch {
+          setSendOutcome({ kind: "ambiguous", invoiceId: response.invoice.id });
+          setPageError(
+            "Saved, but the send result is uncertain. Open the invoice to confirm its status before retrying. Do not retry blindly."
+          );
+        }
+      }
     } catch (saveError) {
       handleAuthError(saveError);
       setPageError(saveError instanceof Error ? saveError.message : "Could not save invoice.");
+    } finally {
+      setIsSubmitting(false);
+      setSaveMode(null);
+    }
+  }
+
+  async function handleRetrySend() {
+    if (!sendOutcome || sendOutcome.kind !== "confirmed-failure") {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const retried = await sendInvoice(accessToken, sendOutcome.invoiceId);
+      setSendOutcome(null);
+      setPageError(null);
+      setSuccess(`Invoice ${retried.invoice.invoiceNumber} sent.`);
+      router.push(`/invoices/${retried.invoice.id}`);
+    } catch (retryError) {
+      handleAuthError(retryError);
+      setPageError(
+        retryError instanceof Error ? retryError.message : "Sending failed again. Try again later."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -288,12 +441,35 @@ function InvoiceFormContent({
     );
   }
 
+  const previewDocument = (
+    <InvoiceDocument
+      balanceDueKobo={preview.balanceDueKobo}
+      customer={{
+        name: selectedCustomer?.name ?? "Select a customer",
+        email: selectedCustomer?.email ?? null,
+        phone: selectedCustomer?.phone ?? null,
+        billingAddress: selectedCustomer?.billingAddress ?? null
+      }}
+      customerMemo={form.notes.trim() || null}
+      customerReference={form.customerReference.trim() || null}
+      discountKobo={preview.discountKobo}
+      dueDate={form.dueDate || todayDate()}
+      invoiceNumber={mode === "create" ? "Draft preview" : "Draft preview"}
+      issueDate={form.issueDate || todayDate()}
+      lineItems={documentLineItems}
+      status="draft"
+      subtotalKobo={preview.subtotalKobo}
+      taxKobo={preview.taxKobo}
+      totalKobo={preview.totalKobo}
+    />
+  );
+
   return (
     <section className="space-y-5">
       <PageHeader
         description={
           mode === "create"
-            ? "Create a draft invoice with server-calculated totals."
+            ? "Create a draft invoice with a live customer preview."
             : "Edit this draft invoice before sending."
         }
         title={mode === "create" ? "New invoice" : "Edit invoice"}
@@ -301,13 +477,52 @@ function InvoiceFormContent({
 
       {pageError ? <StatusPanel message={pageError} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
+      {sendOutcome?.kind === "confirmed-failure" ? (
+        <StatusPanel
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={isSubmitting} onClick={() => void handleRetrySend()} size="sm" type="button">
+                Retry send
+              </Button>
+              <Link
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                href={`/invoices/${sendOutcome.invoiceId}`}
+              >
+                Open saved invoice
+              </Link>
+            </div>
+          }
+          message="The invoice was saved as a draft. Sending was confirmed to have failed, so retry is safe."
+          tone="warning"
+        />
+      ) : null}
+      {sendOutcome?.kind === "ambiguous" ? (
+        <StatusPanel
+          action={
+            <Link
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+              href={`/invoices/${sendOutcome.invoiceId}`}
+            >
+              Open saved invoice
+            </Link>
+          }
+          message="Saved, but the send result could not be confirmed. Check the invoice status before retrying."
+          tone="warning"
+        />
+      ) : null}
 
-      <form className="grid gap-5 xl:grid-cols-[1fr_320px]" onSubmit={handleSubmit}>
-        <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Customer" error={errors.customerId}>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <form
+          aria-label={mode === "create" ? "Create invoice" : "Edit invoice"}
+          className="space-y-5 rounded-lg border border-slate-200 bg-white p-5"
+          onSubmit={(event) => void handleSubmit(event)}
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField>
+              <FieldLabel htmlFor="invoice-customer">Customer</FieldLabel>
               <Select
                 disabled={isSubmitting}
+                id="invoice-customer"
                 onChange={(event) => updateField("customerId", event.target.value)}
                 value={form.customerId}
                 wrapperClassName="mt-1"
@@ -316,140 +531,296 @@ function InvoiceFormContent({
                 {customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
                     {customer.name}
+                    {customer.archivedAt ? " (archived)" : ""}
                   </option>
                 ))}
               </Select>
-            </Field>
-            <Field label="Issue date" error={errors.issueDate}>
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              {errors.customerId ? <FieldError>{errors.customerId}</FieldError> : null}
+            </FormField>
+            <FormField>
+              <FieldLabel htmlFor="invoice-reference">Customer reference / PO (optional)</FieldLabel>
+              <Input
+                className="mt-1"
                 disabled={isSubmitting}
+                id="invoice-reference"
+                maxLength={120}
+                onChange={(event) => updateField("customerReference", event.target.value)}
+                placeholder="PO-2026-042"
+                value={form.customerReference}
+              />
+              {errors.customerReference ? <FieldError>{errors.customerReference}</FieldError> : null}
+            </FormField>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField>
+              <FieldLabel htmlFor="invoice-issue-date">Issue date</FieldLabel>
+              <Input
+                className="mt-1"
+                disabled={isSubmitting}
+                id="invoice-issue-date"
                 onChange={(event) => updateField("issueDate", event.target.value)}
                 type="date"
                 value={form.issueDate}
               />
-            </Field>
-            <Field label="Due date" error={errors.dueDate}>
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              {errors.issueDate ? <FieldError>{errors.issueDate}</FieldError> : null}
+            </FormField>
+            <FormField>
+              <FieldLabel htmlFor="invoice-due-date">Due date</FieldLabel>
+              <Input
+                className="mt-1"
                 disabled={isSubmitting}
+                id="invoice-due-date"
                 onChange={(event) => updateField("dueDate", event.target.value)}
                 type="date"
                 value={form.dueDate}
               />
-            </Field>
+              <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Due date presets">
+                {DUE_DATE_PRESETS.map((preset) => (
+                  <Button
+                    disabled={isSubmitting || !form.issueDate}
+                    key={preset.label}
+                    onClick={() => updateField("dueDate", applyDueDatePreset(form.issueDate, preset.days))}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+              {errors.dueDate ? <FieldError>{errors.dueDate}</FieldError> : null}
+            </FormField>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-slate-950">Line items</h2>
-              <button
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={isSubmitting}
-                onClick={addLineItem}
-                type="button"
-              >
-                Add line
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={isSubmitting} onClick={addLineItem} size="sm" type="button" variant="outline">
+                  Add ad-hoc line
+                </Button>
+                <Button
+                  disabled={isSubmitting}
+                  onClick={() => setQuickCreateOpen((current) => !current)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {quickCreateOpen ? "Close quick create" : "Create catalogue item"}
+                </Button>
+              </div>
             </div>
-            {errors.lineItems ? (
-              <p className="mt-2 text-sm text-red-700">{errors.lineItems}</p>
+
+            {catalogueState === "error" ? (
+              <p className="text-sm text-slate-600">Catalogue could not be loaded. Ad-hoc lines still work.</p>
             ) : null}
-            <div className="mt-3 space-y-3">
+
+            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+              <FormField>
+                <FieldLabel htmlFor="catalogue-picker">Add from catalogue</FieldLabel>
+                <Select
+                  disabled={isSubmitting || catalogue.length === 0}
+                  id="catalogue-picker"
+                  onChange={(event) => setCataloguePickerId(event.target.value)}
+                  value={cataloguePickerId}
+                  wrapperClassName="mt-1"
+                >
+                  <option value="">
+                    {catalogue.length === 0 ? "No active catalogue items" : "Select an item"}
+                  </option>
+                  {catalogue.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} · {(item.defaultUnitPriceKobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} NGN
+                    </option>
+                  ))}
+                </Select>
+                {cataloguePickerId ? (
+                  <FieldHint>
+                    {catalogue.find((item) => item.id === cataloguePickerId)?.description?.trim() ||
+                      "Values copy into an editable invoice line. The catalogue record is not changed."}
+                  </FieldHint>
+                ) : null}
+              </FormField>
+              <div className="flex items-end">
+                <Button
+                  disabled={isSubmitting || !cataloguePickerId}
+                  onClick={() => {
+                    const selected = catalogue.find((item) => item.id === cataloguePickerId);
+                    if (selected) {
+                      addCatalogueLine(selected);
+                      setCataloguePickerId("");
+                    }
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Add selected
+                </Button>
+              </div>
+            </div>
+
+            {quickCreateOpen ? (
+              <form
+                aria-label="Quick create catalogue item"
+                className="grid gap-3 rounded-md border border-dashed border-slate-300 p-3 md:grid-cols-[1fr_160px_auto]"
+                onSubmit={(event) => void handleQuickCreate(event)}
+              >
+                <FormField>
+                  <FieldLabel htmlFor="quick-catalogue-name">New item name</FieldLabel>
+                  <Input
+                    className="mt-1"
+                    disabled={isQuickCreating}
+                    id="quick-catalogue-name"
+                    maxLength={200}
+                    onChange={(event) => setQuickCreate((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Monthly bookkeeping"
+                    value={quickCreate.name}
+                  />
+                </FormField>
+                <FormField>
+                  <FieldLabel htmlFor="quick-catalogue-price">Price (NGN)</FieldLabel>
+                  <Input
+                    className="mt-1"
+                    disabled={isQuickCreating}
+                    id="quick-catalogue-price"
+                    min="0"
+                    onChange={(event) =>
+                      setQuickCreate((current) => ({ ...current, unitPriceNaira: event.target.value }))
+                    }
+                    placeholder="1500.00"
+                    step="0.01"
+                    type="number"
+                    value={quickCreate.unitPriceNaira}
+                  />
+                </FormField>
+                <div className="flex items-end">
+                  <Button disabled={isQuickCreating} size="sm" type="submit">
+                    {isQuickCreating ? "Creating..." : "Create & add"}
+                  </Button>
+                </div>
+                {quickCreateError ? (
+                  <p className="text-sm text-red-700 md:col-span-3">{quickCreateError}</p>
+                ) : null}
+              </form>
+            ) : null}
+
+            {errors.lineItems ? (
+              <p className="text-sm text-red-700" role="alert">
+                {errors.lineItems}
+              </p>
+            ) : null}
+
+            <div className="space-y-3">
               {form.lineItems.map((item, index) => (
                 <div
                   className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_120px_160px_auto]"
                   key={index}
-                  ref={(node) => {
-                    lineItemRefs.current[index] = node;
-                  }}
                 >
-                  <label className="sr-only" htmlFor={`line-item-${index}-description`}>
-                    Line item {index + 1} description
-                  </label>
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    disabled={isSubmitting}
-                    id={`line-item-${index}-description`}
-                    onChange={(event) => updateLineItem(index, "description", event.target.value)}
-                    placeholder="Description"
-                    value={item.description}
-                  />
-                  <label className="sr-only" htmlFor={`line-item-${index}-quantity`}>
-                    Line item {index + 1} quantity
-                  </label>
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    disabled={isSubmitting}
-                    id={`line-item-${index}-quantity`}
-                    min="0.01"
-                    onChange={(event) => updateLineItem(index, "quantity", event.target.value)}
-                    step="0.01"
-                    type="number"
-                    value={item.quantity}
-                  />
-                  <label className="sr-only" htmlFor={`line-item-${index}-unit-price`}>
-                    Line item {index + 1} unit price in NGN
-                  </label>
-                  <input
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                    disabled={isSubmitting}
-                    id={`line-item-${index}-unit-price`}
-                    min="0"
-                    onChange={(event) =>
-                      updateLineItem(index, "unitPriceNaira", event.target.value)
-                    }
-                    placeholder="Unit price (NGN)"
-                    step="0.01"
-                    type="number"
-                    value={item.unitPriceNaira}
-                  />
-                  <button
-                    className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 disabled:text-slate-400"
-                    disabled={isSubmitting || form.lineItems.length === 1}
-                    onClick={() => removeLineItem(index)}
-                    type="button"
-                  >
-                    Remove
-                  </button>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600" htmlFor={`line-item-${index}-description`}>
+                      Line {index + 1} description
+                    </label>
+                    <Input
+                      className="mt-1"
+                      disabled={isSubmitting}
+                      id={`line-item-${index}-description`}
+                      maxLength={500}
+                      onChange={(event) => updateLineItem(index, "description", event.target.value)}
+                      placeholder="Description"
+                      value={item.description}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600" htmlFor={`line-item-${index}-quantity`}>
+                      Qty
+                    </label>
+                    <Input
+                      className="mt-1"
+                      disabled={isSubmitting}
+                      id={`line-item-${index}-quantity`}
+                      min="0.01"
+                      onChange={(event) => updateLineItem(index, "quantity", event.target.value)}
+                      step="0.01"
+                      type="number"
+                      value={item.quantity}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600" htmlFor={`line-item-${index}-unit-price`}>
+                      Unit price (NGN)
+                    </label>
+                    <Input
+                      className="mt-1"
+                      disabled={isSubmitting}
+                      id={`line-item-${index}-unit-price`}
+                      min="0"
+                      onChange={(event) => updateLineItem(index, "unitPriceNaira", event.target.value)}
+                      placeholder="0.00"
+                      step="0.01"
+                      type="number"
+                      value={item.unitPriceNaira}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      disabled={isSubmitting || form.lineItems.length === 1}
+                      onClick={() => removeLineItem(index)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Discount (NGN)" error={errors.discountNaira}>
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            <FormField>
+              <FieldLabel htmlFor="invoice-discount">Discount (NGN)</FieldLabel>
+              <Input
+                className="mt-1"
                 disabled={isSubmitting}
+                id="invoice-discount"
                 min="0"
                 onChange={(event) => updateField("discountNaira", event.target.value)}
                 step="0.01"
                 type="number"
                 value={form.discountNaira}
               />
-            </Field>
-            <Field label="Tax (NGN)">
-              <input
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              {errors.discountNaira ? <FieldError>{errors.discountNaira}</FieldError> : null}
+            </FormField>
+            <FormField>
+              <FieldLabel htmlFor="invoice-tax">Tax (NGN)</FieldLabel>
+              <Input
+                className="mt-1"
                 disabled={isSubmitting}
+                id="invoice-tax"
                 min="0"
                 onChange={(event) => updateField("taxNaira", event.target.value)}
                 step="0.01"
                 type="number"
                 value={form.taxNaira}
               />
-            </Field>
+              {errors.taxNaira ? <FieldError>{errors.taxNaira}</FieldError> : null}
+            </FormField>
           </div>
 
-          <Field label="Notes">
-            <textarea
-              className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          <FormField>
+            <FieldLabel htmlFor="invoice-memo">Customer memo</FieldLabel>
+            <Textarea
               disabled={isSubmitting}
+              id="invoice-memo"
               onChange={(event) => updateField("notes", event.target.value)}
+              placeholder="Visible to the customer on the invoice."
               value={form.notes}
             />
-          </Field>
+            <FieldHint>This memo appears on the customer-facing invoice and public page.</FieldHint>
+          </FormField>
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row">
             <Link
@@ -458,85 +829,104 @@ function InvoiceFormContent({
             >
               Cancel
             </Link>
-            <button className={primaryActionClassName} disabled={isSubmitting} type="submit">
-              {isSubmitting ? "Saving..." : mode === "create" ? "Create invoice" : "Save changes"}
-            </button>
+            <Button
+              disabled={isSubmitting}
+              isLoading={isSubmitting && saveMode === "draft"}
+              loadingLabel="Saving..."
+              onClick={() => {
+                pendingSaveModeRef.current = "draft";
+              }}
+              type="submit"
+              variant="outline"
+            >
+              Save draft
+            </Button>
+            <Button
+              disabled={isSubmitting}
+              isLoading={isSubmitting && saveMode === "send"}
+              loadingLabel="Saving..."
+              onClick={() => {
+                pendingSaveModeRef.current = "send";
+              }}
+              type="submit"
+            >
+              Save and send
+            </Button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Save and send first saves the invoice, then sends it. If sending fails after a successful
+            save, the saved invoice link is kept and the authoritative status is checked before any
+            retry is offered.
+          </p>
+        </form>
+
+        <div className="space-y-3">
+          <div className="hidden xl:block">
+            <div className="sticky top-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-950">Live preview</h2>
+                {invoiceStatus ? <InvoiceStatusBadge status={invoiceStatus} /> : null}
+              </div>
+              {previewDocument}
+              <p className="text-xs text-slate-500">
+                Preview is optimistic. Saved detail uses API-calculated totals. Total:{" "}
+                {formatMoney(preview.totalKobo)}.
+              </p>
+            </div>
+          </div>
+
+          <div className="xl:hidden">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                className="lg:hidden"
+                onClick={() => setShowPreviewTablet((current) => !current)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {showPreviewTablet ? "Hide preview" : "Toggle preview"}
+              </Button>
+              <Button
+                className="sm:hidden"
+                onClick={() => setShowPreviewMobile(true)}
+                ref={mobilePreviewTriggerRef}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Preview invoice
+              </Button>
+            </div>
+
+            {showPreviewTablet ? (
+              <div className="mt-3 hidden sm:block xl:hidden">{previewDocument}</div>
+            ) : null}
           </div>
         </div>
+      </div>
 
-        <aside className="h-fit rounded-lg border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-950">Preview</h2>
-            {invoiceStatus ? <InvoiceStatusBadge status={invoiceStatus} /> : null}
+      {showPreviewMobile ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex flex-col bg-white sm:hidden"
+          role="dialog"
+          aria-label="Invoice preview"
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 p-4">
+            <h2 className="text-lg font-semibold">Invoice preview</h2>
+            <Button
+              onClick={() => setShowPreviewMobile(false)}
+              ref={mobilePreviewCloseRef}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Close preview
+            </Button>
           </div>
-          <dl className="mt-5 space-y-3 text-sm">
-            <SummaryRow label="Subtotal" value={formatMoney(preview.subtotalKobo)} />
-            <SummaryRow label="Discount" value={formatMoney(preview.discountKobo)} />
-            <SummaryRow label="Tax" value={formatMoney(preview.taxKobo)} />
-            <SummaryRow
-              strong
-              label="Total"
-              value={<span ref={previewTotalRef}>{formatMoney(preview.totalKobo)}</span>}
-            />
-          </dl>
-          <p className="mt-4 text-xs text-slate-500">
-            Preview totals are for usability. The API recalculates all totals server-side.
-          </p>
-        </aside>
-      </form>
+          <div className="flex-1 overflow-y-auto p-4">{previewDocument}</div>
+        </div>
+      ) : null}
     </section>
   );
-}
-
-function Field({
-  children,
-  error,
-  label
-}: {
-  children: React.ReactNode;
-  error?: string | undefined;
-  label: string;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      {children}
-      {error ? <span className="mt-1 block text-sm text-red-700">{error}</span> : null}
-    </label>
-  );
-}
-
-function SummaryRow({
-  label,
-  strong,
-  value
-}: {
-  label: string;
-  strong?: boolean;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className={`flex justify-between gap-4 ${strong ? "text-base font-semibold" : ""}`}>
-      <dt className="text-slate-600">{label}</dt>
-      <dd className="text-slate-950">{value}</dd>
-    </div>
-  );
-}
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(media.matches);
-    update();
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
-
-  return reduced;
 }

@@ -62,6 +62,16 @@ export function sendInvoice(accessToken: string, invoiceId: string) {
   });
 }
 
+export function duplicateInvoice(accessToken: string, invoiceId: string) {
+  return apiRequest<InvoiceDetailResponse>(
+    `/invoices/${encodeURIComponent(invoiceId)}/duplicate`,
+    {
+      method: "POST",
+      accessToken
+    }
+  );
+}
+
 export function cancelInvoice(accessToken: string, invoiceId: string, reason: string) {
   return apiRequest<InvoiceDetailResponse>(`/invoices/${encodeURIComponent(invoiceId)}/cancel`, {
     method: "POST",
