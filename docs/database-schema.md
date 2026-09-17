@@ -175,6 +175,23 @@ Indexes and constraints:
 
 Duplicate active customer emails are blocked within an organisation. Archived customers do not block creating a new active customer with the same email.
 
+### catalogue_items
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. Cascade on organisation deletion. |
+| name | Required, trimmed, maximum 200 characters. |
+| description | Optional, trimmed, maximum 2,000 characters. |
+| default_unit_price_kobo | Required integer kobo from 0 through `2,147,483,647`. |
+| archived_at | Nullable soft archive timestamp. Null means active. |
+| created_by_user_id | Nullable reference to the user who created the item. Set null on user deletion. |
+| created_at, updated_at | Timestamps. |
+
+Catalogue items are organisation-scoped reusable products/services for invoice authoring. Archive replaces delete. Saved invoice lines are independent snapshots: selecting a catalogue item copies its name into the invoice description (500-character limit) plus quantity and price, and the saved invoice never reads live catalogue values.
+
+Index: `catalogue_items_org_archived_at_idx` on `organisation_id + archived_at`.
+
 ### invoices
 
 | Column | Notes |
@@ -188,7 +205,9 @@ Duplicate active customer emails are blocked within an organisation. Archived cu
 | status | InvoiceStatus. |
 | currency | Defaults to `NGN`. |
 | issue_date | Invoice issue date. |
-| due_date | Due date. |
+| due_date | Due date. Payment-term presets (Net 7/14/30, Custom) set this field; no separate term is stored. |
+| customer_reference | Nullable customer-facing reference/PO number, maximum 120 characters. Cleared on duplication. |
+| notes | Customer-facing memo, rendered on detail and the public invoice. |
 | subtotal_kobo | Server-calculated. |
 | discount_kobo | Invoice-level discount. |
 | tax_kobo | Invoice-level tax. |
@@ -481,6 +500,8 @@ Audit logs are append-only and read-only through the T016 UI. API and CSV export
 ## Invoice Money Model
 
 - MVP uses invoice-level `discount_kobo` and `tax_kobo`.
+- Line items do not have per-line tax or per-line discount in MVP.
+- Every persisted kobo value (catalogue price, unit price, discount, tax, line total, subtotal, total, paid, balance) must be an integer from 0 through `2,147,483,647` (`NGN 21,474,836.47`), the PostgreSQL signed-integer ceiling. Quantity must be greater than 0, at most `99,999,999.99`, with two decimals.
 - Line items do not have per-line tax or per-line discount in MVP.
 - Invoice `subtotal_kobo` is the sum of `invoice_line_items.line_total_kobo`.
 - Invoice `total_kobo` is `subtotal_kobo - discount_kobo + tax_kobo`.

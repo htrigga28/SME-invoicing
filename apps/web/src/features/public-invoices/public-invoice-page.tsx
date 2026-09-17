@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { StatusBadge as SharedStatusBadge } from "@/components/ui/status-badge";
+import { InvoiceDocument } from "@/features/invoices/invoice-document";
 import { isApiRequestError } from "@/lib/api";
 
 import {
@@ -274,62 +275,23 @@ export function PublicInvoicePage({
         </header>
 
         <section className="grid gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <InfoBlock
-                label="Invoice"
-                lines={[
-                  invoice.invoice.invoiceNumber,
-                  `Issued ${formatDate(invoice.invoice.issueDate)}`,
-                  `Due ${formatDate(invoice.invoice.dueDate)}`
-                ]}
-              />
-              <InfoBlock
-                label="Billed to"
-                lines={[
-                  invoice.customer.name,
-                  invoice.customer.email,
-                  invoice.customer.phone,
-                  invoice.customer.billingAddress
-                ]}
-              />
-            </div>
-
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Description</th>
-                    <th className="px-4 py-3 text-right">Qty</th>
-                    <th className="hidden px-4 py-3 text-right sm:table-cell">Unit</th>
-                    <th className="px-4 py-3 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {invoice.lineItems.map((item) => (
-                    <tr key={`${item.sortOrder}-${item.description}`}>
-                      <td className="px-4 py-3 font-medium text-slate-950">{item.description}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">{item.quantity}</td>
-                      <td className="hidden px-4 py-3 text-right text-slate-600 sm:table-cell">
-                        {formatKoboToNaira(item.unitPriceKobo)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-900">
-                        {formatKoboToNaira(item.lineTotalKobo)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {invoice.invoice.notes ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <h2 className="text-sm font-semibold text-slate-950">Notes</h2>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                  {invoice.invoice.notes}
-                </p>
-              </div>
-            ) : null}
+          <div className="min-w-0">
+            <InvoiceDocument
+              balanceDueKobo={invoice.invoice.balanceDueKobo}
+              business={invoice.business}
+              customer={invoice.customer}
+              customerMemo={invoice.invoice.notes}
+              customerReference={invoice.invoice.customerReference}
+              discountKobo={invoice.invoice.discountKobo}
+              dueDate={invoice.invoice.dueDate}
+              invoiceNumber={invoice.invoice.invoiceNumber}
+              issueDate={invoice.invoice.issueDate}
+              lineItems={invoice.lineItems}
+              status={invoice.invoice.status}
+              subtotalKobo={invoice.invoice.subtotalKobo}
+              taxKobo={invoice.invoice.taxKobo}
+              totalKobo={invoice.invoice.totalKobo}
+            />
           </div>
 
           <aside className="space-y-4">
@@ -472,21 +434,6 @@ function StatusPanel({
       <h1 className="text-2xl font-semibold">{title}</h1>
       <p className="mt-3 text-sm">{message}</p>
     </Alert>
-  );
-}
-
-function InfoBlock({ label, lines }: { label: string; lines: Array<string | null | undefined> }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</h2>
-      <div className="mt-3 space-y-1 text-sm text-slate-700">
-        {lines.filter(Boolean).map((line) => (
-          <p className="whitespace-pre-wrap break-words" key={line}>
-            {line}
-          </p>
-        ))}
-      </div>
-    </div>
   );
 }
 

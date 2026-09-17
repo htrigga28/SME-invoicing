@@ -227,6 +227,11 @@ export function InvoiceListContent({
                   <tr key={invoice.id}>
                     <td className="px-4 py-3 font-medium text-slate-950">
                       <Link href={`/invoices/${invoice.id}`}>{invoice.invoiceNumber}</Link>
+                      {invoice.customerReference ? (
+                        <p className="mt-0.5 text-xs font-normal text-slate-500">
+                          Ref: {invoice.customerReference}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-950">{invoice.customer.name}</p>
@@ -262,6 +267,9 @@ export function InvoiceListContent({
                     <Link className="font-medium text-slate-950" href={`/invoices/${invoice.id}`}>
                       {invoice.invoiceNumber}
                     </Link>
+                    {invoice.customerReference ? (
+                      <p className="text-xs text-slate-500">Ref: {invoice.customerReference}</p>
+                    ) : null}
                     <p className="text-sm text-slate-600">{invoice.customer.name}</p>
                   </div>
                   <InvoiceStatusBadge status={invoice.status} />

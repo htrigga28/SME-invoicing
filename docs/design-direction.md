@@ -51,10 +51,11 @@ Hanken Grotesk is the interface font. JetBrains Mono is reserved for money, refe
 | --- | --- |
 | Dashboard | Show KPI cards, status breakdowns, recent invoices, recent payments, and monthly collections. Prioritize fast operational scanning. |
 | Customers list/detail | Use searchable tables, customer summary details, invoice history, payment history, and archive state. |
-| Invoice list | Include invoice number, customer, issue date, due date, total, paid amount, balance, status, and actions. |
-| Invoice creation | Use a focused form with customer selector, due date, line items, discount, tax, notes, and server-calculated totals preview. |
-| Invoice detail | Show invoice metadata, line items, status timeline, payments, receipt links, and actions allowed by role/status. |
-| Public invoice payment page | Present the invoice clearly, show balance due, and make Pay Now the primary action. Avoid internal admin data. |
+| Invoice list | Include invoice number, customer, issue date, due date, total, paid amount, balance, status, and actions. Show the customer reference inline under the invoice number where present. |
+| Invoice creation | Use an editor with live customer-facing preview: customer selector, customer reference/PO, Net 7/14/30 plus custom due dates, catalogue/ad-hoc line items with editable snapshots, discount, tax, customer memo, and explicit Save draft / Save and send actions. Preview totals are optimistic; saved detail uses server totals. Mobile uses a full-screen preview dialog. |
+| Invoice detail | Show invoice metadata (including customer reference and customer memo), line items, status timeline, payments, receipt links, duplicate action with archived-customer guard, and actions allowed by role/status. |
+| Products & Services | Provide a searchable catalogue workspace with active/archived views, create/edit/archive/restore, and Viewer read-only parity. |
+| Public invoice payment page | Present the invoice clearly with customer reference and memo, show balance due, and make Pay Now the primary action. Avoid internal admin data. |
 | Payments/reconciliation page | Show payment references, provider status, matched invoice, customer, amount, date, and reconciliation state. |
 | Receipts page | Show receipt number, invoice, customer, payment reference, amount, date, and downloadable/viewable detail. |
 | Exports page | Use focused export panels per dataset instead of one universal form. Keep filters compact and make download state explicit. |

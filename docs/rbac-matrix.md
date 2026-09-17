@@ -26,7 +26,10 @@ Customers paying public invoices do not need a platform account.
 | Customers create/update/archive | Yes | Yes | Yes | No |
 | Invoices view | Yes | Yes | Yes | Yes |
 | Invoices create/update/send | Yes | Yes | Yes | No |
+| Invoices duplicate | Yes | Yes | Yes | No |
 | Invoices cancel/void | Yes | Yes | No | No |
+| Catalogue view | Yes | Yes | Yes | Yes |
+| Catalogue create/update/archive/restore | Yes | Yes | Yes | No |
 | Payments view | Yes | Yes | Yes | Yes |
 | Payments mutate manually | No | No | No | No |
 | Receipts view | Yes | Yes | Yes | Yes |

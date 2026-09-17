@@ -27,6 +27,7 @@ import {
 } from "drizzle-orm";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
+import { assertInvoiceQuantity, assertKoboAmount } from "../../common/money-limits";
 import { DatabaseService } from "../../database/database.service";
 import {
   businessProfiles,
@@ -118,12 +119,15 @@ function calculateInvoiceTotals(input: {
   taxKobo?: number;
 }) {
   const lineTotalsKobo = input.lineItems.map((item) =>
-    Math.round(item.quantity * item.unitPriceKobo)
+    assertKoboAmount(Math.round(item.quantity * item.unitPriceKobo), "Line total")
   );
-  const subtotalKobo = lineTotalsKobo.reduce((sum, lineTotal) => sum + lineTotal, 0);
-  const discountKobo = input.discountKobo ?? 0;
-  const taxKobo = input.taxKobo ?? 0;
-  const totalKobo = subtotalKobo - discountKobo + taxKobo;
+  const subtotalKobo = lineTotalsKobo.reduce(
+    (sum, lineTotal) => assertKoboAmount(sum + lineTotal, "Invoice subtotal"),
+    0
+  );
+  const discountKobo = assertKoboAmount(input.discountKobo ?? 0, "Discount");
+  const taxKobo = assertKoboAmount(input.taxKobo ?? 0, "Tax");
+  const totalKobo = assertKoboAmount(subtotalKobo - discountKobo + taxKobo, "Invoice total");
 
   return {
     lineTotalsKobo,
@@ -244,6 +248,7 @@ export class InvoicesService {
           currency: "NGN",
           issueDate: normalized.issueDate,
           dueDate: normalized.dueDate,
+          customerReference: normalized.customerReference,
           notes: normalized.notes,
           subtotalKobo: totals.subtotalKobo,
           discountKobo: totals.discountKobo,
@@ -351,9 +356,10 @@ export class InvoicesService {
     }
 
     const normalized = this.normalizeInvoiceUpdateInput(input, invoiceWithCustomer.invoice);
-    const nextCustomer = normalized.customerId
-      ? await this.findCustomerForInvoice(context.activeOrganisation.id, normalized.customerId)
-      : invoiceWithCustomer.customer;
+    const nextCustomer =
+      normalized.customerId && normalized.customerId !== invoiceWithCustomer.invoice.customerId
+        ? await this.findCustomerForInvoice(context.activeOrganisation.id, normalized.customerId)
+        : invoiceWithCustomer.customer;
     const nextLineItems =
       normalized.lineItems ?? (await this.findLineItems(context.activeOrganisation.id, invoiceId));
     const lineItemInput = nextLineItems.map((lineItem) => ({
@@ -374,6 +380,7 @@ export class InvoicesService {
           customerId: nextCustomer.id,
           issueDate: normalized.issueDate,
           dueDate: normalized.dueDate,
+          customerReference: normalized.customerReference,
           notes: normalized.notes,
           subtotalKobo: totals.subtotalKobo,
           discountKobo: totals.discountKobo,
@@ -447,6 +454,33 @@ export class InvoicesService {
       ...response,
       publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
     };
+  }
+
+  async duplicateInvoice(context: ActiveOrganisationContext, invoiceId: string) {
+    const source = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+
+    if (source.customer.archivedAt) {
+      throw new UnprocessableEntityException(
+        "Archived customers cannot be used for duplicated invoices. Reactivate the customer or choose an active customer."
+      );
+    }
+
+    const sourceLineItems = await this.findLineItems(context.activeOrganisation.id, invoiceId);
+    const issueDate = new Date().toISOString().slice(0, 10);
+
+    return this.createInvoice(context, {
+      customerId: source.invoice.customerId,
+      issueDate,
+      dueDate: this.duplicateDueDate(issueDate, source.invoice.issueDate, source.invoice.dueDate),
+      notes: source.invoice.notes,
+      discountKobo: source.invoice.discountKobo,
+      taxKobo: source.invoice.taxKobo,
+      lineItems: sourceLineItems.map((lineItem) => ({
+        description: lineItem.description,
+        quantity: Number(lineItem.quantity),
+        unitPriceKobo: lineItem.unitPriceKobo
+      }))
+    });
   }
 
   async cancelInvoice(context: ActiveOrganisationContext, invoiceId: string, reason: string) {
@@ -569,7 +603,7 @@ export class InvoicesService {
       publicInvoice.invoice.organisationId
     );
 
-    const amountKobo = publicInvoice.invoice.balanceDueKobo;
+    const amountKobo = assertKoboAmount(publicInvoice.invoice.balanceDueKobo, "Payment amount", 1);
     const reference = this.generatePaymentReference(publicInvoice.invoice.invoiceNumber);
     const callbackUrl = this.createPaymentCallbackUrl(publicToken, reference);
     const initializedAt = new Date();
@@ -1067,6 +1101,7 @@ export class InvoicesService {
       customerId: input.customerId,
       issueDate: input.issueDate,
       dueDate: input.dueDate,
+      customerReference: this.nullableText(input.customerReference),
       notes: this.nullableText(input.notes),
       discountKobo: input.discountKobo ?? 0,
       taxKobo: input.taxKobo ?? 0,
@@ -1083,6 +1118,10 @@ export class InvoicesService {
       customerId: input.customerId,
       issueDate,
       dueDate,
+      customerReference:
+        input.customerReference !== undefined
+          ? this.nullableText(input.customerReference)
+          : invoice.customerReference,
       notes: input.notes !== undefined ? this.nullableText(input.notes) : invoice.notes,
       discountKobo: input.discountKobo ?? invoice.discountKobo,
       taxKobo: input.taxKobo ?? invoice.taxKobo,
@@ -1101,6 +1140,9 @@ export class InvoicesService {
       if (!description) {
         throw new BadRequestException("Line item description is required.");
       }
+
+      assertInvoiceQuantity(lineItem.quantity);
+      assertKoboAmount(lineItem.unitPriceKobo, "Unit price");
 
       return {
         description,
@@ -1135,6 +1177,17 @@ export class InvoicesService {
     if (new Date(`${dueDate}T00:00:00.000Z`) < new Date(`${issueDate}T00:00:00.000Z`)) {
       throw new BadRequestException("Due date must be on or after issue date.");
     }
+  }
+
+  private duplicateDueDate(issueDate: string, sourceIssueDate: string, sourceDueDate: string) {
+    const sourceIntervalDays = Math.round(
+      (Date.parse(`${sourceDueDate}T00:00:00.000Z`) -
+        Date.parse(`${sourceIssueDate}T00:00:00.000Z`)) /
+        86_400_000
+    );
+    const dueDate = new Date(`${issueDate}T00:00:00.000Z`);
+    dueDate.setUTCDate(dueDate.getUTCDate() + Math.max(sourceIntervalDays, 0));
+    return dueDate.toISOString().slice(0, 10);
   }
 
   private requiredReason(reason: string) {
@@ -1226,6 +1279,7 @@ export class InvoicesService {
     return {
       ...this.toSafeInvoiceListItem(invoice, customer),
       publicToken: invoice.publicToken,
+      customerReference: invoice.customerReference,
       notes: invoice.notes,
       viewedAt: invoice.viewedAt
     };
@@ -1283,6 +1337,7 @@ export class InvoicesService {
         currency: invoice.currency,
         issueDate: invoice.issueDate,
         dueDate: invoice.dueDate,
+        customerReference: invoice.customerReference,
         notes: invoice.notes,
         subtotalKobo: invoice.subtotalKobo,
         discountKobo: invoice.discountKobo,

@@ -9,6 +9,7 @@ export type AppRoute = {
     | "exports"
     | "invoices"
     | "payments"
+    | "products"
     | "receipts"
     | "settings"
     | "team";
@@ -27,6 +28,12 @@ const mainRoutes: AppRoute[] = [
   { href: "/dashboard", icon: "dashboard", label: "Dashboard", status: "available" },
   { href: "/customers", icon: "customers", label: "Customers", status: "available" },
   { href: "/invoices", icon: "invoices", label: "Invoices", status: "available" },
+  {
+    href: "/products-services",
+    icon: "products",
+    label: "Products & Services",
+    status: "available"
+  },
   { href: "/payments", icon: "payments", label: "Payments", status: "available" },
   { href: "/receipts", icon: "receipts", label: "Receipts", status: "available" },
   {

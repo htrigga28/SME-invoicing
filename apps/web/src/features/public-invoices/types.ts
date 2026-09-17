@@ -7,6 +7,7 @@ export type PublicInvoiceResponse = {
     currency: string;
     issueDate: string;
     dueDate: string;
+    customerReference: string | null;
     notes: string | null;
     subtotalKobo: number;
     discountKobo: number;

@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Package,
   ReceiptText,
   Settings,
   UserRound,
@@ -44,6 +45,7 @@ const navigationIcons: Record<AppRoute["icon"], LucideIcon> = {
   exports: FileBarChart,
   invoices: FileText,
   payments: CreditCard,
+  products: Package,
   receipts: ReceiptText,
   settings: Settings,
   team: BarChart3
