@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { primaryActionClassName } from "@/components/ui/styles";
+import { BrandLogo } from "@/components/brand/brand-logo";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/feedback";
+import { FieldLabel, FormField, Input } from "@/components/ui/form";
 import { getMe } from "@/features/auth/auth-api";
 import { clearStoredSession, getStoredSession, setStoredSession } from "@/features/auth/session";
 import type { MeResponse } from "@/features/auth/types";
@@ -123,90 +126,114 @@ export function AcceptInvitePage({ token }: { token: string }) {
   const emailMatches = me?.user.email.toLowerCase() === invitedEmail.toLowerCase();
 
   return (
-    <section className="mx-auto max-w-xl rounded-lg border border-slate-200 bg-white p-6">
-      <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Team invitation</p>
-      <h1 className="mt-2 text-3xl font-semibold text-slate-950">
+    <section className="mx-auto w-full max-w-xl rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-6 shadow-[var(--shadow-document)] sm:p-8">
+      <BrandLogo className="mb-5" />
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--accent)]">
+        Team invitation
+      </p>
+      <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-3xl">
         Join {preview.invitation.organisationName}
       </h1>
-      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-        <p>
-          <strong>Email:</strong> {invitedEmail}
-        </p>
-        <p>
-          <strong>Role:</strong> {preview.invitation.role}
-        </p>
-        <p>
-          <strong>Expires:</strong> {new Date(preview.invitation.expiresAt).toLocaleDateString()}
-        </p>
-      </div>
+      <dl className="mt-4 space-y-3 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-sm">
+        <div className="flex justify-between gap-4">
+          <dt className="text-[var(--text-secondary)]">Email</dt>
+          <dd className="break-words text-right font-medium text-[var(--text-primary)] [overflow-wrap:anywhere]">
+            {invitedEmail}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-[var(--text-secondary)]">Role</dt>
+          <dd className="font-medium capitalize text-[var(--text-primary)]">
+            {preview.invitation.role}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="text-[var(--text-secondary)]">Expires</dt>
+          <dd className="tabular-nums text-[var(--text-primary)]">
+            {new Date(preview.invitation.expiresAt).toLocaleDateString()}
+          </dd>
+        </div>
+      </dl>
 
       {error ? (
-        <p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <Alert className="mt-4" role="alert" tone="error">
           {error}
-        </p>
+        </Alert>
       ) : null}
 
       {me ? (
         <div className="mt-6 space-y-3">
           {emailMatches ? (
             <>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm leading-6 text-[var(--text-secondary)]">
                 You are logged in as {me.user.email}. Accept this invitation to join the existing
                 organisation.
               </p>
-              <button
-                className={`${primaryActionClassName} w-full`}
+              <Button
+                className="w-full"
                 disabled={isSubmitting}
+                isLoading={isSubmitting}
+                loadingLabel="Accepting..."
                 onClick={() => void handleAcceptExisting()}
+                size="lg"
                 type="button"
               >
-                {isSubmitting ? "Accepting..." : "Accept invitation"}
-              </button>
+                Accept invitation
+              </Button>
             </>
           ) : (
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <Alert tone="warning">
               You are logged in as {me.user.email}. Logout and login as {invitedEmail} to accept
               this invitation.
-            </p>
+            </Alert>
           )}
         </div>
       ) : (
         <form className="mt-6 space-y-4" onSubmit={handleCreateAccount}>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm leading-6 text-[var(--text-secondary)]">
             Create an account for the invited email, or login first if you already have an account.
           </p>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Invited email</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600"
-              disabled
-              value={invitedEmail}
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Name</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              onChange={(event) => setName(event.target.value)}
-              value={name}
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Password</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              value={password}
-            />
-          </label>
-          <button
-            className={`${primaryActionClassName} w-full`}
+          <div>
+            <FormField>
+              <FieldLabel>Invited email</FieldLabel>
+              <Input className="mt-1" disabled value={invitedEmail} />
+            </FormField>
+          </div>
+          <div>
+            <FormField>
+              <FieldLabel>Name</FieldLabel>
+              <Input
+                autoComplete="name"
+                className="mt-1"
+                id="accept-invite-name"
+                onChange={(event) => setName(event.target.value)}
+                value={name}
+              />
+            </FormField>
+          </div>
+          <div>
+            <FormField>
+              <FieldLabel>Password</FieldLabel>
+              <Input
+                autoComplete="new-password"
+                className="mt-1"
+                id="accept-invite-password"
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                value={password}
+              />
+            </FormField>
+          </div>
+          <Button
+            className="w-full"
             disabled={isSubmitting}
+            isLoading={isSubmitting}
+            loadingLabel="Creating account..."
+            size="lg"
             type="submit"
           >
-            {isSubmitting ? "Creating account..." : "Create account and accept"}
-          </button>
+            Create account and accept
+          </Button>
         </form>
       )}
     </section>
@@ -222,15 +249,17 @@ function InvitePanel({
   title: string;
   tone?: "error" | "info";
 }) {
-  const styles = {
-    error: "border-red-200 bg-red-50 text-red-700",
-    info: "border-slate-200 bg-white text-slate-700"
-  };
-
   return (
-    <section className={`mx-auto max-w-xl rounded-lg border p-6 ${styles[tone]}`}>
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="mt-3 text-sm">{message}</p>
+    <section className="mx-auto w-full max-w-xl rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-6 shadow-[var(--shadow-document)] sm:p-8">
+      <BrandLogo className="mb-5" />
+      <h1
+        className={`text-2xl font-semibold tracking-tight ${
+          tone === "error" ? "text-[var(--danger)]" : "text-[var(--text-primary)]"
+        }`}
+      >
+        {title}
+      </h1>
+      <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{message}</p>
     </section>
   );
 }

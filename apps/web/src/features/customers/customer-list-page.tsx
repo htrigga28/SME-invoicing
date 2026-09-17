@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { Button, LinkButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DataTable,
@@ -13,10 +14,15 @@ import {
   Pagination as DataPagination,
   TableHeaderCell
 } from "@/components/ui/data-table";
+import {
+  DataToolbar,
+  DataToolbarActions,
+  DataToolbarSearch,
+  StatusTabs
+} from "@/components/ui/data-toolbar";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
-import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
-import { FieldLabel, FormField, Input } from "@/components/ui/form";
-import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/form";
+import { TableRowActionMenu } from "@/components/ui/menu";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -33,7 +39,7 @@ import { canManageCustomers } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
 
-const statusOptions: { label: string; value: CustomerListStatus }[] = [
+const STATUS_TABS: Array<{ label: string; value: CustomerListStatus }> = [
   { label: "Active", value: "active" },
   { label: "Archived", value: "archived" },
   { label: "All", value: "all" }
@@ -56,6 +62,7 @@ export function CustomerListContent({
   accessToken: string;
   role: "owner" | "admin" | "accountant" | "viewer";
 }) {
+  const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -138,7 +145,7 @@ export function CustomerListContent({
   }
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <PageHeader
         action={canManage ? <PrimaryLink href="/customers/new">New customer</PrimaryLink> : null}
         description="Manage billing contacts for invoices."
@@ -148,38 +155,44 @@ export function CustomerListContent({
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
-      <FilterBar aria-label="Customer filters" onSubmit={handleSearch}>
-        <FilterGrid className="md:grid-cols-[1fr_180px_auto]">
-          <FormField>
-            <FieldLabel>Search</FieldLabel>
+      <StatusTabs<CustomerListStatus>
+        label="Customer status"
+        onChange={setStatus}
+        options={STATUS_TABS}
+        value={status}
+      />
+
+      <DataToolbar>
+        <DataToolbarSearch>
+          <form aria-label="Search customers" onSubmit={handleSearch} role="search">
             <Input
-              className="mt-1"
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search name, email, or phone"
+              aria-label="Search customers"
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                if (event.target.value === "") setSearch("");
+              }}
+              placeholder="Search name, email, or phone…"
               value={searchInput}
             />
-          </FormField>
-          <FormField>
-            <FieldLabel>Status</FieldLabel>
-            <Select
-              onChange={(event) => setStatus(event.target.value as CustomerListStatus)}
-              value={status}
-              wrapperClassName="mt-1"
+          </form>
+        </DataToolbarSearch>
+        <DataToolbarActions>
+          {isFiltered ? (
+            <Button
+              onClick={() => {
+                setSearch("");
+                setSearchInput("");
+                setStatus("active");
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
             >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FilterActions>
-            <Button type="submit" variant="outline">
-              Apply
+              Clear
             </Button>
-          </FilterActions>
-        </FilterGrid>
-      </FilterBar>
+          ) : null}
+        </DataToolbarActions>
+      </DataToolbar>
 
       {state === "loading" ? <CustomerListSkeleton /> : null}
 
@@ -219,54 +232,62 @@ export function CustomerListContent({
               <thead>
                 <tr>
                   <TableHeaderCell>Customer</TableHeaderCell>
+                  <TableHeaderCell>Email</TableHeaderCell>
                   <TableHeaderCell>Phone</TableHeaderCell>
                   <TableHeaderCell>Status</TableHeaderCell>
                   <TableHeaderCell>Created</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Actions</TableHeaderCell>
+                  <TableHeaderCell className="w-12">
+                    <span className="sr-only">Actions</span>
+                  </TableHeaderCell>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--border-subtle)]">
                 {customers.map((customer) => (
-                  <tr key={customer.id}>
-                    <td className="px-4 py-3">
-                      <Link
-                        className="font-medium text-slate-950"
-                        href={`/customers/${customer.id}`}
-                      >
-                        {customer.name}
-                      </Link>
-                      <p className="text-slate-600">{customer.email}</p>
+                  <tr
+                    key={customer.id}
+                    aria-label={customer.name}
+                    className="cursor-pointer hover:bg-[var(--surface-selected)]"
+                    onClick={() => router.push(`/customers/${customer.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") router.push(`/customers/${customer.id}`);
+                    }}
+                    tabIndex={0}
+                  >
+                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-[var(--text-primary)]">
+                      {customer.name}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{customer.phone ?? "Not provided"}</td>
-                    <td className="px-4 py-3">
+                    <td className="max-w-56 truncate px-4 py-3.5 text-[var(--text-secondary)]">
+                      {customer.email}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-[var(--text-secondary)]">
+                      {customer.phone ?? "Not provided"}
+                    </td>
+                    <td className="px-4 py-3.5">
                       <CustomerStatusBadge status={customer.status} />
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(customer.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <LinkButton href={`/customers/${customer.id}`} size="sm" variant="outline">
-                          View
-                        </LinkButton>
-                        {canManage && customer.status === "active" ? (
-                          <>
-                            <LinkButton
-                              href={`/customers/${customer.id}/edit`}
-                              size="sm"
-                              variant="outline"
-                            >
-                              Edit
-                            </LinkButton>
-                            <Button
-                              onClick={() => setCustomerPendingArchive(customer)}
-                              size="sm"
-                              type="button"
-                              variant="destructive"
-                            >
-                              Archive
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-[var(--text-secondary)]">
+                      {formatDate(customer.createdAt)}
+                    </td>
+                    <td
+                      className="px-2 py-3.5 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <TableRowActionMenu
+                        items={[
+                          { label: "View", href: `/customers/${customer.id}` },
+                          ...(canManage && customer.status === "active"
+                            ? [
+                                { label: "Edit", href: `/customers/${customer.id}/edit` },
+                                {
+                                  label: "Archive",
+                                  destructive: true,
+                                  onSelect: () => setCustomerPendingArchive(customer)
+                                }
+                              ]
+                            : [])
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -274,28 +295,42 @@ export function CustomerListContent({
             </DataTable>
           </div>
 
-          <div className="divide-y divide-slate-100 md:hidden">
+          <div className="divide-y divide-[var(--border-subtle)] md:hidden">
             {customers.map((customer) => (
               <MobileDataCard key={customer.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Link className="font-medium text-slate-950" href={`/customers/${customer.id}`}>
+                    <Link
+                      className="font-medium text-[var(--text-primary)]"
+                      href={`/customers/${customer.id}`}
+                    >
                       {customer.name}
                     </Link>
-                    <p className="break-all text-sm text-slate-600">{customer.email}</p>
+                    <p className="break-all text-sm text-[var(--text-secondary)]">
+                      {customer.email}
+                    </p>
                   </div>
                   <CustomerStatusBadge status={customer.status} />
                 </div>
-                <p className="text-sm text-slate-600">{customer.phone ?? "No phone provided"}</p>
-                <p className="text-xs text-slate-500">Created {formatDate(customer.createdAt)}</p>
-                <div className="flex flex-wrap gap-2 text-sm">
-                  <LinkButton href={`/customers/${customer.id}`} size="sm" variant="outline">
-                    View
-                  </LinkButton>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  {customer.phone ?? "No phone provided"}
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Created {formatDate(customer.createdAt)}
+                  </p>
                   {canManage && customer.status === "active" ? (
-                    <LinkButton href={`/customers/${customer.id}/edit`} size="sm" variant="outline">
-                      Edit
-                    </LinkButton>
+                    <TableRowActionMenu
+                      items={[
+                        { label: "View", href: `/customers/${customer.id}` },
+                        { label: "Edit", href: `/customers/${customer.id}/edit` },
+                        {
+                          label: "Archive",
+                          destructive: true,
+                          onSelect: () => setCustomerPendingArchive(customer)
+                        }
+                      ]}
+                    />
                   ) : null}
                 </div>
               </MobileDataCard>

@@ -24,7 +24,7 @@ export function SegmentedControl<T extends string>({
     <div
       aria-label={label}
       className={cn(
-        "inline-flex flex-wrap gap-1 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-1",
+        "inline-flex flex-wrap gap-1 rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface-raised)] p-1",
         className
       )}
       role="tablist"
@@ -36,9 +36,8 @@ export function SegmentedControl<T extends string>({
           <button
             aria-selected={selected}
             className={cn(
-              "min-h-10 rounded-[var(--radius-control)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] transition duration-200 hover:bg-[var(--hover-subtle)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
-              selected &&
-                "bg-[var(--accent-muted)] text-[var(--accent)] [box-shadow:inset_0_0_0_1px_var(--accent-border)]"
+              "min-h-9 rounded-[var(--radius-control)] px-3 py-1.5 text-sm font-semibold text-[var(--text-secondary)] transition duration-150 hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
+              selected && "bg-[var(--surface)] text-[var(--accent)] shadow-sm ring-1 ring-[var(--accent-border)]"
             )}
             key={option.value}
             onClick={() => onChange(option.value)}

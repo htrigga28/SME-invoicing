@@ -6,16 +6,22 @@ import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page";
 import { Button } from "@/components/ui/button";
-import { SectionCard } from "@/components/ui/card";
 import {
   DataTable,
   DataTableContainer,
   Pagination as DataPagination,
   TableHeaderCell
 } from "@/components/ui/data-table";
+import {
+  DataToolbar,
+  DataToolbarActions,
+  DataToolbarFilters,
+  DataToolbarSearch
+} from "@/components/ui/data-toolbar";
+import { Drawer } from "@/components/ui/drawer";
 import { Alert, EmptyState, ErrorState, LoadingSkeleton } from "@/components/ui/feedback";
-import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
-import { DateInput as DateControl, FieldLabel, FormField, Input } from "@/components/ui/form";
+import { DateInput as DateControl, Input } from "@/components/ui/form";
+import { TableRowActionMenu } from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { clearStoredSession } from "@/features/auth/session";
@@ -50,6 +56,7 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLogDetail | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [detailState, setDetailState] = useState<LoadState>("ready");
   const [detailError, setDetailError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -110,6 +117,7 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
   }
 
   async function loadAuditLogDetail(auditLogId: string) {
+    setDetailOpen(true);
     setDetailState("loading");
     setDetailError(null);
 
@@ -128,8 +136,19 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
     setSearch(searchInput);
   }
 
+  function handleClearFilters() {
+    setSearch("");
+    setSearchInput("");
+    setCategory("");
+    setAction("");
+    setActorUserId("");
+    setResourceType("");
+    setDateFrom("");
+    setDateTo("");
+  }
+
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <PageHeader
         description="Review important activity across your organisation."
         title="Audit Logs"
@@ -141,18 +160,30 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
         </Alert>
       ) : null}
 
-      <FilterBar aria-label="Audit log filters" onSubmit={handleSearch}>
-        <FilterGrid className="lg:grid-cols-[minmax(220px,1fr)_repeat(3,minmax(140px,170px))] 2xl:grid-cols-[minmax(220px,1fr)_170px_170px_170px_170px_150px_150px_auto]">
-          <TextField
-            label="Search"
-            onChange={setSearchInput}
-            placeholder="Actor, action, resource, or summary"
-            value={searchInput}
-          />
-          <SelectField
-            label="Category"
-            onChange={(value) => setCategory(value as AuditLogCategory | "")}
+      <DataToolbar aria-label="Audit log filters">
+        <DataToolbarSearch>
+          <form aria-label="Search audit logs" onSubmit={handleSearch} role="search">
+            <Input
+              aria-label="Search"
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                if (event.target.value === "") setSearch("");
+              }}
+              placeholder="Actor, action, resource, or summary…"
+              value={searchInput}
+            />
+          </form>
+        </DataToolbarSearch>
+        <DataToolbarFilters>
+          <label className="sr-only" htmlFor="audit-category-filter">
+            Category
+          </label>
+          <Select
+            aria-label="Category"
+            id="audit-category-filter"
+            onChange={(event) => setCategory(event.target.value as AuditLogCategory | "")}
             value={category}
+            wrapperClassName="w-44"
           >
             <option value="">All categories</option>
             {auditCategories.map((item) => (
@@ -160,132 +191,179 @@ export function AuditLogsContent({ accessToken }: { accessToken: string }) {
                 {categoryLabels[item]}
               </option>
             ))}
-          </SelectField>
-          <TextField
-            label="Action"
-            onChange={setAction}
+          </Select>
+          <label className="sr-only" htmlFor="audit-action-filter">
+            Action
+          </label>
+          <Input
+            aria-label="Action"
+            className="w-40"
+            id="audit-action-filter"
+            onChange={(event) => setAction(event.target.value)}
             placeholder="invoice_sent"
             value={action}
           />
-          <TextField
-            label="Actor ID"
-            onChange={setActorUserId}
+          <label className="sr-only" htmlFor="audit-actor-filter">
+            Actor ID
+          </label>
+          <Input
+            aria-label="Actor ID"
+            className="w-36"
+            id="audit-actor-filter"
+            onChange={(event) => setActorUserId(event.target.value)}
             placeholder="User UUID"
             value={actorUserId}
           />
-          <TextField
-            label="Resource"
-            onChange={setResourceType}
+          <label className="sr-only" htmlFor="audit-resource-filter">
+            Resource
+          </label>
+          <Input
+            aria-label="Resource"
+            className="w-32"
+            id="audit-resource-filter"
+            onChange={(event) => setResourceType(event.target.value)}
             placeholder="invoice"
             value={resourceType}
           />
-          <DateField label="From" onChange={setDateFrom} value={dateFrom} />
-          <DateField label="To" onChange={setDateTo} value={dateTo} />
-          <FilterActions>
-            <Button type="submit" variant="outline">
-              Apply
+          <label className="sr-only" htmlFor="audit-date-from">
+            From
+          </label>
+          <DateControl
+            aria-label="From"
+            className="w-40"
+            id="audit-date-from"
+            onChange={(event) => setDateFrom(event.target.value)}
+            value={dateFrom}
+          />
+          <label className="sr-only" htmlFor="audit-date-to">
+            To
+          </label>
+          <DateControl
+            aria-label="To"
+            className="w-40"
+            id="audit-date-to"
+            onChange={(event) => setDateTo(event.target.value)}
+            value={dateTo}
+          />
+        </DataToolbarFilters>
+        <DataToolbarActions>
+          {isFiltered ? (
+            <Button onClick={handleClearFilters} size="sm" type="button" variant="ghost">
+              Clear
             </Button>
-          </FilterActions>
-        </FilterGrid>
-      </FilterBar>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-4">
-          {state === "loading" ? <LoadingSkeleton rows={7} /> : null}
-
-          {state === "error" ? (
-            <ErrorState
-              message={error ?? "Audit logs could not be loaded."}
-              onRetry={() => void loadAuditLogs()}
-              title="Audit logs could not be loaded."
-            />
           ) : null}
+        </DataToolbarActions>
+      </DataToolbar>
 
-          {state === "ready" && auditLogs.length === 0 ? (
-            <EmptyState
-              description={
-                isFiltered
-                  ? "No audit events match your filters."
-                  : "No audit activity has been recorded yet."
-              }
-              filtered={isFiltered}
-              title={isFiltered ? "No audit events match these filters." : "No audit activity yet."}
-            />
-          ) : null}
+      {state === "loading" ? <LoadingSkeleton rows={7} /> : null}
 
-          {state === "ready" && auditLogs.length > 0 ? (
-            <DataTableContainer>
-              <div className="overflow-x-auto">
-                <DataTable className="min-w-[960px]">
-                  <thead>
-                    <tr>
-                      <TableHeaderCell>Time</TableHeaderCell>
-                      <TableHeaderCell>Actor</TableHeaderCell>
-                      <TableHeaderCell>Action</TableHeaderCell>
-                      <TableHeaderCell>Category</TableHeaderCell>
-                      <TableHeaderCell>Resource</TableHeaderCell>
-                      <TableHeaderCell>Summary</TableHeaderCell>
-                      <TableHeaderCell>View</TableHeaderCell>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {auditLogs.map((auditLog) => (
-                      <tr key={auditLog.id}>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                          {formatDateTime(auditLog.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">{auditLog.actorLabel}</td>
-                        <td className="px-4 py-3 font-medium text-slate-950">
-                          {auditLog.actionLabel}
-                        </td>
-                        <td className="px-4 py-3">
-                          <StatusBadge status={auditLog.category} tone="neutral">
-                            {categoryLabels[auditLog.category]}
-                          </StatusBadge>
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {auditLog.resource ? auditLog.resource.label : "None"}
-                        </td>
-                        <td className="max-w-sm px-4 py-3 text-slate-600">
-                          {auditLog.metadataSummary || "No additional details"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Button
-                            onClick={() => void loadAuditLogDetail(auditLog.id)}
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            View
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </DataTable>
-              </div>
-              <DataPagination
-                canGoNext={pagination.page < pagination.totalPages}
-                canGoPrevious={pagination.page > 1}
-                label={
-                  <span>
-                    Page {pagination.page} of {pagination.totalPages} • {pagination.total} events
-                  </span>
-                }
-                onNext={() => void loadAuditLogs(pagination.page + 1)}
-                onPrevious={() => void loadAuditLogs(pagination.page - 1)}
-              />
-            </DataTableContainer>
-          ) : null}
-        </div>
+      {state === "error" ? (
+        <ErrorState
+          message={error ?? "Audit logs could not be loaded."}
+          onRetry={() => void loadAuditLogs()}
+          title="Audit logs could not be loaded."
+        />
+      ) : null}
 
-        <AuditLogDetailPanel auditLog={selectedAuditLog} error={detailError} state={detailState} />
-      </div>
+      {state === "ready" && auditLogs.length === 0 ? (
+        <EmptyState
+          description={
+            isFiltered
+              ? "No audit events match your filters."
+              : "No audit activity has been recorded yet."
+          }
+          filtered={isFiltered}
+          title={isFiltered ? "No audit events match these filters." : "No audit activity yet."}
+        />
+      ) : null}
+
+      {state === "ready" && auditLogs.length > 0 ? (
+        <DataTableContainer>
+          <div className="overflow-x-auto">
+            <DataTable className="min-w-[960px]">
+              <thead>
+                <tr>
+                  <TableHeaderCell>Time</TableHeaderCell>
+                  <TableHeaderCell>Actor</TableHeaderCell>
+                  <TableHeaderCell>Action</TableHeaderCell>
+                  <TableHeaderCell>Category</TableHeaderCell>
+                  <TableHeaderCell>Resource</TableHeaderCell>
+                  <TableHeaderCell>Summary</TableHeaderCell>
+                  <TableHeaderCell className="w-12">
+                    <span className="sr-only">Actions</span>
+                  </TableHeaderCell>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {auditLogs.map((auditLog) => (
+                  <tr
+                    className="transition duration-150 hover:bg-[var(--surface-selected)]"
+                    key={auditLog.id}
+                  >
+                    <td className="whitespace-nowrap px-4 py-3 text-[var(--text-secondary)]">
+                      {formatDateTime(auditLog.createdAt)}
+                    </td>
+                    <td className="px-4 py-3 text-[var(--text-primary)]">{auditLog.actorLabel}</td>
+                    <td className="px-4 py-3 font-medium text-[var(--text-primary)]">
+                      {auditLog.actionLabel}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={auditLog.category} tone="neutral">
+                        {categoryLabels[auditLog.category]}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-4 py-3 text-[var(--text-primary)]">
+                      {auditLog.resource ? auditLog.resource.label : "None"}
+                    </td>
+                    <td className="max-w-sm px-4 py-3 text-[var(--text-secondary)]">
+                      {auditLog.metadataSummary || "No additional details"}
+                    </td>
+                    <td className="px-2 py-3 text-right">
+                      <TableRowActionMenu
+                        items={[
+                          {
+                            label: "View details",
+                            onSelect: () => void loadAuditLogDetail(auditLog.id)
+                          }
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          </div>
+          <DataPagination
+            canGoNext={pagination.page < pagination.totalPages}
+            canGoPrevious={pagination.page > 1}
+            label={
+              <span>
+                Page {pagination.page} of {pagination.totalPages} • {pagination.total} events
+              </span>
+            }
+            onNext={() => void loadAuditLogs(pagination.page + 1)}
+            onPrevious={() => void loadAuditLogs(pagination.page - 1)}
+          />
+        </DataTableContainer>
+      ) : null}
+
+      <Drawer
+        description="Safe metadata for this organisation event."
+        onClose={() => setDetailOpen(false)}
+        open={detailOpen}
+        title="Event detail"
+      >
+        <AuditLogDetailBody
+          auditLog={selectedAuditLog}
+          error={detailError}
+          state={detailState}
+        />
+      </Drawer>
     </section>
   );
 }
 
-function AuditLogDetailPanel({
+function AuditLogDetailBody({
   auditLog,
   error,
   state
@@ -294,50 +372,58 @@ function AuditLogDetailPanel({
   error: string | null;
   state: LoadState;
 }) {
+  if (state === "loading") {
+    return <p className="text-sm text-[var(--text-secondary)]">Loading event...</p>;
+  }
+
+  if (state === "error") {
+    return (
+      <Alert tone="error">
+        <p>{error ?? "Audit log detail could not be loaded."}</p>
+      </Alert>
+    );
+  }
+
+  if (!auditLog) {
+    return (
+      <p className="text-sm text-[var(--text-secondary)]">
+        Select an audit event to inspect details.
+      </p>
+    );
+  }
+
   return (
-    <SectionCard>
-      <h2 className="text-lg font-semibold text-slate-950">Event detail</h2>
-      {state === "loading" ? <p className="mt-4 text-sm text-slate-600">Loading event...</p> : null}
-      {state === "error" ? (
-        <p className="mt-4 rounded-[var(--radius-control)] border border-[var(--danger-border)] bg-[var(--danger-muted)] p-3 text-sm text-[var(--danger)]">
-          {error ?? "Audit log detail could not be loaded."}
+    <div className="space-y-4">
+      <DetailRow label="Action" value={auditLog.actionLabel} />
+      <DetailRow label="Category" value={categoryLabels[auditLog.category]} />
+      <DetailRow label="Timestamp" value={formatDateTime(auditLog.createdAt)} />
+      <DetailRow label="Actor" value={auditLog.actorLabel} />
+      <div>
+        <p className="text-xs font-semibold uppercase text-[var(--text-muted)]">
+          Related resource
         </p>
-      ) : null}
-      {state === "ready" && !auditLog ? (
-        <p className="mt-4 text-sm text-slate-600">Select an audit event to inspect details.</p>
-      ) : null}
-      {state === "ready" && auditLog ? (
-        <div className="mt-4 space-y-4">
-          <DetailRow label="Action" value={auditLog.actionLabel} />
-          <DetailRow label="Category" value={categoryLabels[auditLog.category]} />
-          <DetailRow label="Timestamp" value={formatDateTime(auditLog.createdAt)} />
-          <DetailRow label="Actor" value={auditLog.actorLabel} />
-          <div>
-            <p className="text-xs font-semibold uppercase text-slate-500">Related resource</p>
-            {auditLog.resource ? (
-              <RelatedResourceLink resource={auditLog.resource} />
-            ) : (
-              <p className="mt-1 text-sm text-slate-700">None</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase text-slate-500">Event details</p>
-            {auditLog.metadataFields.length > 0 ? (
-              <dl className="mt-2 divide-y divide-[var(--border-subtle)] rounded-[var(--radius-control)] border border-[var(--border-subtle)]">
-                {auditLog.metadataFields.map((field) => (
-                  <div className="grid gap-2 px-3 py-2 sm:grid-cols-[120px_1fr]" key={field.key}>
-                    <dt className="text-xs font-semibold text-slate-500">{field.label}</dt>
-                    <dd className="break-words text-sm text-slate-800">{field.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="mt-1 text-sm text-slate-700">No additional details</p>
-            )}
-          </div>
-        </div>
-      ) : null}
-    </SectionCard>
+        {auditLog.resource ? (
+          <RelatedResourceLink resource={auditLog.resource} />
+        ) : (
+          <p className="mt-1 text-sm text-[var(--text-primary)]">None</p>
+        )}
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase text-[var(--text-muted)]">Event details</p>
+        {auditLog.metadataFields.length > 0 ? (
+          <dl className="mt-2 divide-y divide-[var(--border-subtle)] rounded-[var(--radius-control)] border border-[var(--border-subtle)]">
+            {auditLog.metadataFields.map((field) => (
+              <div className="grid gap-2 px-3 py-2 sm:grid-cols-[120px_1fr]" key={field.key}>
+                <dt className="text-xs font-semibold text-[var(--text-muted)]">{field.label}</dt>
+                <dd className="break-words text-sm text-[var(--text-primary)]">{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="mt-1 text-sm text-[var(--text-primary)]">No additional details</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -345,7 +431,7 @@ function RelatedResourceLink({ resource }: { resource: NonNullable<AuditLogDetai
   const href = getResourceHref(resource.type, resource.id);
 
   if (!href) {
-    return <p className="mt-1 text-sm text-slate-700">{resource.label}</p>;
+    return <p className="mt-1 text-sm text-[var(--text-primary)]">{resource.label}</p>;
   }
 
   return (
@@ -372,79 +458,9 @@ function getResourceHref(resourceType: string, resourceId: string) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
-      <p className="mt-1 text-sm text-slate-800">{value}</p>
+      <p className="text-xs font-semibold uppercase text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{value}</p>
     </div>
-  );
-}
-
-function TextField({
-  label,
-  onChange,
-  placeholder,
-  value
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  value: string;
-}) {
-  return (
-    <FormField>
-      <FieldLabel>{label}</FieldLabel>
-      <Input
-        className="mt-1"
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        value={value}
-      />
-    </FormField>
-  );
-}
-
-function DateField({
-  label,
-  onChange,
-  value
-}: {
-  label: string;
-  onChange: (value: string) => void;
-  value: string;
-}) {
-  return (
-    <FormField>
-      <FieldLabel>{label}</FieldLabel>
-      <DateControl
-        className="mt-1"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      />
-    </FormField>
-  );
-}
-
-function SelectField({
-  children,
-  label,
-  onChange,
-  value
-}: {
-  children: React.ReactNode;
-  label: string;
-  onChange: (value: string) => void;
-  value: string;
-}) {
-  return (
-    <FormField>
-      <FieldLabel>{label}</FieldLabel>
-      <Select
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-        wrapperClassName="mt-1"
-      >
-        {children}
-      </Select>
-    </FormField>
   );
 }
 

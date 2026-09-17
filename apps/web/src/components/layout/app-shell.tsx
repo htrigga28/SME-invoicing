@@ -180,8 +180,8 @@ function WorkspaceShell({
   return (
     <main
       className={cn(
-        "min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-[padding] duration-200 ease-out",
-        sidebarExpanded ? "md:pl-64" : "md:pl-20"
+        "min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-[padding] duration-150 ease-out",
+        sidebarExpanded ? "md:pl-60" : "md:pl-20"
       )}
     >
       <Sidebar
@@ -199,7 +199,7 @@ function WorkspaceShell({
       <AppShellContextProvider.Provider value={context}>
         <div className="min-w-0 flex-1">
           <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
-          <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 lg:px-6">
+          <div className="mx-auto w-full max-w-[1280px] px-4 py-6 pb-24 md:px-6 lg:px-8">
             {state === "denied" ? (
               <StatusPanel
                 message={deniedMessage ?? "You do not have access to this page."}
@@ -283,14 +283,16 @@ function CreateInvoiceQuickAction({
     return null;
   }
 
+  // Contextual primary actions live in page headers on desktop;
+  // keep a mobile-only CTA so it never fights the new hierarchy.
   return (
     <LinkButton
-      className="fixed bottom-4 right-4 z-30 rounded-full px-4 shadow-none md:bottom-6 md:right-6"
+      className="fixed bottom-4 right-4 z-30 rounded-full px-4 shadow-[var(--shadow-menu)] md:hidden"
       href="/invoices/new"
       size="lg"
     >
       <FilePlus2 aria-hidden="true" className="h-4 w-4" />
-      Create Invoice
+      New invoice
     </LinkButton>
   );
 }

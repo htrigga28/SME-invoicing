@@ -431,7 +431,7 @@ function InvoiceFormContent({
     return (
       <StatusPanel
         action={
-          <Link className="font-semibold text-teal-700" href={`/invoices/${invoiceId}`}>
+          <Link className="font-semibold text-[var(--accent)] hover:underline" href={`/invoices/${invoiceId}`}>
             Back to invoice
           </Link>
         }
@@ -485,7 +485,7 @@ function InvoiceFormContent({
                 Retry send
               </Button>
               <Link
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+                className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
                 href={`/invoices/${sendOutcome.invoiceId}`}
               >
                 Open saved invoice
@@ -500,7 +500,7 @@ function InvoiceFormContent({
         <StatusPanel
           action={
             <Link
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+              className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
               href={`/invoices/${sendOutcome.invoiceId}`}
             >
               Open saved invoice
@@ -511,12 +511,14 @@ function InvoiceFormContent({
         />
       ) : null}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,48%)_minmax(0,52%)]">
         <form
           aria-label={mode === "create" ? "Create invoice" : "Edit invoice"}
-          className="space-y-5 rounded-lg border border-slate-200 bg-white p-5"
+          className="space-y-6 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"
           onSubmit={(event) => void handleSubmit(event)}
         >
+          <section className="space-y-4" aria-label="Customer and dates">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer & schedule</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <FormField>
               <FieldLabel htmlFor="invoice-customer">Customer</FieldLabel>
@@ -592,10 +594,11 @@ function InvoiceFormContent({
               {errors.dueDate ? <FieldError>{errors.dueDate}</FieldError> : null}
             </FormField>
           </div>
+          </section>
 
-          <div className="space-y-3">
+          <section className="space-y-3 border-t border-[var(--border-subtle)] pt-5" aria-label="Line items">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-950">Line items</h2>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">Line items</h2>
               <div className="flex flex-wrap gap-2">
                 <Button disabled={isSubmitting} onClick={addLineItem} size="sm" type="button" variant="outline">
                   Add ad-hoc line
@@ -613,7 +616,7 @@ function InvoiceFormContent({
             </div>
 
             {catalogueState === "error" ? (
-              <p className="text-sm text-slate-600">Catalogue could not be loaded. Ad-hoc lines still work.</p>
+              <p className="text-sm text-[var(--text-secondary)]">Catalogue could not be loaded. Ad-hoc lines still work.</p>
             ) : null}
 
             <div className="grid gap-3 md:grid-cols-[1fr_auto]">
@@ -664,7 +667,7 @@ function InvoiceFormContent({
             {quickCreateOpen ? (
               <form
                 aria-label="Quick create catalogue item"
-                className="grid gap-3 rounded-md border border-dashed border-slate-300 p-3 md:grid-cols-[1fr_160px_auto]"
+                className="grid gap-3 rounded-[var(--radius-control)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-raised)] p-3 md:grid-cols-[1fr_160px_auto]"
                 onSubmit={(event) => void handleQuickCreate(event)}
               >
                 <FormField>
@@ -707,24 +710,30 @@ function InvoiceFormContent({
             ) : null}
 
             {errors.lineItems ? (
-              <p className="text-sm text-red-700" role="alert">
+              <p className="text-sm text-[var(--danger)]" role="alert">
                 {errors.lineItems}
               </p>
             ) : null}
 
-            <div className="space-y-3">
+            <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-default)]">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-[var(--surface-raised)]">
+                  <tr>
+                    <th className="px-3 py-2 text-xs font-medium text-[var(--text-secondary)]">Description</th>
+                    <th className="w-20 px-2 py-2 text-right text-xs font-medium text-[var(--text-secondary)]">Qty</th>
+                    <th className="w-32 px-2 py-2 text-right text-xs font-medium text-[var(--text-secondary)]">Unit (NGN)</th>
+                    <th className="w-10 px-2 py-2"><span className="sr-only">Remove</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-subtle)]">
               {form.lineItems.map((item, index) => (
-                <div
-                  className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[1fr_120px_160px_auto]"
-                  key={index}
-                >
-                  <div>
-                    <label className="text-xs font-medium text-slate-600" htmlFor={`line-item-${index}-description`}>
+                <tr key={index}>
+                  <td className="px-3 py-2 align-top">
+                    <label className="sr-only" htmlFor={`line-item-${index}-description`}>
                       Line {index + 1} description
                     </label>
                     <Input
                       aria-label={`Line item ${index + 1} description`}
-                      className="mt-1"
                       disabled={isSubmitting}
                       id={`line-item-${index}-description`}
                       maxLength={500}
@@ -732,14 +741,13 @@ function InvoiceFormContent({
                       placeholder="Description"
                       value={item.description}
                     />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-600" htmlFor={`line-item-${index}-quantity`}>
-                      Qty
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    <label className="sr-only" htmlFor={`line-item-${index}-quantity`}>
+                      Quantity
                     </label>
                     <Input
                       aria-label={`Line item ${index + 1} quantity`}
-                      className="mt-1"
                       disabled={isSubmitting}
                       id={`line-item-${index}-quantity`}
                       min="0.01"
@@ -748,14 +756,13 @@ function InvoiceFormContent({
                       type="number"
                       value={item.quantity}
                     />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-600" htmlFor={`line-item-${index}-unit-price`}>
-                      Unit price (NGN)
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    <label className="sr-only" htmlFor={`line-item-${index}-unit-price`}>
+                      Unit price in NGN
                     </label>
                     <Input
                       aria-label={`Line item ${index + 1} unit price in NGN`}
-                      className="mt-1"
                       disabled={isSubmitting}
                       id={`line-item-${index}-unit-price`}
                       min="0"
@@ -765,23 +772,27 @@ function InvoiceFormContent({
                       type="number"
                       value={item.unitPriceNaira}
                     />
-                  </div>
-                  <div className="flex items-end">
-                    <Button
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    <button
+                      aria-label={`Remove line ${index + 1}`}
                       disabled={isSubmitting || form.lineItems.length === 1}
                       onClick={() => removeLineItem(index)}
-                      size="sm"
                       type="button"
-                      variant="outline"
+                      className="flex h-10 w-9 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-muted)] transition duration-150 hover:bg-[var(--danger-muted)] hover:text-[var(--danger)] disabled:opacity-40"
                     >
-                      Remove
-                    </Button>
-                  </div>
-                </div>
+                      <span aria-hidden="true" className="text-lg leading-none">×</span>
+                    </button>
+                  </td>
+                </tr>
               ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          </section>
 
+          <section className="space-y-4 border-t border-[var(--border-subtle)] pt-5" aria-label="Totals and memo">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Totals & memo</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <FormField>
               <FieldLabel htmlFor="invoice-discount">Discount (NGN)</FieldLabel>
@@ -824,14 +835,16 @@ function InvoiceFormContent({
             />
             <FieldHint>This memo appears on the customer-facing invoice and public page.</FieldHint>
           </FormField>
+          </section>
 
-          <div className="flex flex-col-reverse gap-3 sm:flex-row">
+          <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-col-reverse gap-2 border-t border-[var(--border-subtle)] bg-[var(--surface)] px-5 py-3 sm:flex-row sm:items-center">
             <Link
-              className="rounded-md border border-slate-300 px-4 py-2 text-center text-sm font-semibold text-slate-700"
+              className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-4 py-2 text-center text-sm font-semibold text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
               href={mode === "edit" ? `/invoices/${invoiceId}` : "/invoices"}
             >
               Cancel
             </Link>
+            <span className="flex-1" />
             <Button
               disabled={isSubmitting}
               isLoading={isSubmitting && saveMode === "draft"}
@@ -856,23 +869,21 @@ function InvoiceFormContent({
               Save and send
             </Button>
           </div>
-          <p className="text-xs text-slate-500">
-            Save and send first saves the invoice, then sends it. If sending fails after a successful
-            save, the saved invoice link is kept and the authoritative status is checked before any
-            retry is offered.
+          <p className="text-xs text-[var(--text-muted)]">
+            Server totals are authoritative. Preview updates optimistically as you type.
           </p>
         </form>
 
         <div className="space-y-3">
           <div className="hidden xl:block">
-            <div className="sticky top-4 space-y-3">
+            <div className="sticky top-20 space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-950">Live preview</h2>
+                <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer preview</h2>
                 {invoiceStatus ? <InvoiceStatusBadge status={invoiceStatus} /> : null}
               </div>
-              {previewDocument}
-              <p className="text-xs text-slate-500">
-                Preview is optimistic. Saved detail uses API-calculated totals. Total:{" "}
+              <div className="shadow-[var(--shadow-document)]">{previewDocument}</div>
+              <p className="text-xs text-[var(--text-muted)]">
+                Same document model as the public invoice. Total:{" "}
                 {formatMoney(preview.totalKobo)}.
               </p>
             </div>
@@ -911,12 +922,12 @@ function InvoiceFormContent({
       {showPreviewMobile ? (
         <div
           aria-modal="true"
-          className="fixed inset-0 z-50 flex flex-col bg-white sm:hidden"
+          className="fixed inset-0 z-50 flex flex-col bg-[var(--surface)] sm:hidden"
           role="dialog"
           aria-label="Invoice preview"
         >
-          <div className="flex items-center justify-between border-b border-slate-200 p-4">
-            <h2 className="text-lg font-semibold">Invoice preview</h2>
+          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] p-4">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Invoice preview</h2>
             <Button
               onClick={() => setShowPreviewMobile(false)}
               ref={mobilePreviewCloseRef}

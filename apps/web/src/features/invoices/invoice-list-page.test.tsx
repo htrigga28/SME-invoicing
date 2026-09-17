@@ -12,6 +12,10 @@ vi.mock("./invoices-api", () => ({
   listInvoices: vi.fn()
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() })
+}));
+
 vi.mock("@/features/customers/customers-api", () => ({
   listCustomers: vi.fn()
 }));

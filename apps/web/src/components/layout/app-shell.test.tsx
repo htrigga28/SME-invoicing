@@ -45,13 +45,19 @@ afterEach(() => {
 });
 
 describe("app shell navigation components", () => {
-  it("renders owner workspace details and logout in the topbar", () => {
+  it("renders workspace context and exposes role/logout inside the account menu", () => {
     render(<Topbar activePath="/dashboard" me={me} onLogout={vi.fn()} />);
 
-    expect(screen.getByText("Akin & Co Creative Services")).toBeInTheDocument();
-    expect(screen.getByText(/Demo Owner/)).toBeInTheDocument();
-    expect(screen.getByText("Owner")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();
+    expect(screen.getAllByText("Akin & Co Creative Services").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
+    // Role and logout live inside the account menu, not permanently in the bar.
+    expect(screen.queryByText("Owner")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    expect(screen.getByText("Demo Owner")).toBeInTheDocument();
+    expect(screen.getByText("owner@demo.com")).toBeInTheDocument();
+    expect(screen.getByText(/Owner ·/)).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Logout" })).toBeInTheDocument();
   });
 
   it("shows Settings / Team to owners with an active sidebar state", () => {
@@ -61,11 +67,11 @@ describe("app shell navigation components", () => {
     expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("shows Payment Setup to viewers with an active sidebar state", () => {
+  it("shows Payment setup to viewers with an active sidebar state", () => {
     render(<Sidebar activePath="/settings/payment-setup" role="viewer" />);
 
     expect(screen.getByText("Settings")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Payment Setup" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Payment setup" })).toHaveAttribute(
       "aria-current",
       "page"
     );
@@ -77,12 +83,14 @@ describe("app shell navigation components", () => {
     expect(screen.queryByRole("link", { name: "Team" })).not.toBeInTheDocument();
   });
 
-  it("does not render Payment Setup as a main navigation link", () => {
+  it("groups receivables separately from settings navigation", () => {
     render(<Sidebar activePath="/dashboard" role="owner" />);
 
-    const mainSection = screen.getByText("Main").closest("div");
-
-    expect(mainSection).not.toHaveTextContent("Payment Setup");
+    expect(screen.getByText("Receivables")).toBeInTheDocument();
+    expect(screen.getByText("Operations")).toBeInTheDocument();
+    const receivables = screen.getByText("Receivables").closest("div");
+    expect(receivables).toHaveTextContent("Invoices");
+    expect(screen.getByText("Settings").closest("div")).toHaveTextContent("Payment setup");
   });
 
   it("supports an expanded sidebar with an accessible toggle", () => {

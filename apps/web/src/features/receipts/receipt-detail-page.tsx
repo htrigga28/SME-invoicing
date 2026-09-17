@@ -1,10 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button, LinkButton } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/card";
+import { DetailLink } from "@/features/receipts/receipt-ui";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
 
@@ -79,7 +81,7 @@ export function ReceiptDetailContent({
 
   if (state === "loading") {
     return (
-      <section className="space-y-5">
+      <section className="space-y-4">
         <PageHeader
           description="View receipt details generated from a successful payment."
           title="Receipt detail"
@@ -91,7 +93,7 @@ export function ReceiptDetailContent({
 
   if (state === "error" || !response) {
     return (
-      <section className="space-y-5">
+      <section className="space-y-4">
         <PageHeader
           description="View receipt details generated from a successful payment."
           title="Receipt detail"
@@ -108,24 +110,21 @@ export function ReceiptDetailContent({
   const { receipt } = response;
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader
-          description="Receipts are immutable payment records. Refund information is shown as a derived summary."
-          title={receipt.receiptNumber}
-        />
-        <Link
-          className="self-start rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 print:hidden"
-          href="/receipts"
-        >
-          Back to receipts
-        </Link>
-      </div>
+    <section className="space-y-4">
+      <PageHeader
+        action={
+          <LinkButton className="print:hidden" href="/receipts" size="sm" variant="outline">
+            Back to receipts
+          </LinkButton>
+        }
+        description="Receipts are immutable payment records. Refund information is shown as a derived summary."
+        title={receipt.receiptNumber}
+      />
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
+        <SectionCard>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-3xl font-semibold text-slate-950">
+            <p className="text-3xl font-semibold tabular-nums text-[var(--text-primary)]">
               {formatMoney(receipt.amountKobo)}
             </p>
             <RefundStateBadge state={receipt.refundSummary.refundState} />
@@ -149,63 +148,50 @@ export function ReceiptDetailContent({
               value={receipt.refundSummary.hasRefundInProgress ? "Yes" : "No"}
             />
           </dl>
-        </section>
+        </SectionCard>
 
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Public receipt</h2>
-          <p className="mt-2 break-all text-sm text-slate-600">{receipt.publicUrl}</p>
+        <SectionCard>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Public receipt</h2>
+          <p className="mt-2 break-all text-sm text-[var(--text-secondary)]">
+            {receipt.publicUrl}
+          </p>
           <div className="mt-4 flex flex-wrap gap-2 print:hidden">
-            <button
-              className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
-              onClick={() => void copyPublicUrl()}
-              type="button"
-            >
+            <Button onClick={() => void copyPublicUrl()} size="sm" type="button">
               Copy public link
-            </button>
+            </Button>
             {receipt.publicUrl ? (
-              <Link
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-                href={receipt.publicUrl}
-                target="_blank"
-              >
+              <LinkButton href={receipt.publicUrl} size="sm" variant="outline" target="_blank">
                 Open public receipt
-              </Link>
+              </LinkButton>
             ) : null}
-            <button
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-              onClick={() => window.print()}
-              type="button"
-            >
+            <Button onClick={() => window.print()} size="sm" type="button" variant="outline">
               Print receipt
-            </button>
+            </Button>
           </div>
-        </section>
+        </SectionCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Business</h2>
+        <SectionCard>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Business</h2>
           <dl className="mt-4 space-y-3">
             <DetailItem label="Name" value={receipt.business.name} />
             <DetailItem label="Email" value={receipt.business.email ?? "Not provided"} />
             <DetailItem label="Phone" value={receipt.business.phone ?? "Not provided"} />
             <DetailItem label="Address" value={receipt.business.address ?? "Not provided"} />
           </dl>
-        </section>
+        </SectionCard>
 
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Customer</h2>
+        <SectionCard>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer</h2>
           <dl className="mt-4 space-y-3">
             <DetailItem
               label="Name"
               value={
                 receipt.customer.id ? (
-                  <Link
-                    className="font-medium text-teal-800 [overflow-wrap:anywhere]"
-                    href={`/customers/${receipt.customer.id}`}
-                  >
+                  <DetailLink href={`/customers/${receipt.customer.id}`}>
                     {receipt.customer.name}
-                  </Link>
+                  </DetailLink>
                 ) : (
                   receipt.customer.name
                 )
@@ -218,21 +204,18 @@ export function ReceiptDetailContent({
               value={receipt.customer.billingAddress ?? "Not provided"}
             />
           </dl>
-        </section>
+        </SectionCard>
 
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Links</h2>
+        <SectionCard>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">Links</h2>
           <dl className="mt-4 space-y-3">
             <DetailItem
               label="Invoice"
               value={
                 receipt.invoice.id ? (
-                  <Link
-                    className="font-medium text-teal-800 [overflow-wrap:anywhere]"
-                    href={`/invoices/${receipt.invoice.id}`}
-                  >
+                  <DetailLink href={`/invoices/${receipt.invoice.id}`}>
                     {receipt.invoice.invoiceNumber}
-                  </Link>
+                  </DetailLink>
                 ) : (
                   receipt.invoice.invoiceNumber
                 )
@@ -242,37 +225,38 @@ export function ReceiptDetailContent({
               label="Payment"
               value={
                 receipt.payment.id ? (
-                  <Link
-                    className="font-medium text-teal-800 [overflow-wrap:anywhere]"
-                    href={`/payments/${receipt.payment.id}`}
-                  >
+                  <DetailLink href={`/payments/${receipt.payment.id}`}>
                     {receipt.payment.providerReference}
-                  </Link>
+                  </DetailLink>
                 ) : (
                   receipt.payment.providerReference
                 )
               }
             />
           </dl>
-        </section>
+        </SectionCard>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-slate-950">Refund history</h2>
+      <SectionCard>
+        <h2 className="text-base font-semibold text-[var(--text-primary)]">Refund history</h2>
         {!receipt.refunds || receipt.refunds.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-600">No refunds are linked to this receipt.</p>
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">
+            No refunds are linked to this receipt.
+          </p>
         ) : (
-          <div className="mt-4 divide-y divide-slate-100">
+          <div className="mt-4 divide-y divide-[var(--border-subtle)]">
             {receipt.refunds.map((refund) => (
               <article className="py-3 text-sm" key={refund.id}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="font-medium text-slate-950">{formatMoney(refund.amountKobo)}</p>
-                    <p className="text-slate-600">
+                    <p className="font-semibold tabular-nums text-[var(--text-primary)]">
+                      {formatMoney(refund.amountKobo)}
+                    </p>
+                    <p className="text-[var(--text-secondary)]">
                       {refund.status.replaceAll("_", " ")} • {refund.reason}
                     </p>
                   </div>
-                  <span className="text-slate-500">
+                  <span className="text-[var(--text-muted)]">
                     {formatDateTime(refund.processedAt ?? refund.createdAt)}
                   </span>
                 </div>
@@ -280,7 +264,7 @@ export function ReceiptDetailContent({
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </section>
   );
 }

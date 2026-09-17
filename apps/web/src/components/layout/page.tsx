@@ -6,7 +6,7 @@ import { Body, MetadataLabel, PageTitle, SectionTitle } from "../ui/typography";
 
 export function PageContainer({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-6", className)} {...props} />
+    <div className={cn("mx-auto w-full max-w-[1280px] px-4 py-6 md:px-6 lg:px-8", className)} {...props} />
   );
 }
 

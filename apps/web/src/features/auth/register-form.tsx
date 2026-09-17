@@ -140,9 +140,12 @@ export function RegisterForm() {
         Create account
       </Button>
 
-      <p className="text-center text-sm text-slate-600">
+      <p className="text-center text-sm text-[var(--text-secondary)]">
         Already have an account?{" "}
-        <Link className="font-medium text-teal-700" href="/login">
+        <Link
+          className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] hover:underline"
+          href="/login"
+        >
           Login
         </Link>
       </p>

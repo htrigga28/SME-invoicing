@@ -239,43 +239,68 @@ export function PublicInvoicePage({
 
   return (
     <PublicInvoiceShell>
-      {showPaymentCallbackNotice ? (
-        <Alert className="mx-auto mb-4 max-w-5xl" tone="warning">
-          <p className="font-semibold">{callbackNotice?.title}</p>
-          <p className="mt-1">{callbackNotice?.message}</p>
-        </Alert>
-      ) : null}
-      <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <header className="border-b border-slate-200 bg-slate-950 px-5 py-6 text-white sm:px-8">
+      <div className="mx-auto w-full max-w-5xl">
+        {showPaymentCallbackNotice ? (
+          <Alert
+            className="mb-4"
+            tone={callbackNotice?.title === "Payment confirmed" ? "success" : "warning"}
+          >
+            <p className="font-semibold text-[var(--text-primary)]">{callbackNotice?.title}</p>
+            <p className="mt-1">{callbackNotice?.message}</p>
+          </Alert>
+        ) : null}
+
+        <header className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-document)] sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/10 text-lg font-semibold">
-                {invoice.business.businessName.slice(0, 1).toUpperCase()}
+            <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                <div
+                  aria-hidden="true"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--accent-muted)] text-lg font-semibold text-[var(--accent)]"
+                >
+                  {invoice.business.businessName.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Invoice from
+                  </p>
+                  <h1 className="mt-1 break-words text-xl font-semibold tracking-tight text-[var(--text-primary)]">
+                    {invoice.business.businessName}
+                  </h1>
+                  <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">
+                    {invoice.invoice.invoiceNumber}
+                  </p>
+                </div>
               </div>
-              <h1 className="mt-4 text-2xl font-semibold">{invoice.business.businessName}</h1>
-              <div className="mt-2 space-y-1 text-sm text-slate-300">
-                {invoice.business.email ? <p>{invoice.business.email}</p> : null}
+              <div className="mt-3 space-y-0.5 text-sm text-[var(--text-secondary)]">
+                {invoice.business.email ? (
+                  <p className="break-words">{invoice.business.email}</p>
+                ) : null}
                 {invoice.business.phone ? <p>{invoice.business.phone}</p> : null}
-                {invoice.business.address ? <p>{invoice.business.address}</p> : null}
+                {invoice.business.address ? (
+                  <p className="whitespace-pre-wrap break-words">{invoice.business.address}</p>
+                ) : null}
               </div>
             </div>
-            <div className="rounded-lg bg-white p-4 text-slate-950 sm:min-w-72">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Balance due
+            <div className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 sm:min-w-72 sm:text-right">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Amount due
               </p>
-              <p className="mt-1 text-3xl font-semibold">
+              <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-[var(--text-primary)]">
                 {formatKoboToNaira(invoice.invoice.balanceDueKobo)}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              <div className="mt-3 flex flex-wrap items-center gap-2 sm:justify-end">
                 <StatusBadge status={invoice.invoice.status} />
-                <span className="text-slate-500">Due {formatDate(invoice.invoice.dueDate)}</span>
+                <span className="text-sm text-[var(--text-secondary)]">
+                  Due {formatDate(invoice.invoice.dueDate)}
+                </span>
               </div>
             </div>
           </div>
         </header>
 
-        <section className="grid gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1fr_320px]">
-          <div className="min-w-0">
+        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="order-2 min-w-0 lg:order-1">
             <InvoiceDocument
               balanceDueKobo={invoice.invoice.balanceDueKobo}
               business={invoice.business}
@@ -294,9 +319,9 @@ export function PublicInvoicePage({
             />
           </div>
 
-          <aside className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <h2 className="text-lg font-semibold text-slate-950">Summary</h2>
+          <aside className="order-1 space-y-4 lg:order-2 lg:sticky lg:top-6">
+            <div className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-document)]">
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">Summary</h2>
               <dl className="mt-4 space-y-3 text-sm">
                 <SummaryRow
                   label="Subtotal"
@@ -324,8 +349,11 @@ export function PublicInvoicePage({
               </dl>
             </div>
 
-            <div className="rounded-lg border border-teal-200 bg-teal-50 p-4">
-              <h2 className="text-lg font-semibold text-slate-950">Payment</h2>
+            <div
+              className="rounded-[var(--radius-card)] border border-[var(--accent-border)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-document)]"
+              id="public-invoice-payment"
+            >
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">Payment</h2>
               {invoice.paymentSummary.available ? (
                 <Button
                   className="mt-4 w-full"
@@ -333,40 +361,49 @@ export function PublicInvoicePage({
                   isLoading={isInitializingPayment}
                   loadingLabel="Redirecting..."
                   onClick={() => void handlePayOnline()}
+                  size="lg"
                   type="button"
                 >
                   Pay {formatKoboToNaira(invoice.paymentSummary.amountKobo)} online
                 </Button>
               ) : showUnavailablePaymentButton ? (
-                <Button className="mt-4 w-full" disabled type="button" variant="outline">
+                <Button className="mt-4 w-full" disabled size="lg" type="button" variant="outline">
                   Pay online unavailable
                 </Button>
               ) : null}
-              <p className="mt-3 text-sm text-slate-700">{invoice.paymentSummary.message}</p>
+              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                {invoice.paymentSummary.message}
+              </p>
               {invoice.paymentSummary.available ? (
-                <p className="mt-2 text-xs text-slate-600">
+                <p className="mt-2 text-xs leading-5 text-[var(--text-muted)]">
                   You will be redirected to Paystack to complete payment.
                 </p>
               ) : null}
-              {paymentError ? <p className="mt-3 text-sm text-red-700">{paymentError}</p> : null}
+              {paymentError ? (
+                <p className="mt-3 text-sm leading-6 text-[var(--danger)]" role="alert">
+                  {paymentError}
+                </p>
+              ) : null}
             </div>
 
-            <p className="rounded-lg border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500">
+            <p className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 text-xs leading-5 text-[var(--text-muted)]">
               This invoice was generated by Lumina. Confirm details with the business before
               payment.
             </p>
           </aside>
-        </section>
-      </article>
+        </div>
 
-      <footer className="py-6 text-center text-xs text-slate-500">Powered by Lumina</footer>
+        <footer className="py-6 text-center text-xs text-[var(--text-muted)]">
+          Powered by Lumina
+        </footer>
+      </div>
     </PublicInvoiceShell>
   );
 }
 
 function PublicInvoiceShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--text-primary)] print:bg-white print:text-slate-950 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[var(--canvas-warm)] px-4 py-8 text-[var(--text-primary)] print:bg-white sm:px-6 lg:px-8">
       {children}
     </main>
   );
@@ -431,7 +468,7 @@ function StatusPanel({
 }) {
   return (
     <Alert className="mx-auto max-w-2xl" tone={tone === "error" ? "error" : "info"}>
-      <h1 className="text-2xl font-semibold">{title}</h1>
+      <h1 className="text-2xl font-semibold text-[var(--text-primary)]">{title}</h1>
       <p className="mt-3 text-sm">{message}</p>
     </Alert>
   );
@@ -440,8 +477,8 @@ function StatusPanel({
 function SummaryRow({ label, strong, value }: { label: string; strong?: boolean; value: string }) {
   return (
     <div className={`flex justify-between gap-4 ${strong ? "text-base font-semibold" : ""}`}>
-      <dt className="text-slate-600">{label}</dt>
-      <dd className="text-slate-950">{value}</dd>
+      <dt className="text-[var(--text-secondary)]">{label}</dt>
+      <dd className="tabular-nums text-[var(--text-primary)]">{value}</dd>
     </div>
   );
 }

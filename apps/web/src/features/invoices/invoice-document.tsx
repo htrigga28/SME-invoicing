@@ -67,23 +67,23 @@ export function InvoiceDocument({
   return (
     <article
       aria-label={`Invoice ${invoiceNumber}`}
-      className="overflow-hidden rounded-lg border border-slate-200 bg-white text-slate-950 print:rounded-none print:border-slate-400 print:shadow-none"
+      className="overflow-hidden rounded-[var(--radius-document)] border border-[var(--border-default)] bg-[var(--surface)] text-[var(--text-primary)] print:rounded-none print:border-slate-400 print:shadow-none"
     >
-      <div className="border-b border-slate-200 bg-slate-50/60 p-5 print:bg-white">
+      <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-raised)] p-5 print:bg-white">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             {business ? (
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-medium tracking-wide text-[var(--text-muted)]">
                 {business.businessName}
               </p>
             ) : null}
-            <h2 className="mt-1 break-words text-2xl font-bold tracking-tight">{invoiceNumber}</h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <h2 className="mt-1 break-words text-2xl font-semibold tracking-tight">{invoiceNumber}</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Issued {formatDate(issueDate)} · Due {formatDate(dueDate)}
             </p>
             {customerReference ? (
-              <p className="mt-1 break-words text-sm text-slate-700">
-                <span className="font-semibold">Reference:</span> {customerReference}
+              <p className="mt-1 break-words font-mono text-sm text-[var(--text-secondary)]">
+                <span className="font-sans font-semibold">Reference:</span> {customerReference}
               </p>
             ) : null}
           </div>
@@ -92,25 +92,25 @@ export function InvoiceDocument({
 
         <div className={`mt-4 grid gap-3 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-2"}`}>
           {business ? (
-            <div className="rounded-md border border-slate-200 bg-white p-3 print:border-slate-300">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">From</p>
+            <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface)] p-3 print:border-slate-300">
+              <p className="text-xs font-medium text-[var(--text-muted)]">From</p>
               <p className="mt-1 text-sm font-semibold">{business.businessName}</p>
               {[business.email, business.phone, business.address]
                 .filter(Boolean)
                 .map((line) => (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-600" key={line}>
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]" key={line}>
                     {line}
                   </p>
                 ))}
             </div>
           ) : null}
-          <div className="rounded-md border border-slate-200 bg-white p-3 print:border-slate-300">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bill to</p>
+          <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface)] p-3 print:border-slate-300">
+            <p className="text-xs font-medium text-[var(--text-muted)]">Bill to</p>
             <p className="mt-1 text-sm font-semibold">{customer.name}</p>
             {[customer.email, customer.phone, customer.billingAddress]
               .filter(Boolean)
               .map((line) => (
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-600" key={line}>
+                <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]" key={line}>
                   {line}
                 </p>
               ))}
@@ -120,22 +120,22 @@ export function InvoiceDocument({
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-white text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-[var(--surface)] text-xs text-[var(--text-secondary)]">
             <tr>
-              <th className="px-5 py-3 font-semibold">Description</th>
-              <th className="px-4 py-3 text-right font-semibold">Qty</th>
-              <th className="hidden px-4 py-3 text-right font-semibold sm:table-cell">Unit</th>
-              <th className="px-5 py-3 text-right font-semibold">Amount</th>
+              <th className="px-5 py-3 font-medium">Description</th>
+              <th className="px-4 py-3 text-right font-medium">Qty</th>
+              <th className="hidden px-4 py-3 text-right font-medium sm:table-cell">Unit</th>
+              <th className="px-5 py-3 text-right font-medium">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[var(--border-subtle)]">
             {lineItems.map((item, index) => (
               <tr className="break-inside-avoid" key={`${item.description}-${index}`}>
                 <td className="max-w-[28rem] whitespace-pre-wrap break-words px-5 py-3 font-medium">
                   {item.description}
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums text-slate-600">{item.quantity}</td>
-                <td className="hidden px-4 py-3 text-right tabular-nums text-slate-600 sm:table-cell">
+                <td className="px-4 py-3 text-right tabular-nums text-[var(--text-secondary)]">{item.quantity}</td>
+                <td className="hidden px-4 py-3 text-right tabular-nums text-[var(--text-secondary)] sm:table-cell">
                   {formatMoney(item.unitPriceKobo)}
                 </td>
                 <td className="px-5 py-3 text-right font-semibold tabular-nums">
@@ -147,41 +147,41 @@ export function InvoiceDocument({
         </table>
       </div>
 
-      <div className="grid gap-4 border-t border-slate-200 p-5 sm:grid-cols-[1fr_260px]">
+      <div className="grid gap-4 border-t border-[var(--border-subtle)] p-5 sm:grid-cols-[1fr_260px]">
         <div className="min-w-0">
           {customerMemo ? (
-            <div className="rounded-md bg-slate-50 p-3 print:border print:border-slate-300 print:bg-white">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="rounded-[var(--radius-control)] bg-[var(--surface-raised)] p-3 print:border print:border-slate-300 print:bg-white">
+              <p className="text-xs font-medium text-[var(--text-muted)]">
                 Customer memo
               </p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]">
                 {customerMemo}
               </p>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">No additional memo.</p>
+            <p className="text-sm text-[var(--text-muted)]">No additional memo.</p>
           )}
         </div>
         <dl className="space-y-2 text-sm">
           <div className="flex justify-between gap-4">
-            <dt className="text-slate-600">Subtotal</dt>
+            <dt className="text-[var(--text-secondary)]">Subtotal</dt>
             <dd className="tabular-nums">{formatMoney(subtotalKobo)}</dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-slate-600">Discount</dt>
+            <dt className="text-[var(--text-secondary)]">Discount</dt>
             <dd className="tabular-nums">{formatMoney(discountKobo)}</dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-slate-600">Tax</dt>
+            <dt className="text-[var(--text-secondary)]">Tax</dt>
             <dd className="tabular-nums">{formatMoney(taxKobo)}</dd>
           </div>
-          <div className="flex justify-between gap-4 border-t border-slate-200 pt-2 text-base font-bold">
+          <div className="flex justify-between gap-4 border-t border-[var(--border-subtle)] pt-2 text-base font-semibold">
             <dt>Total</dt>
             <dd className="tabular-nums">{formatMoney(totalKobo)}</dd>
           </div>
           {balanceDueKobo !== undefined ? (
             <div className="flex justify-between gap-4 text-sm font-semibold">
-              <dt className="text-slate-700">Balance due</dt>
+              <dt className="text-[var(--text-secondary)]">Balance due</dt>
               <dd className="tabular-nums">{formatMoney(balanceDueKobo)}</dd>
             </div>
           ) : null}

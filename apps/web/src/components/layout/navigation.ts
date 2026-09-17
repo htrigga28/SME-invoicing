@@ -24,35 +24,40 @@ export type NavigationSection = {
   items: AppRoute[];
 };
 
-const mainRoutes: AppRoute[] = [
-  { href: "/dashboard", icon: "dashboard", label: "Dashboard", status: "available" },
-  { href: "/customers", icon: "customers", label: "Customers", status: "available" },
+const overviewRoutes: AppRoute[] = [
+  { href: "/dashboard", icon: "dashboard", label: "Overview", status: "available" }
+];
+
+const receivablesRoutes: AppRoute[] = [
   { href: "/invoices", icon: "invoices", label: "Invoices", status: "available" },
+  { href: "/customers", icon: "customers", label: "Customers", status: "available" },
+  { href: "/payments", icon: "payments", label: "Payments", status: "available" },
+  { href: "/receipts", icon: "receipts", label: "Receipts", status: "available" },
   {
     href: "/products-services",
     icon: "products",
     label: "Products & Services",
     status: "available"
-  },
-  { href: "/payments", icon: "payments", label: "Payments", status: "available" },
-  { href: "/receipts", icon: "receipts", label: "Receipts", status: "available" },
+  }
+];
+
+const operationsRoutes: AppRoute[] = [
   {
     href: "/exports",
     icon: "exports",
     label: "Exports",
     status: "available",
     allowedRoles: ["owner", "admin", "accountant"]
-  },
-  {
-    href: "/audit-logs",
-    icon: "audit",
-    label: "Audit Logs",
-    status: "available",
-    allowedRoles: ["owner", "admin"]
   }
 ];
 
 const settingsRoutes: AppRoute[] = [
+  {
+    href: "/settings/payment-setup",
+    icon: "settings",
+    label: "Payment setup",
+    status: "available"
+  },
   {
     href: "/settings/team",
     icon: "team",
@@ -61,15 +66,18 @@ const settingsRoutes: AppRoute[] = [
     allowedRoles: ["owner", "admin"]
   },
   {
-    href: "/settings/payment-setup",
-    icon: "settings",
-    label: "Payment Setup",
-    status: "available"
+    href: "/audit-logs",
+    icon: "audit",
+    label: "Audit log",
+    status: "available",
+    allowedRoles: ["owner", "admin"]
   }
 ];
 
 export const navigationSections: NavigationSection[] = [
-  { label: "Main", items: mainRoutes },
+  { label: "Overview", items: overviewRoutes },
+  { label: "Receivables", items: receivablesRoutes },
+  { label: "Operations", items: operationsRoutes },
   { label: "Settings", items: settingsRoutes }
 ];
 

@@ -2,126 +2,68 @@
 
 ## Product Feel
 
-The UI should feel like a modern finance operations workspace:
+The authenticated product is a light, calm, precise financial workspace (Clear Financial Workspace):
 
-- Clean
-- Trustworthy
-- Financial
-- Operational
-- Professional
-- Dashboard-first
-- Workflow-focused
+- Light by default
+- Financially trustworthy
+- Calm, not flashy
+- High information clarity
+- SME-approachable, finance-team-deep
+- Strong tables and workflow views
+- Restrained brand color (deep green actions, lime only as rare highlight)
+- Minimal decorative chrome
+- Explicit status and exception handling
+- Responsive and mobile-capable
+- Motion only to clarify interaction
 
 Avoid:
 
+- Dark fintech command-center styling (superseded T017 direction below).
 - Decorative landing-page-style UI.
-- Excessive gradients.
+- Excessive gradients, glow effects, pill-everything.
 - Fake mockup screens.
-- Overly spacious layouts that weaken data density.
+- Overly equal-weight card grids that hide hierarchy.
+- Giant filter forms above every list.
+- Permanent row-action button clusters.
+- Mono-everything money (mono is for references/IDs; money is Hanken + tabular).
 - Building visual polish before workflow correctness.
 
 Every primary workflow must be demoable in under 5 minutes.
 
-## T017 Visual Identity
+## Visual Identity (authoritative for `apps/web`)
 
-The application now uses a dark fintech command-center identity:
+Per `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md`: off-white canvas (#F6F7F4), white working surfaces, neutral borders, deep-green (#245C46) primary actions, lime (#C1FF72) demoted to rare highlight, independent success/warning/danger/info tokens, restrained shadows (overlays only), Hanken Grotesk + tabular numerals, JetBrains Mono for references.
 
-- Deep near-black app background.
-- Layered charcoal surfaces.
-- Low-opacity borders.
-- Lime accent reserved for primary actions, active navigation, success states, and financial emphasis.
-- Dense but readable financial tables and cards.
-- Minimal shadow use.
-- No route-local raw palette values; reusable semantic tokens live in `apps/web/src/app/globals.css`.
+Superseded: the T017 dark visual direction (near-black canvas, neon-lime primary, dark utility remapper) is no longer authoritative for visuals. Its domain/accessibility/workflow guidance still applies where compatible with the light system.
 
-Hanken Grotesk is the interface font. JetBrains Mono is reserved for money, references, timestamps, and other scan-heavy data.
+Hanken Grotesk is the interface font. JetBrains Mono is reserved for invoice/receipt numbers, payment references, and technical identifiers.
 
 ## Layout Principles
 
-- Use a restrained app shell with sidebar navigation on desktop.
-- Prioritize data tables, compact cards, forms, and clear status badges.
-- Keep primary actions visible but not oversized.
-- Treat public invoice pages as customer-facing documents with a payment action, not marketing pages.
-- Use consistent status colors for invoice and payment states.
+- Quiet shell: white sidebar + light utility topbar; page titles live in content, not duplicated in chrome.
+- Standard header: Title + short operational description + one primary action (secondaries in `…`).
+- One dominant working surface per page (table, document, editor+preview); side rails/drawers/timelines support it.
+- Tables as working surfaces: quiet headers, 44–52px rows, right-aligned money, whole-row nav, overflow menus, mobile record cards.
+- Compact data toolbars (search + status tabs + filters + Clear) instead of card-like filter forms.
+- Public invoice/receipt as premium customer documents (merchant-led, amount/due first, clear Pay CTA), not admin chrome.
+- Consistent status colors + text labels for invoice and payment states; never color-only.
 - Prefer clear empty/loading/error states over decorative filler.
 
 ## Screen Guidance
 
 | Screen | Guidance |
 | --- | --- |
-| Dashboard | Show KPI cards, status breakdowns, recent invoices, recent payments, and monthly collections. Prioritize fast operational scanning. |
-| Customers list/detail | Use searchable tables, customer summary details, invoice history, payment history, and archive state. |
-| Invoice list | Include invoice number, customer, issue date, due date, total, paid amount, balance, status, and actions. Show the customer reference inline under the invoice number where present. |
-| Invoice creation | Use an editor with live customer-facing preview: customer selector, customer reference/PO, Net 7/14/30 plus custom due dates, catalogue/ad-hoc line items with editable snapshots, discount, tax, customer memo, and explicit Save draft / Save and send actions. Preview totals are optimistic; saved detail uses server totals. Mobile uses a full-screen preview dialog. |
-| Invoice detail | Show invoice metadata (including customer reference and customer memo), line items, status timeline, payments, receipt links, duplicate action with archived-customer guard, and actions allowed by role/status. |
-| Products & Services | Provide a searchable catalogue workspace with active/archived views, create/edit/archive/restore, and Viewer read-only parity. |
-| Public invoice payment page | Present the invoice clearly with customer reference and memo, show balance due, and make Pay Now the primary action. Avoid internal admin data. |
-| Payments/reconciliation page | Show payment references, provider status, matched invoice, customer, amount, date, and reconciliation state. |
-| Receipts page | Show receipt number, invoice, customer, payment reference, amount, date, and downloadable/viewable detail. |
-| Exports page | Use focused export panels per dataset instead of one universal form. Keep filters compact and make download state explicit. |
-| Settings/team page | Keep business profile, members, invitations, and role management separate but easy to scan. |
-| Audit logs page | Use filters for actor, action, category, entity type, and date. Show concise metadata rows and keep raw sensitive payloads out of the UI. |
-
-## Dashboard Content
-
-Dashboard should include:
-
-- Total invoiced.
-- Collected revenue.
-- Outstanding balance.
-- Overdue amount.
-- Paid invoices.
-- Unpaid invoices.
-- Overdue invoices.
-- Collection rate.
-- Recent invoices.
-- Recent payments.
-- Invoice status breakdown.
-- Monthly collections.
-
-## Public Invoice Page Content
-
-Public invoice page should include:
-
-- Business logo/name.
-- Invoice number.
-- Invoice status.
-- Customer information.
-- Line items.
-- Subtotal.
-- Discount.
-- Tax.
-- Total.
-- Amount paid.
-- Balance due.
-- Due date.
-- Pay Now button.
-- Secure payment note.
-
-The page must not expose internal organisation IDs, member records, audit logs, private notes, or platform admin controls.
-
-## Responsive Behaviour
-
-| Breakpoint | Behaviour |
-| --- | --- |
-| Desktop | Sidebar layout with data tables and cards. |
-| Tablet | Collapsible sidebar and stacked cards. |
-| Mobile | Top navigation or drawer, stacked cards, simplified tables/cards. |
-
-## Required UI States
-
-Every primary workflow should include:
-
-- Empty states.
-- Loading skeletons.
-- Error states.
-- Success states.
-- Disabled submit states.
-- Form validation states.
-- Toast feedback.
-
-## Trade-Offs
-
-- Workflow correctness comes before visual flourish.
-- Dense operational screens are preferred over spacious marketing layouts.
-- Public invoice pages can be more polished than internal pages, but they must remain clear and payment-focused.
+| Overview | Header + compact period control + New invoice; 4 metrics max (Outstanding, Overdue, Net collected, Needs attention); large Collections cashflow + Needs Attention side; Aging + unified Recent activity; payment setup as contextual banner. No equal-card sprawl, no status donut unless actionable. |
+| Customers list/detail | Compact Active/Archived tabs + search toolbar; row nav + overflow (View/Edit/Archive); detail = identity header + Invoiced/Paid/Balance/Invoices strip + invoice history as main surface + compact contact rail. No invented AR metrics, no empty future tabs. |
+| Invoice list | Status tabs (All/Draft/Sent/Overdue/Paid) + compact search/filter toolbar; table Invoice/Customer/Due/Total/Balance/Status + `…`; whole-row nav; mobile record rows; real pagination/filters preserved. |
+| Invoice creation | 48/52 editor + true customer-facing `InvoiceDocument` preview on desktop (same model as public page); grouped sections; compact line-item table (not bordered cards) with icon remove; sticky Save draft / Save and send hierarchy (server totals authoritative); tablet toggle + mobile full-screen preview sheet. Catalogue picker + ad-hoc + quick-create plug into the same line pattern. |
+| Invoice detail | Header (number/status/customer/balance/due + one primary + overflow); left document + payments; right Activity timeline + financial Summary + Customer payment panel. Edit/Send/Cancel/Void/Duplicate gated by role/status; reconciliation truth explicit. |
+| Products & Services | Searchable catalogue with Active/Archived views, create/edit/archive/restore, Viewer read-only parity; compact toolbar + table grammar shared with other lists. |
+| Public invoice payment page | Warm canvas; merchant identity; amount due + due/status immediately readable; clean document; deep-green Pay CTA (mobile visible early); Paystack redirect/support understated; Lumina secondary; all payment/verify/poll/view-tracking behavior unchanged. |
+| Public receipt | Same customer-document shell as public invoice; receipt/refund/payment-reference truth explicit; print preserved. |
+| Payments/reconciliation page | Compact stat strip (not 4 large cards); preserve Reconciliation/All/Needs-review segmentation; compact toolbar; dominant table (Reference/Customer/Invoice/Amount/Payment/Reconciliation/Date + `…`); Needs Review elevates reason + next action; settlement/reconciliation distinctions preserved; no shell leakage of internal states. |
+| Receipts page | Same list grammar as Invoices/Payments; Receipt/Customer/Invoice/Amount/Refund/Issued + `…`; payment reference secondary on narrow screens. |
+| Exports | Calm task-selection cards (dataset + description + compact filters + export + permission state); not forced into a table. |
+| Audit logs | Dense full-width table + compact toolbar + detail drawer for metadata; no decorative treatment. |
+| Team / Payment setup / Settings | Coherent settings column (secondary nav in content, 840–1000px content, flat section cards); Team = compact invite + member table + pending separated + confirmations; Payment setup = high-trust setup flow (status summary, bank/account fields, resolved confirmation, verification/disabled states). |
+| Auth / onboarding / invite | Centered intentional light cards; calm 3-step Account → Business → Payments progress; same visual grammar for payment-setup onboarding and invite acceptance; real gating/validation/redirects unchanged. |

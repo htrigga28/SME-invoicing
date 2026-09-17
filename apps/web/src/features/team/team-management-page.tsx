@@ -3,8 +3,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page";
+import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/card";
+import {
+  DataTable,
+  DataTableContainer,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { Alert, EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
+import { FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
-import { primaryActionClassName } from "@/components/ui/styles";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type { MeResponse } from "@/features/auth/types";
 
 import {
@@ -164,50 +174,78 @@ export function TeamManagementContent({
   }
 
   if (state === "loading") {
-    return <StatusPanel message="Loading team settings..." />;
+    return (
+      <section className="mx-auto w-full max-w-[960px] space-y-4">
+        <PageHeader
+          description={`Manage members and development invitation links for ${me.activeOrganisation.name}.`}
+          eyebrow="Settings"
+          title="Team"
+        />
+        <LoadingSkeleton rows={4} />
+      </section>
+    );
   }
 
   if (state === "error") {
-    return <StatusPanel message={error ?? "Could not load team settings."} tone="error" />;
+    return (
+      <section className="mx-auto w-full max-w-[960px] space-y-4">
+        <PageHeader
+          description={`Manage members and development invitation links for ${me.activeOrganisation.name}.`}
+          eyebrow="Settings"
+          title="Team"
+        />
+        <Alert tone="error">
+          <p>{error ?? "Could not load team settings."}</p>
+        </Alert>
+      </section>
+    );
   }
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">Settings</p>
-          <h1 className="text-3xl font-semibold text-slate-950">Team</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Manage members and development invitation links for {me.activeOrganisation.name}.
-          </p>
-        </div>
-      </div>
+    <section className="mx-auto w-full max-w-[960px] space-y-4">
+      <PageHeader
+        description={`Manage members and development invitation links for ${me.activeOrganisation.name}.`}
+        eyebrow="Settings"
+        title="Team"
+      />
 
-      {error ? <Alert tone="error" message={error} /> : null}
-      {success ? <Alert tone="success" message={success} /> : null}
+      {error ? (
+        <Alert tone="error">
+          <p>{error}</p>
+        </Alert>
+      ) : null}
+      {success ? (
+        <Alert tone="success">
+          <p>{success}</p>
+        </Alert>
+      ) : null}
       {inviteUrl ? (
-        <Alert
-          tone="info"
-          message="Development invite URL created. Email delivery is out of scope for this MVP."
-          detail={inviteUrl}
-        />
+        <Alert tone="info">
+          <p>Development invite URL created. Email delivery is out of scope for this MVP.</p>
+          <p className="mt-2 break-all font-mono text-xs">{inviteUrl}</p>
+        </Alert>
       ) : null}
 
-      <form className="rounded-lg border border-slate-200 bg-white p-5" onSubmit={handleInvite}>
-        <h2 className="text-lg font-semibold text-slate-950">Invite teammate</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto]">
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Email</span>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+      <SectionCard aria-labelledby="team-invite-heading">
+        <h2
+          className="text-base font-semibold text-[var(--text-primary)]"
+          id="team-invite-heading"
+        >
+          Invite teammate
+        </h2>
+        <form className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto]" onSubmit={handleInvite}>
+          <FormField>
+            <FieldLabel>Email</FieldLabel>
+            <Input
+              className="mt-1"
               onChange={(event) => setEmail(event.target.value)}
               placeholder="teammate@example.com"
               type="email"
               value={email}
             />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Role</span>
+          </FormField>
+          <FormField>
+            <FieldLabel>Role</FieldLabel>
             <Select
               onChange={(event) => setRole(event.target.value as InviteRole)}
               value={role}
@@ -220,58 +258,77 @@ export function TeamManagementContent({
                 </option>
               ))}
             </Select>
-          </label>
-          <button
-            className={`${primaryActionClassName} self-end`}
-            disabled={isSubmitting}
-            type="submit"
-          >
-            {isSubmitting ? "Inviting..." : "Invite"}
-          </button>
-        </div>
-      </form>
+          </FormField>
+          <Button className="self-end" isLoading={isSubmitting} loadingLabel="Inviting..." type="submit">
+            Invite
+          </Button>
+        </form>
+      </SectionCard>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Panel title="Members" {...(members.length === 0 ? { empty: "No members found." } : {})}>
-          {members.map((member) => (
-            <MemberRow
-              actorRole={me.membership.role}
-              currentUserId={me.user.id}
-              key={member.id}
-              member={member}
-              onRemove={handleRemove}
-              onUpdate={handleMemberUpdate}
-            />
-          ))}
-        </Panel>
-
-        <Panel
-          title="Pending invitations"
-          {...(invitations.length === 0 ? { empty: "No pending invitations." } : {})}
+      <SectionCard aria-labelledby="team-members-heading">
+        <h2
+          className="text-base font-semibold text-[var(--text-primary)]"
+          id="team-members-heading"
         >
-          {invitations.map((invitation) => (
-            <div
-              className="flex flex-col gap-3 border-b border-slate-100 py-4 last:border-0 sm:flex-row sm:items-center sm:justify-between"
-              key={invitation.id}
-            >
-              <div>
-                <p className="font-medium text-slate-950">{invitation.email}</p>
-                <p className="text-sm text-slate-600">
-                  {roleLabels[invitation.role]} · Expires{" "}
-                  {new Date(invitation.expiresAt).toLocaleDateString()}
-                </p>
-              </div>
-              <button
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-                onClick={() => void handleRevoke(invitation.id)}
-                type="button"
-              >
-                Revoke
-              </button>
+          Members
+        </h2>
+        {members.length === 0 ? (
+          <EmptyState
+            className="mt-4 border-0 p-6"
+            description="Invite a teammate to grow this workspace."
+            title="No members found."
+          />
+        ) : (
+          <DataTableContainer className="mt-4">
+            <div className="overflow-x-auto">
+              <DataTable className="min-w-[640px]">
+                <thead>
+                  <tr>
+                    <TableHeaderCell>Member</TableHeaderCell>
+                    <TableHeaderCell>Role</TableHeaderCell>
+                    <TableHeaderCell>Status</TableHeaderCell>
+                    <TableHeaderCell className="text-right">Actions</TableHeaderCell>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-subtle)]">
+                  {members.map((member) => (
+                    <MemberRow
+                      actorRole={me.membership.role}
+                      currentUserId={me.user.id}
+                      key={member.id}
+                      member={member}
+                      onRemove={handleRemove}
+                      onUpdate={handleMemberUpdate}
+                    />
+                  ))}
+                </tbody>
+              </DataTable>
             </div>
-          ))}
-        </Panel>
-      </div>
+          </DataTableContainer>
+        )}
+      </SectionCard>
+
+      <SectionCard aria-labelledby="team-invitations-heading">
+        <h2
+          className="text-base font-semibold text-[var(--text-primary)]"
+          id="team-invitations-heading"
+        >
+          Pending invitations
+        </h2>
+        {invitations.length === 0 ? (
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">No pending invitations.</p>
+        ) : (
+          <div className="mt-2 divide-y divide-[var(--border-subtle)]">
+            {invitations.map((invitation) => (
+              <InvitationRow
+                invitation={invitation}
+                key={invitation.id}
+                onRevoke={handleRevoke}
+              />
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </section>
   );
 }
@@ -317,16 +374,17 @@ function MemberRow({
   }
 
   return (
-    <div className="border-b border-slate-100 py-4 last:border-0">
-      <div className="space-y-3">
-        <div className="min-w-0">
-          <p className="font-medium text-slate-950">{member.user?.name ?? "Unknown user"}</p>
-          <p className="text-sm text-slate-600">
-            {member.user?.email} · {roleLabels[member.role]} · {member.status}
-          </p>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_5rem_6rem]">
+    <tr className="transition duration-150 hover:bg-[var(--surface-selected)]">
+      <td className="min-w-44 px-4 py-3">
+        <p className="font-medium text-[var(--text-primary)]">
+          {member.user?.name ?? "Unknown user"}
+        </p>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">{member.user?.email}</p>
+      </td>
+      <td className="min-w-40 px-4 py-3">
+        <div className="flex items-center gap-2">
           <Select
+            aria-label={`Role for ${member.user?.email ?? member.id}`}
             disabled={!canManage}
             onChange={(event) => setRole(event.target.value as TeamRole)}
             value={role}
@@ -337,97 +395,69 @@ function MemberRow({
               </option>
             ))}
           </Select>
-          <Select
-            disabled={!canManage || member.status === "removed"}
-            onChange={(event) => setStatus(event.target.value as "active" | "suspended")}
-            value={status}
-          >
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </Select>
-          <button
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
-            disabled={!canManage}
-            onClick={handleSave}
-            type="button"
-          >
+          {member.role === "owner" ? (
+            <StatusBadge status="owner" tone="neutral">
+              Owner
+            </StatusBadge>
+          ) : null}
+        </div>
+      </td>
+      <td className="min-w-36 px-4 py-3">
+        <Select
+          aria-label={`Status for ${member.user?.email ?? member.id}`}
+          disabled={!canManage || member.status === "removed"}
+          onChange={(event) => setStatus(event.target.value as "active" | "suspended")}
+          value={status}
+        >
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </Select>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3 text-right">
+        <div className="inline-flex gap-2">
+          <Button disabled={!canManage} onClick={handleSave} size="sm" type="button" variant="outline">
             Save
-          </button>
-          <button
-            className="rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:text-slate-400"
+          </Button>
+          <Button
             disabled={!canManage}
             onClick={() => void onRemove(member)}
+            size="sm"
             type="button"
+            variant="destructive"
           >
             Remove
-          </button>
+          </Button>
         </div>
+      </td>
+    </tr>
+  );
+}
+
+function InvitationRow({
+  invitation,
+  onRevoke
+}: {
+  invitation: TeamInvitation;
+  onRevoke: (invitationId: string) => Promise<void>;
+}) {
+  return (
+    <div className="flex flex-col gap-3 py-4 first:pt-3 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="truncate font-medium text-[var(--text-primary)]">{invitation.email}</p>
+        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
+          {roleLabels[invitation.role]} · Expires{" "}
+          {new Date(invitation.expiresAt).toLocaleDateString()}
+        </p>
       </div>
+      <Button
+        className="self-start sm:self-auto"
+        onClick={() => void onRevoke(invitation.id)}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        Revoke
+      </Button>
     </div>
-  );
-}
-
-function Panel({
-  children,
-  empty,
-  title
-}: {
-  children: React.ReactNode;
-  empty?: string;
-  title: string;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5">
-      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-      <div className="mt-2">
-        {empty ? <p className="py-8 text-sm text-slate-600">{empty}</p> : children}
-      </div>
-    </div>
-  );
-}
-
-function Alert({
-  detail,
-  message,
-  tone
-}: {
-  detail?: string;
-  message: string;
-  tone: "error" | "info" | "success";
-}) {
-  const styles = {
-    error: "border-red-200 bg-red-50 text-red-700",
-    info: "border-blue-200 bg-blue-50 text-blue-800",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-800"
-  };
-
-  return (
-    <div className={`rounded-lg border p-4 text-sm ${styles[tone]}`}>
-      <p>{message}</p>
-      {detail ? <p className="mt-2 break-all font-mono text-xs">{detail}</p> : null}
-    </div>
-  );
-}
-
-function StatusPanel({
-  detail,
-  message,
-  tone = "info"
-}: {
-  detail?: string;
-  message: string;
-  tone?: "error" | "info" | "warning";
-}) {
-  const styles = {
-    error: "border-red-200 bg-red-50 text-red-700",
-    info: "border-slate-200 bg-white text-slate-600",
-    warning: "border-amber-200 bg-amber-50 text-amber-800"
-  };
-
-  return (
-    <section className={`rounded-lg border p-6 text-sm ${styles[tone]}`}>
-      <p>{message}</p>
-      {detail ? <p className="mt-2">{detail}</p> : null}
-    </section>
   );
 }
