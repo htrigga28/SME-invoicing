@@ -31,8 +31,7 @@ export function MetricCard({
     <Card
       className={cn(
         "p-5",
-        emphasis &&
-          "border-[color:var(--accent-glow)] bg-[var(--surface-raised)] [box-shadow:inset_0_0_0_1px_var(--accent-glow)]",
+        emphasis && "border-[var(--accent-border)] bg-[var(--accent-muted)]",
         className
       )}
       {...props}

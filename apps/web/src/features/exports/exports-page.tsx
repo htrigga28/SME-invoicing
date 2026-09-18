@@ -4,6 +4,10 @@ import React, { useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PageHeader } from "@/components/layout/page";
+import { Button } from "@/components/ui/button";
+import { SectionCard } from "@/components/ui/card";
+import { DateInput, FieldLabel, FormField, Input } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import type { Membership } from "@/features/auth/types";
 import { getApiErrorMessage } from "@/lib/api";
@@ -102,15 +106,13 @@ export function ExportsContent({
   }
 
   return (
-    <section className="space-y-5">
-      <header>
-        <h1 className="text-3xl font-semibold text-slate-950">Exports</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Download organisation data for reporting and offline analysis.
-        </p>
-      </header>
+    <section className="space-y-4">
+      <PageHeader
+        description="Download organisation data for reporting and offline analysis."
+        title="Exports"
+      />
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid items-start gap-4 xl:grid-cols-2">
         {visibleDatasets.map((config) => (
           <ExportPanel
             config={config}
@@ -140,20 +142,28 @@ function ExportPanel({
   onFilterChange: (key: string, value: string) => void;
 }) {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <SectionCard aria-labelledby={`export-${config.dataset}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-950">{config.title}</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600">{config.description}</p>
+        <div className="min-w-0">
+          <h2
+            className="text-base font-semibold text-[var(--text-primary)]"
+            id={`export-${config.dataset}`}
+          >
+            {config.title}
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+            {config.description}
+          </p>
         </div>
-        <button
-          className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-          disabled={isDownloading}
+        <Button
+          className="shrink-0"
+          isLoading={isDownloading}
+          loadingLabel="Downloading..."
           onClick={onDownload}
           type="button"
         >
-          {isDownloading ? "Downloading..." : "Download CSV"}
-        </button>
+          Download CSV
+        </Button>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -344,7 +354,7 @@ function ExportPanel({
           </>
         ) : null}
       </div>
-    </article>
+    </SectionCard>
   );
 }
 
@@ -360,29 +370,36 @@ function TextField({
   value: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
+      <Input
+        className="mt-1"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         value={value}
       />
-    </label>
+    </FormField>
   );
 }
 
-function DateField(props: Omit<React.ComponentProps<typeof TextField>, "placeholder">) {
+function DateField({
+  label,
+  onChange,
+  value
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{props.label}</span>
-      <input
-        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-        onChange={(event) => props.onChange(event.target.value)}
-        type="date"
-        value={props.value}
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
+      <DateInput
+        className="mt-1"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
       />
-    </label>
+    </FormField>
   );
 }
 
@@ -398,8 +415,8 @@ function SelectField({
   value: string;
 }) {
   return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
       <Select
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -407,7 +424,7 @@ function SelectField({
       >
         {children}
       </Select>
-    </label>
+    </FormField>
   );
 }
 

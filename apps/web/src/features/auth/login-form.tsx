@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
-import { primaryActionClassName } from "@/components/ui/styles";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/feedback";
+import { FieldError, FormField, FieldLabel, Input } from "@/components/ui/form";
 
 import { login } from "./auth-api";
 import { getOnboardingPath } from "./onboarding";
@@ -46,47 +48,68 @@ export function LoginForm() {
 
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">Email</span>
-        <input
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          type="email"
-          value={form.email}
-          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-        />
-        {errors.email ? (
-          <span className="mt-1 block text-sm text-red-600">{errors.email}</span>
-        ) : null}
-      </label>
+      <div>
+        <FormField>
+          <FieldLabel>Email</FieldLabel>
+          <Input
+            aria-describedby={errors.email ? "login-email-error" : undefined}
+            aria-invalid={Boolean(errors.email)}
+            autoComplete="email"
+            className="mt-1"
+            id="login-email"
+            inputMode="email"
+            type="email"
+            value={form.email}
+            onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+          />
+        </FormField>
+        {errors.email ? <FieldError id="login-email-error">{errors.email}</FieldError> : null}
+      </div>
 
-      <label className="block">
-        <span className="text-sm font-medium text-slate-700">Password</span>
-        <input
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          type="password"
-          value={form.password}
-          onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-        />
+      <div>
+        <FormField>
+          <FieldLabel>Password</FieldLabel>
+          <Input
+            aria-describedby={errors.password ? "login-password-error" : undefined}
+            aria-invalid={Boolean(errors.password)}
+            autoComplete="current-password"
+            className="mt-1"
+            id="login-password"
+            type="password"
+            value={form.password}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, password: event.target.value }))
+            }
+          />
+        </FormField>
         {errors.password ? (
-          <span className="mt-1 block text-sm text-red-600">{errors.password}</span>
+          <FieldError id="login-password-error">{errors.password}</FieldError>
         ) : null}
-      </label>
+      </div>
 
       {submitError ? (
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{submitError}</p>
+        <Alert role="alert" tone="error">
+          {submitError}
+        </Alert>
       ) : null}
 
-      <button
-        className={`${primaryActionClassName} w-full`}
+      <Button
+        className="w-full"
         disabled={isSubmitDisabled(isSubmitting)}
+        isLoading={isSubmitting}
+        loadingLabel="Signing in..."
+        size="lg"
         type="submit"
       >
-        {isSubmitting ? "Signing in..." : "Login"}
-      </button>
+        Login
+      </Button>
 
-      <p className="text-center text-sm text-slate-600">
+      <p className="text-center text-sm text-[var(--text-secondary)]">
         New here?{" "}
-        <Link className="font-medium text-teal-700" href="/register">
+        <Link
+          className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] hover:underline"
+          href="/register"
+        >
           Create an account
         </Link>
       </p>

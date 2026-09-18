@@ -62,7 +62,7 @@ describe("AuditLogsContent", () => {
     fireEvent.change(screen.getByLabelText("Search"), { target: { value: "invoice" } });
     fireEvent.change(screen.getByLabelText("Category"), { target: { value: "invoice" } });
     fireEvent.change(screen.getByLabelText("Action"), { target: { value: "invoice_sent" } });
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.submit(screen.getByRole("search"));
 
     await waitFor(() =>
       expect(listAuditLogs).toHaveBeenLastCalledWith(
@@ -79,7 +79,8 @@ describe("AuditLogsContent", () => {
   it("loads detail as safe metadata rows without raw JSON", async () => {
     render(<AuditLogsContent accessToken="token" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "View" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Row actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "View details" }));
 
     expect(await screen.findByText("Event detail")).toBeInTheDocument();
     expect(screen.getAllByText("Invoice Number").length).toBeGreaterThan(0);

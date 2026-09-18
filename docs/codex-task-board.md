@@ -58,6 +58,8 @@ Status values:
 - T016 replaces the Audit Logs placeholder with Owner/Admin read-only search, filters, pagination, safe metadata summaries, and detail inspection.
 - The unresolved global button/select UI issue is deferred to T017.
 - T017 expands the UI polish pass into an app-wide dark fintech design-system migration. It must not be marked Done until validation and manual QA acceptance are complete.
+- T017 visual direction (dark command-center + neon lime + global utility remapper) is SUPERSEDED for `apps/web` by `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md`. Domain/accessibility/workflow guidance from T017 still applies where compatible. Implemented light system is documented in `docs/design-system.md` / `docs/design-direction.md`.
+- Lumina v2 app overhaul (08_APP_OVERHAUL_CODEX_PROMPT) executed on `dev`: light Clear Financial Workspace foundation, shell/navigation regroup (Overview/Receivables/Operations/Settings), dashboard/invoices/payments/customers flagship migration with Mobbin-referenced patterns, supporting routes, public/entry flows, legacy palette sweep, typecheck/lint/tests green (147/147 web). See docs/lumina-v2/06, 07, 09 for authority/references/audit.
 - T017 now includes shared filter bars, segmented controls, and data-table primitives across Customers, Invoices, Payments, Receipts, and Audit Logs.
 - T018 creates a separate `apps/marketing` public site for the root domain while keeping `apps/web` as the authenticated product app for `app.<root-domain>`.
 - Deployment and portfolio hardening moved to T019 so T018 can focus on marketing, waitlist, and SEO foundations.

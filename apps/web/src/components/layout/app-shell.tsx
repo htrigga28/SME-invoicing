@@ -5,7 +5,7 @@ import { FilePlus2 } from "lucide-react";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 import { LinkButton } from "@/components/ui/button";
-import { Alert } from "@/components/ui/feedback";
+import { Alert, ErrorState } from "@/components/ui/feedback";
 import { getMe, logout } from "@/features/auth/auth-api";
 import { getOnboardingPath } from "@/features/auth/onboarding";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
@@ -78,6 +78,7 @@ function WorkspaceShell({
   const [context, setContext] = useState<AppShellContext | null>(null);
   const [state, setState] = useState<ShellState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
@@ -138,7 +139,7 @@ function WorkspaceShell({
 
       setState("ready");
     }
-  }, [pathname, requiredRoles, router]);
+  }, [pathname, requiredRoles, retryCount, router]);
 
   async function handleLogout() {
     const session = getStoredSession();
@@ -159,7 +160,17 @@ function WorkspaceShell({
   if (!context) {
     return (
       <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
-        <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
+        <ErrorState
+          className="mx-auto mt-16 max-w-2xl"
+          detail="Your workspace data can’t be displayed until the connection returns. Try again now, or wait a moment before retrying."
+          message={error ?? "Lumina could not reach the service that loads your business data."}
+          onRetry={() => {
+            setError(null);
+            setState("loading");
+            setRetryCount((current) => current + 1);
+          }}
+          title="We can’t load your workspace right now"
+        />
       </main>
     );
   }
@@ -180,8 +191,8 @@ function WorkspaceShell({
   return (
     <main
       className={cn(
-        "min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-[padding] duration-200 ease-out",
-        sidebarExpanded ? "md:pl-64" : "md:pl-20"
+        "min-h-screen bg-[var(--background)] text-[var(--text-primary)] transition-[padding] duration-150 ease-out",
+        sidebarExpanded ? "md:pl-60" : "md:pl-20"
       )}
     >
       <Sidebar
@@ -199,7 +210,7 @@ function WorkspaceShell({
       <AppShellContextProvider.Provider value={context}>
         <div className="min-w-0 flex-1">
           <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
-          <div className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-24 lg:px-6">
+          <div className="mx-auto w-full max-w-[1280px] px-4 py-6 pb-24 md:px-6 lg:px-8">
             {state === "denied" ? (
               <StatusPanel
                 message={deniedMessage ?? "You do not have access to this page."}
@@ -283,14 +294,16 @@ function CreateInvoiceQuickAction({
     return null;
   }
 
+  // Contextual primary actions live in page headers on desktop;
+  // keep a mobile-only CTA so it never fights the new hierarchy.
   return (
     <LinkButton
-      className="fixed bottom-4 right-4 z-30 rounded-full px-4 shadow-none md:bottom-6 md:right-6"
+      className="fixed bottom-4 right-4 z-30 rounded-full px-4 shadow-[var(--shadow-menu)] md:hidden"
       href="/invoices/new"
       size="lg"
     >
       <FilePlus2 aria-hidden="true" className="h-4 w-4" />
-      Create Invoice
+      New invoice
     </LinkButton>
   );
 }

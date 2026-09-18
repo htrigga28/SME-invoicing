@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Input, Textarea } from "@/components/ui/form";
 import { primaryActionClassName } from "@/components/ui/styles";
 import { clearStoredSession } from "@/features/auth/session";
 import { isApiRequestError } from "@/lib/api";
@@ -162,14 +163,14 @@ function CustomerFormContent({
       ) : null}
 
       <form
-        className="max-w-3xl rounded-lg border border-slate-200 bg-white p-5"
+        className="max-w-3xl rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"
         onSubmit={handleSubmit}
       >
         {customer ? (
-          <div className="mb-5 flex items-center justify-between rounded-md bg-slate-50 p-3">
+          <div className="mb-5 flex items-center justify-between rounded-[var(--radius-control)] bg-[var(--surface-raised)] p-3">
             <div>
-              <p className="text-sm font-medium text-slate-950">{customer.name}</p>
-              <p className="text-sm text-slate-600">{customer.email}</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{customer.name}</p>
+              <p className="text-sm text-[var(--text-secondary)]">{customer.email}</p>
             </div>
             <CustomerStatusBadge status={customer.status} />
           </div>
@@ -177,8 +178,8 @@ function CustomerFormContent({
 
         <div className="grid gap-4">
           <FieldError label="Name" error={errors.name}>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            <Input
+              className="mt-1"
               disabled={isArchived || isSubmitting}
               onChange={(event) => updateField("name", event.target.value)}
               value={form.name}
@@ -186,8 +187,8 @@ function CustomerFormContent({
           </FieldError>
 
           <FieldError label="Email" error={errors.email}>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            <Input
+              className="mt-1"
               disabled={isArchived || isSubmitting}
               onChange={(event) => updateField("email", event.target.value)}
               type="email"
@@ -196,8 +197,8 @@ function CustomerFormContent({
           </FieldError>
 
           <FieldError label="Phone" error={errors.phone}>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            <Input
+              className="mt-1"
               disabled={isArchived || isSubmitting}
               onChange={(event) => updateField("phone", event.target.value)}
               placeholder="+2348010000001"
@@ -206,8 +207,8 @@ function CustomerFormContent({
           </FieldError>
 
           <FieldError label="Billing address" error={errors.billingAddress}>
-            <textarea
-              className="mt-1 min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            <Textarea
+              className="mt-1 min-h-28"
               disabled={isArchived || isSubmitting}
               onChange={(event) => updateField("billingAddress", event.target.value)}
               value={form.billingAddress ?? ""}
@@ -217,7 +218,7 @@ function CustomerFormContent({
 
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
           <Link
-            className="rounded-md border border-slate-300 px-4 py-2 text-center text-sm font-semibold text-slate-700"
+            className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-4 py-2 text-center text-sm font-semibold text-[var(--text-secondary)] transition duration-150 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
             href={customer ? `/customers/${customer.id}` : "/customers"}
           >
             Cancel
@@ -246,9 +247,9 @@ function FieldError({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="text-sm font-medium text-[var(--text-secondary)]">{label}</span>
       {children}
-      {error ? <span className="mt-1 block text-sm text-red-700">{error}</span> : null}
+      {error ? <span className="mt-1 block text-sm text-[var(--danger)]">{error}</span> : null}
     </label>
   );
 }

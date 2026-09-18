@@ -12,9 +12,15 @@ import {
   MobileDataCard,
   TableHeaderCell
 } from "@/components/ui/data-table";
+import {
+  DataToolbar,
+  DataToolbarActions,
+  DataToolbarFilters,
+  DataToolbarSearch
+} from "@/components/ui/data-toolbar";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
-import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
 import { FieldLabel, FormField, Input, Textarea } from "@/components/ui/form";
+import { TableRowActionMenu } from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import { formatDate, PageHeader, StatusPanel } from "@/features/invoices/invoice-ui";
@@ -190,7 +196,7 @@ export function CatalogueContent({
   }
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <PageHeader
         description="Reusable products and services for invoice lines. Saved invoices keep independent snapshots."
         title="Products & Services"
@@ -199,23 +205,29 @@ export function CatalogueContent({
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
-      <FilterBar aria-label="Catalogue filters" onSubmit={handleSearch}>
-        <FilterGrid className="lg:grid-cols-[1fr_200px_auto]">
-          <FormField>
-            <FieldLabel>Search</FieldLabel>
+      <form aria-label="Catalogue filters" onSubmit={handleSearch}>
+        <DataToolbar>
+          <DataToolbarSearch>
             <Input
-              className="mt-1"
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Name or description"
+              aria-label="Search catalogue"
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                if (event.target.value === "") setSearch("");
+              }}
+              placeholder="Search name or description…"
               value={searchInput}
             />
-          </FormField>
-          <FormField>
-            <FieldLabel>Status</FieldLabel>
+          </DataToolbarSearch>
+          <DataToolbarFilters>
+            <label className="sr-only" htmlFor="catalogue-status-filter">
+              Status
+            </label>
             <Select
+              aria-label="Status"
+              id="catalogue-status-filter"
               onChange={(event) => setStatus(event.target.value as CatalogueListStatus)}
               value={status}
-              wrapperClassName="mt-1"
+              wrapperClassName="w-40"
             >
               {statusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -223,9 +235,9 @@ export function CatalogueContent({
                 </option>
               ))}
             </Select>
-          </FormField>
-          <FilterActions>
-            <Button type="submit" variant="outline">
+          </DataToolbarFilters>
+          <DataToolbarActions>
+            <Button size="sm" type="submit" variant="outline">
               Search
             </Button>
             {isFiltered ? (
@@ -235,17 +247,18 @@ export function CatalogueContent({
                   setSearchInput("");
                   setStatus("active");
                 }}
+                size="sm"
                 type="button"
                 variant="ghost"
               >
                 Clear
               </Button>
             ) : null}
-          </FilterActions>
-        </FilterGrid>
-      </FilterBar>
+          </DataToolbarActions>
+        </DataToolbar>
+      </form>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+      <div className="grid items-start gap-4 xl:grid-cols-[1fr_360px]">
         <DataTableContainer>
           {state === "loading" ? (
             <LoadingSkeleton />
@@ -262,54 +275,54 @@ export function CatalogueContent({
             <>
               <div className="hidden overflow-x-auto lg:block">
                 <DataTable aria-label="Catalogue items">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead>
                   <tr>
                     <TableHeaderCell>Item</TableHeaderCell>
-                    <TableHeaderCell>Default price</TableHeaderCell>
+                    <TableHeaderCell className="text-right">Default price</TableHeaderCell>
                     <TableHeaderCell>Status</TableHeaderCell>
                     <TableHeaderCell>Updated</TableHeaderCell>
-                    {canManage ? <TableHeaderCell>Actions</TableHeaderCell> : null}
+                    {canManage ? (
+                      <TableHeaderCell className="w-12">
+                        <span className="sr-only">Actions</span>
+                      </TableHeaderCell>
+                    ) : null}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[var(--border-subtle)]">
                   {items.map((item) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-slate-950">{item.name}</p>
+                        <p className="font-medium text-[var(--text-primary)]">{item.name}</p>
                         {item.description ? (
-                          <p className="mt-1 max-w-md whitespace-pre-wrap break-words text-sm text-slate-600">
+                          <p className="mt-1 max-w-md whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]">
                             {item.description}
                           </p>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">
+                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-secondary)]">
                         {formatKoboToNaira(item.defaultUnitPriceKobo)}
                       </td>
-                      <td className="px-4 py-3 text-sm capitalize text-slate-600">{item.status}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
+                      <td className="whitespace-nowrap px-4 py-3 text-sm capitalize text-[var(--text-secondary)]">{item.status}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-[var(--text-secondary)]">
                         {formatDate(item.updatedAt.slice(0, 10))}
                       </td>
                       {canManage ? (
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              disabled={item.status === "archived"}
-                              onClick={() => startEdit(item)}
-                              size="sm"
-                              type="button"
-                              variant="outline"
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              onClick={() => setPendingArchive(item)}
-                              size="sm"
-                              type="button"
-                              variant="outline"
-                            >
-                              {item.status === "active" ? "Archive" : "Restore"}
-                            </Button>
-                          </div>
+                        <td className="px-2 py-3 text-right">
+                          <TableRowActionMenu
+                            label={`Actions for ${item.name}`}
+                            items={[
+                              {
+                                label: "Edit",
+                                disabled: item.status === "archived",
+                                onSelect: () => startEdit(item)
+                              },
+                              {
+                                label: item.status === "active" ? "Archive" : "Restore",
+                                destructive: item.status === "active",
+                                onSelect: () => setPendingArchive(item)
+                              }
+                            ]}
+                          />
                         </td>
                       ) : null}
                     </tr>
@@ -318,42 +331,40 @@ export function CatalogueContent({
               </DataTable>
               </div>
 
-              <div className="divide-y divide-slate-100 lg:hidden">
+              <div className="divide-y divide-[var(--border-subtle)] lg:hidden">
                 {items.map((item) => (
                   <MobileDataCard key={item.id}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium text-slate-950">{item.name}</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-[var(--text-primary)]">{item.name}</p>
+                        <p className="text-sm tabular-nums text-[var(--text-secondary)]">
                           {formatKoboToNaira(item.defaultUnitPriceKobo)}
                         </p>
                       </div>
-                      <span className="text-xs capitalize text-slate-500">{item.status}</span>
+                      <span className="text-xs capitalize text-[var(--text-muted)]">{item.status}</span>
                     </div>
                     {item.description ? (
-                      <p className="whitespace-pre-wrap break-words text-sm text-slate-600">
+                      <p className="whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]">
                         {item.description}
                       </p>
                     ) : null}
                     {canManage ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          disabled={item.status === "archived"}
-                          onClick={() => startEdit(item)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          onClick={() => setPendingArchive(item)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {item.status === "active" ? "Archive" : "Restore"}
-                        </Button>
+                      <div className="flex justify-end">
+                        <TableRowActionMenu
+                          label={`Actions for ${item.name}`}
+                          items={[
+                            {
+                              label: "Edit",
+                              disabled: item.status === "archived",
+                              onSelect: () => startEdit(item)
+                            },
+                            {
+                              label: item.status === "active" ? "Archive" : "Restore",
+                              destructive: item.status === "active",
+                              onSelect: () => setPendingArchive(item)
+                            }
+                          ]}
+                        />
                       </div>
                     ) : null}
                   </MobileDataCard>
@@ -366,11 +377,11 @@ export function CatalogueContent({
         {canManage ? (
           <form
             aria-label={editing ? "Edit catalogue item" : "Create catalogue item"}
-            className="h-fit space-y-4 rounded-lg border border-slate-200 bg-white p-5"
+            className="h-fit space-y-4 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"
             onSubmit={handleSave}
           >
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-slate-950">
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
                 {editing ? `Edit ${editing.name}` : "New item"}
               </h2>
               {editing ? (
@@ -390,7 +401,7 @@ export function CatalogueContent({
                 placeholder="Monthly bookkeeping"
                 value={form.name}
               />
-              {formErrors.name ? <p className="mt-1 text-sm text-red-700">{formErrors.name}</p> : null}
+              {formErrors.name ? <p className="mt-1 text-sm text-[var(--danger)]">{formErrors.name}</p> : null}
             </FormField>
 
             <FormField>
@@ -406,7 +417,7 @@ export function CatalogueContent({
                 value={form.description}
               />
               {formErrors.description ? (
-                <p className="mt-1 text-sm text-red-700">{formErrors.description}</p>
+                <p className="mt-1 text-sm text-[var(--danger)]">{formErrors.description}</p>
               ) : null}
             </FormField>
 
@@ -425,20 +436,20 @@ export function CatalogueContent({
                 value={form.unitPriceNaira}
               />
               {formErrors.unitPriceNaira ? (
-                <p className="mt-1 text-sm text-red-700">{formErrors.unitPriceNaira}</p>
+                <p className="mt-1 text-sm text-[var(--danger)]">{formErrors.unitPriceNaira}</p>
               ) : null}
             </FormField>
 
             <Button className="w-full" disabled={isSaving} type="submit">
               {isSaving ? "Saving..." : editing ? "Save changes" : "Create item"}
             </Button>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-[var(--text-muted)]">
               Archived items stay out of invoice authoring. Saved invoices never read live catalogue
               prices.
             </p>
           </form>
         ) : (
-          <div className="h-fit rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
+          <div className="h-fit rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5 text-sm text-[var(--text-secondary)]">
             Viewers can browse reusable items. Only Owner, Admin, or Accountant roles can create or
             archive catalogue items.
           </div>

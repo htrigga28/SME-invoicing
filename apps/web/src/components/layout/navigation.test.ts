@@ -3,25 +3,25 @@ import { describe, expect, it } from "vitest";
 import { getNavigationItems, getNavigationSections } from "./navigation";
 
 describe("authenticated navigation", () => {
-  it("shows team and audit logs to owners", () => {
+  it("shows team and audit log to owners", () => {
     const labels = getNavigationItems("owner").map((item) => item.label);
 
     expect(labels).toContain("Team");
-    expect(labels).toContain("Audit Logs");
+    expect(labels).toContain("Audit log");
   });
 
-  it("shows team and audit logs to admins", () => {
+  it("shows team and audit log to admins", () => {
     const labels = getNavigationItems("admin").map((item) => item.label);
 
     expect(labels).toContain("Team");
-    expect(labels).toContain("Audit Logs");
+    expect(labels).toContain("Audit log");
   });
 
-  it("hides team and audit logs from accountants and viewers", () => {
+  it("hides team and audit log from accountants and viewers", () => {
     expect(getNavigationItems("accountant").map((item) => item.label)).not.toContain("Team");
-    expect(getNavigationItems("accountant").map((item) => item.label)).not.toContain("Audit Logs");
+    expect(getNavigationItems("accountant").map((item) => item.label)).not.toContain("Audit log");
     expect(getNavigationItems("viewer").map((item) => item.label)).not.toContain("Team");
-    expect(getNavigationItems("viewer").map((item) => item.label)).not.toContain("Audit Logs");
+    expect(getNavigationItems("viewer").map((item) => item.label)).not.toContain("Audit log");
   });
 
   it("shows payment setup to every authenticated role", () => {
@@ -30,7 +30,7 @@ describe("authenticated navigation", () => {
         expect.arrayContaining([
           expect.objectContaining({
             href: "/settings/payment-setup",
-            label: "Payment Setup",
+            label: "Payment setup",
             status: "available"
           })
         ])
@@ -38,14 +38,16 @@ describe("authenticated navigation", () => {
     }
   });
 
-  it("groups payment setup under Settings instead of the main navigation section", () => {
+  it("groups payment setup under Settings instead of receivables/operations", () => {
     const sections = getNavigationSections("owner");
-    const main = sections.find((section) => section.label === "Main");
+    const receivables = sections.find((section) => section.label === "Receivables");
+    const operations = sections.find((section) => section.label === "Operations");
     const settings = sections.find((section) => section.label === "Settings");
 
-    expect(main?.items.map((item) => item.label)).not.toContain("Payment Setup");
+    expect(receivables?.items.map((item) => item.label)).not.toContain("Payment setup");
+    expect(operations?.items.map((item) => item.label)).not.toContain("Payment setup");
     expect(settings?.items.map((item) => item.label)).toEqual(
-      expect.arrayContaining(["Team", "Payment Setup"])
+      expect.arrayContaining(["Team", "Payment setup"])
     );
   });
 

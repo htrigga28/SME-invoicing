@@ -2,6 +2,8 @@
 
 Use this prompt to start the first Lumina v2 implementation task immediately.
 
+> **Interface note:** This document remains authoritative for T020 behavior and domain rules. The current `apps/web` interface is superseded by `06_APP_DESIGN_OVERHAUL.md` and its Clear Financial Workspace direction.
+
 ---
 
 You are implementing **T020 — Invoice Experience 2.0** in the repository `htrigga28/SME-invoicing`.

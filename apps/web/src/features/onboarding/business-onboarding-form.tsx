@@ -139,7 +139,7 @@ export function BusinessOnboardingForm() {
   }
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 shadow-[var(--shadow-document)] sm:p-8">
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div>
           <FormField>
@@ -236,6 +236,7 @@ export function BusinessOnboardingForm() {
         ) : null}
 
         <Button
+          className="w-full"
           disabled={isSubmitDisabled(isSubmitting)}
           isLoading={isSubmitting}
           loadingLabel="Saving business profile..."

@@ -29,14 +29,14 @@ export function DataTableToolbar({ className, ...props }: HTMLAttributes<HTMLDiv
 }
 
 export function DataTable({ className, ...props }: HTMLAttributes<HTMLTableElement>) {
-  return <table className={cn("w-full text-left text-sm", className)} {...props} />;
+  return <table className={cn("w-full text-left text-sm text-[var(--text-primary)]", className)} {...props} />;
 }
 
 export function TableHeaderCell({ className, ...props }: HTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       className={cn(
-        "sticky top-0 bg-[var(--surface-raised)] px-4 py-3 text-[11px] font-semibold uppercase text-[var(--text-muted)]",
+        "sticky top-0 whitespace-nowrap bg-[var(--surface-raised)] px-4 py-3 text-left text-xs font-medium text-[var(--text-secondary)]",
         className
       )}
       {...props}

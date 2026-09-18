@@ -29,11 +29,11 @@ export function ComingSoonPage({
   return (
     <AppShell {...shellProps}>
       {() => (
-        <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <p className="text-sm font-medium uppercase tracking-wide text-teal-700">{taskId}</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-950">{title}</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">{description}</p>
-          <p className="mt-6 inline-flex rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold uppercase text-slate-500">
+        <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-6">
+          <p className="font-mono text-sm font-medium tabular-nums text-[var(--accent)]">{taskId}</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--text-primary)]">{title}</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">{description}</p>
+          <p className="mt-6 inline-flex rounded-full border border-[var(--border-default)] bg-[var(--surface-raised)] px-3 py-1 text-xs font-semibold text-[var(--text-muted)]">
             Coming soon
           </p>
         </section>

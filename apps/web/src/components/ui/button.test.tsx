@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe("Button", () => {
-  it("renders a lime primary button with dark readable text", () => {
+  it("renders a deep-green primary button with readable text", () => {
     render(<Button>Save invoice</Button>);
 
     const button = screen.getByRole("button", { name: "Save invoice" });

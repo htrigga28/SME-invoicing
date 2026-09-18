@@ -125,6 +125,8 @@ describe("InvoiceDetailContent public URL", () => {
     await waitFor(() => expect(screen.getByText("Public URL copied.")).toBeInTheDocument());
     expect(screen.getByText(/Payment enabled/)).toBeInTheDocument();
     expect(screen.getByText("Not paid yet")).toBeInTheDocument();
+    expect(screen.getByText(/invoice sent/)).toBeInTheDocument();
+    expect(screen.queryByText(/invoice_sent/)).not.toBeInTheDocument();
   });
 
   it("shows webhook-confirmed paid amount, balance, and paid date", async () => {
@@ -146,7 +148,7 @@ describe("InvoiceDetailContent public URL", () => {
 
     render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
 
-    expect(await screen.findByText("Paid")).toBeInTheDocument();
+    expect(await screen.findAllByText("Paid")).not.toHaveLength(0);
     expect(screen.getAllByText("NGN 975.00").length).toBeGreaterThan(0);
     expect(screen.getByText("NGN 0.00")).toBeInTheDocument();
     expect(screen.getByText("30 Jun 2026")).toBeInTheDocument();

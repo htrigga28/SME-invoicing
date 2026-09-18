@@ -26,7 +26,7 @@ describe("Select", () => {
 
     expect(select).toHaveClass("appearance-none");
     expect(select).toHaveClass("pr-12");
-    expect(select).toHaveClass("bg-[var(--surface-raised)]");
+    expect(select).toHaveClass("bg-[var(--surface)]");
     expect(chevron).toHaveClass("right-4");
     expect(chevron).toHaveClass("pointer-events-none");
   });

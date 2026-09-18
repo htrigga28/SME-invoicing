@@ -40,11 +40,17 @@ describe("feedback states", () => {
     const retry = vi.fn();
 
     render(
-      <ErrorState message="Could not load payments." onRetry={retry} title="Payments failed" />
+      <ErrorState
+        detail="Try again now or wait a moment."
+        message="Could not load payments."
+        onRetry={retry}
+        title="Payments failed"
+      />
     );
 
     expect(screen.getByText("Payments failed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getByText("Try again now or wait a moment.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
   it("renders loading skeleton rows", () => {

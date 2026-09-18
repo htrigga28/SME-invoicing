@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Customer } from "@/features/customers/types";
@@ -10,6 +10,10 @@ import { listInvoices } from "./invoices-api";
 
 vi.mock("./invoices-api", () => ({
   listInvoices: vi.fn()
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() })
 }));
 
 vi.mock("@/features/customers/customers-api", () => ({
@@ -61,5 +65,23 @@ describe("InvoiceListContent filters", () => {
     expect(await screen.findByRole("combobox", { name: "Status" })).toHaveClass("pr-12");
     expect(screen.getByRole("combobox", { name: "Customer" })).toHaveClass("pr-12");
     expect(screen.getAllByTestId("select-chevron")).toHaveLength(2);
+  });
+
+  it("leaves the summary tabs unselected for statuses only available in the full filter", async () => {
+    render(<InvoiceListContent accessToken="token" role="owner" />);
+
+    fireEvent.change(await screen.findByRole("combobox", { name: "Status" }), {
+      target: { value: "viewed" }
+    });
+
+    await waitFor(() =>
+      expect(listInvoices).toHaveBeenLastCalledWith(
+        "token",
+        expect.objectContaining({ status: "viewed" })
+      )
+    );
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(tab).toHaveAttribute("aria-selected", "false");
+    }
   });
 });

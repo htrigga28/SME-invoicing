@@ -7,6 +7,12 @@ import type { Customer } from "./types";
 import { CustomerListContent } from "./customer-list-page";
 import { archiveCustomer, listCustomers } from "./customers-api";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn()
+  })
+}));
+
 vi.mock("./customers-api", () => ({
   archiveCustomer: vi.fn(),
   listCustomers: vi.fn()
@@ -52,6 +58,14 @@ function createDeferred<T>() {
   return { promise, reject, resolve };
 }
 
+async function openRowActionsMenu() {
+  const triggers = await screen.findAllByRole("button", { name: "Row actions" });
+  const firstTrigger = triggers[0];
+  if (!firstTrigger) throw new Error("Expected a row actions menu trigger.");
+  fireEvent.click(firstTrigger);
+  return screen.findByRole("menuitem", { name: "Archive" });
+}
+
 beforeEach(() => {
   mockCustomerList();
   vi.mocked(archiveCustomer).mockResolvedValue({
@@ -72,7 +86,7 @@ describe("CustomerListContent archive actions", () => {
   it("opens a custom confirmation dialog for archive actions", async () => {
     render(<CustomerListContent accessToken="token" role="owner" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    fireEvent.click(await openRowActionsMenu());
 
     expect(screen.getByRole("dialog", { name: "Archive customer?" })).toBeInTheDocument();
     expect(
@@ -85,7 +99,7 @@ describe("CustomerListContent archive actions", () => {
   it("cancels archive without calling the API", async () => {
     render(<CustomerListContent accessToken="token" role="admin" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    fireEvent.click(await openRowActionsMenu());
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(archiveCustomer).not.toHaveBeenCalled();
@@ -97,7 +111,7 @@ describe("CustomerListContent archive actions", () => {
     vi.mocked(archiveCustomer).mockReturnValueOnce(archiveDeferred.promise);
     render(<CustomerListContent accessToken="token" role="accountant" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    fireEvent.click(await openRowActionsMenu());
     const confirmButton = screen.getByRole("button", { name: "Archive customer" });
     fireEvent.click(confirmButton);
 
@@ -129,11 +143,50 @@ describe("CustomerListContent archive actions", () => {
     expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
   });
 
-  it("renders the status filter with the shared select chevron", async () => {
+  it("renders compact status tabs and filters by archived status", async () => {
     render(<CustomerListContent accessToken="token" role="owner" />);
 
-    expect(await screen.findByRole("combobox", { name: "Status" })).toHaveClass("pr-12");
-    expect(screen.getByTestId("select-chevron")).toBeInTheDocument();
+    expect(await screen.findAllByText("Lagos Bright Prints")).not.toHaveLength(0);
+
+    const activeTab = screen.getByRole("tab", { name: "Active" });
+    expect(activeTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Archived" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "All" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Archived" }));
+
+    await waitFor(() =>
+      expect(listCustomers).toHaveBeenLastCalledWith(
+        "token",
+        expect.objectContaining({ status: "archived" })
+      )
+    );
+  });
+
+  it("offers one clear retry path when customers cannot be loaded", async () => {
+    vi.mocked(listCustomers)
+      .mockRejectedValueOnce(
+        new Error(
+          "Lumina could not connect to the service. This part of the app is temporarily unavailable."
+        )
+      )
+      .mockResolvedValueOnce({ customers: [demoCustomer], pagination });
+
+    render(<CustomerListContent accessToken="token" role="owner" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "We can’t load customers right now" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        "Lumina could not connect to the service. This part of the app is temporarily unavailable."
+      )
+    ).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findAllByText("Lagos Bright Prints")).not.toHaveLength(0);
+    expect(listCustomers).toHaveBeenCalledTimes(2);
   });
 
   it("does not use native browser prompts in customer archive flows", () => {

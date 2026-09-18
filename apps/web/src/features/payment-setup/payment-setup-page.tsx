@@ -315,7 +315,7 @@ export function PaymentSetupContent({
   }
 
   return (
-    <section className="space-y-5">
+    <section className="mx-auto w-full max-w-[960px] space-y-4">
       <PageHeader
         description={
           fromOnboarding
@@ -476,7 +476,7 @@ function SetupWizard({
       <Card className="p-5">
         <form onSubmit={onResolve}>
           <div>
-            <p className="text-sm font-semibold text-[var(--accent)]">Resolve account</p>
+            <p className="text-sm font-semibold text-[var(--accent)]">Step 1 · Resolve account</p>
             <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
               Select bank and enter account number
             </h2>
@@ -566,7 +566,7 @@ function SetupWizard({
 
       {resolvedAccount ? (
         <Card className="p-5">
-          <p className="text-sm font-semibold text-[var(--accent)]">Confirm account</p>
+          <p className="text-sm font-semibold text-[var(--accent)]">Step 2 · Confirm account</p>
           <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
             Confirm resolved account
           </h2>

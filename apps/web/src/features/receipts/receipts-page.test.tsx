@@ -66,13 +66,13 @@ describe("ReceiptsContent", () => {
   it("applies receipt filters through the API", async () => {
     render(<ReceiptsContent accessToken="token" />);
 
-    fireEvent.change(await screen.findByLabelText("Search"), {
+    fireEvent.change(await screen.findByLabelText("Search receipts"), {
       target: { value: "RCT-000001" }
     });
+    fireEvent.submit(screen.getByRole("search"));
     fireEvent.change(screen.getByLabelText("Refund state"), {
       target: { value: "none" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() =>
       expect(listReceipts).toHaveBeenLastCalledWith(

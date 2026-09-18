@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { compactPrimaryActionClassName } from "@/components/ui/styles";
+import { SectionCard } from "@/components/ui/card";
+import { DropdownMenu } from "@/components/ui/menu";
 import { clearStoredSession } from "@/features/auth/session";
 import {
   formatDateTime as formatPaymentDateTime,
@@ -16,8 +18,15 @@ import {
 } from "@/features/payments/payment-ui";
 import { isApiRequestError } from "@/lib/api";
 
-import { cancelInvoice, duplicateInvoice, getInvoice, sendInvoice, voidInvoice } from "./invoices-api";
-import { formatDate, formatMoney, InvoiceStatusBadge, PageHeader, StatusPanel } from "./invoice-ui";
+import {
+  cancelInvoice,
+  duplicateInvoice,
+  getInvoice,
+  sendInvoice,
+  voidInvoice
+} from "./invoices-api";
+import { InvoiceDocument } from "./invoice-document";
+import { formatDate, formatMoney, InvoiceStatusBadge, StatusPanel } from "./invoice-ui";
 import type { InvoiceDetailResponse } from "./types";
 import { canCancelOrVoidInvoices, canManageInvoices } from "./types";
 
@@ -168,13 +177,9 @@ export function InvoiceDetailContent({
     return (
       <StatusPanel
         action={
-          <button
-            className={compactPrimaryActionClassName}
-            onClick={() => void loadInvoice()}
-            type="button"
-          >
+          <Button onClick={() => void loadInvoice()} size="sm" type="button">
             Retry
-          </button>
+          </Button>
         }
         message={error ?? "Could not load invoice."}
         tone="error"
@@ -197,157 +202,143 @@ export function InvoiceDetailContent({
     invoice.publicAccessEnabled &&
     ["sent", "viewed", "overdue", "partially_paid", "paid"].includes(invoice.status);
 
+  const overflowItems = [
+    ...(canEdit ? [{ label: "Edit", href: `/invoices/${invoice.id}/edit` }] : []),
+    ...(canDuplicate
+      ? [
+          {
+            label: isDuplicating ? "Duplicating…" : "Duplicate",
+            onSelect: () => void handleDuplicate(),
+            disabled: isDuplicating || isSourceCustomerArchived
+          }
+        ]
+      : []),
+    ...(canCancel
+      ? [{ label: "Cancel invoice", onSelect: () => setDialogAction("cancel"), destructive: true }]
+      : []),
+    ...(canVoid
+      ? [{ label: "Void invoice", onSelect: () => setDialogAction("void"), destructive: true }]
+      : [])
+  ];
+
   return (
-    <section className="space-y-5">
-      <PageHeader
-        action={
-          <Link
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            href="/invoices"
-          >
-            Back to invoices
-          </Link>
-        }
-        description={`${invoice.customer.name} · Due ${formatDate(invoice.dueDate)}`}
-        title={invoice.invoiceNumber}
-      />
+    <section className="space-y-4">
+      <Link
+        href="/invoices"
+        className="inline-flex text-sm font-semibold text-[var(--text-secondary)] hover:text-[var(--accent)]"
+      >
+        ← Invoices
+      </Link>
+
+      {/* Document header — number / status / customer / balance / due + one primary action */}
+      <header className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-2xl font-semibold tracking-tight">
+                {invoice.invoiceNumber}
+              </h1>
+              <InvoiceStatusBadge status={invoice.status} />
+            </div>
+            <p className="mt-1.5 truncate text-sm text-[var(--text-secondary)]">
+              {invoice.customer.name} · {invoice.customer.email}
+            </p>
+            <div className="mt-3 flex flex-wrap items-end gap-x-8 gap-y-3">
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Balance due</p>
+                <p className="mt-0.5 text-3xl font-semibold tracking-tight tabular-nums">
+                  {formatMoney(financialSummary.balanceDueKobo)}
+                </p>
+              </div>
+              <div className="pb-1 text-sm">
+                <p className="text-[var(--text-secondary)]">
+                  Total {formatMoney(invoice.totalKobo)} · Paid{" "}
+                  {formatMoney(financialSummary.netReceivedKobo)}
+                </p>
+                <p className="mt-0.5 text-[var(--text-muted)]">
+                  Due {formatDate(invoice.dueDate)}
+                  {invoice.paidAt ? ` · Paid ${formatDate(invoice.paidAt)}` : " · Not paid yet"}
+                </p>
+                {invoice.paidAt ? (
+                  <p className="sr-only">{formatDate(invoice.paidAt)}</p>
+                ) : (
+                  <p className="sr-only">Not paid yet</p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {canSend ? (
+              <Button onClick={() => setDialogAction("send")} type="button">
+                Send invoice
+              </Button>
+            ) : canSharePublicUrl ? (
+              <Button onClick={() => void handleCopyPublicUrl(response.publicUrl!)} type="button">
+                Copy public URL
+              </Button>
+            ) : canEdit ? (
+              <Button onClick={() => router.push(`/invoices/${invoice.id}/edit`)} type="button">
+                Edit draft
+              </Button>
+            ) : null}
+            {overflowItems.length ? (
+              <DropdownMenu
+                label="More invoice actions"
+                trigger={<span>•••</span>}
+                items={overflowItems}
+              />
+            ) : null}
+          </div>
+        </div>
+        {copySuccess ? (
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">{copySuccess}</p>
+        ) : null}
+        {canDuplicate && isSourceCustomerArchived ? (
+          <p className="mt-3 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-3 text-sm text-[var(--warning)]">
+            Archived customers cannot be used for duplicated invoices. Reactivate the customer or
+            choose an active customer.
+          </p>
+        ) : null}
+      </header>
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-5">
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <InvoiceStatusBadge status={invoice.status} />
-                <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <DetailItem
-                    label="Customer"
-                    value={`${invoice.customer.name}\n${invoice.customer.email}`}
-                  />
-                  <DetailItem label="Issue date" value={formatDate(invoice.issueDate)} />
-                  <DetailItem label="Due date" value={formatDate(invoice.dueDate)} />
-                  <DetailItem
-                    label="Customer reference"
-                    value={invoice.customerReference || "No reference"}
-                  />
-                  <DetailItem
-                    label="Paid at"
-                    value={invoice.paidAt ? formatDate(invoice.paidAt) : "Not paid yet"}
-                  />
-                  <DetailItem label="Customer memo" value={invoice.notes || "No memo"} />
-                </dl>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {canEdit ? (
-                  <Link
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-                    href={`/invoices/${invoice.id}/edit`}
-                  >
-                    Edit
-                  </Link>
-                ) : null}
-                {canDuplicate ? (
-                  <button
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={isDuplicating || isSourceCustomerArchived}
-                    onClick={() => void handleDuplicate()}
-                    title={
-                      isSourceCustomerArchived
-                        ? "Archived customers cannot be used for duplicated invoices. Reactivate the customer or choose an active customer."
-                        : "Create a new draft from this invoice"
-                    }
-                    type="button"
-                  >
-                    {isDuplicating ? "Duplicating..." : "Duplicate"}
-                  </button>
-                ) : null}
-                {canSend ? (
-                  <button
-                    className={compactPrimaryActionClassName}
-                    onClick={() => setDialogAction("send")}
-                    type="button"
-                  >
-                    Send
-                  </button>
-                ) : null}
-                {canCancel ? (
-                  <button
-                    className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700"
-                    onClick={() => setDialogAction("cancel")}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                ) : null}
-                {canVoid ? (
-                  <button
-                    className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700"
-                    onClick={() => setDialogAction("void")}
-                    type="button"
-                  >
-                    Void
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {canDuplicate && isSourceCustomerArchived ? (
-              <p className="mt-3 text-sm text-amber-800">
-                Archived customers cannot be used for duplicated invoices. Reactivate the customer
-                or choose an active customer.
-              </p>
-            ) : null}
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          <div className="shadow-[var(--shadow-document)]">
+            <InvoiceDocument
+              balanceDueKobo={financialSummary.balanceDueKobo}
+              customer={{
+                name: invoice.customer.name,
+                email: invoice.customer.email,
+                phone: invoice.customer.phone,
+                billingAddress: invoice.customer.billingAddress
+              }}
+              customerMemo={invoice.notes || null}
+              customerReference={invoice.customerReference || null}
+              discountKobo={invoice.discountKobo}
+              dueDate={invoice.dueDate}
+              invoiceNumber={invoice.invoiceNumber}
+              issueDate={invoice.issueDate}
+              lineItems={response.lineItems.map((item) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPriceKobo: item.unitPriceKobo,
+                lineTotalKobo: item.lineTotalKobo
+              }))}
+              status={invoice.status}
+              subtotalKobo={invoice.subtotalKobo}
+              taxKobo={invoice.taxKobo}
+              totalKobo={invoice.totalKobo}
+            />
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Description</th>
-                  <th className="px-4 py-3">Qty</th>
-                  <th className="px-4 py-3">Unit</th>
-                  <th className="px-4 py-3 text-right">Line total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {response.lineItems.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3 font-medium text-slate-950">{item.description}</td>
-                    <td className="px-4 py-3 text-slate-600">{item.quantity}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatMoney(item.unitPriceKobo)}</td>
-                    <td className="px-4 py-3 text-right text-slate-900">
-                      {formatMoney(item.lineTotalKobo)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Status timeline</h2>
-            <div className="mt-4 space-y-3">
-              {response.statusEvents.map((event) => (
-                <div className="border-l-2 border-slate-200 pl-3" key={event.id}>
-                  <p className="text-sm font-medium text-slate-950">
-                    {event.fromStatus ? `${event.fromStatus} to ` : ""}
-                    {event.toStatus}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {new Date(event.createdAt).toLocaleString("en-NG")}
-                    {event.reason ? ` · ${event.reason}` : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Payments</h2>
+          <SectionCard>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Payments</h2>
             {financialSummary.hasOverpayment ? (
-              <div className="mt-3 rounded-md border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
-                <p className="font-semibold">Overpayment detected</p>
+              <div className="mt-3 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-4 text-sm text-[var(--warning)]">
+                <p className="font-semibold text-[var(--text-primary)]">Overpayment detected</p>
                 <p className="mt-1">
                   Customer payments exceed this invoice by{" "}
                   {formatMoney(financialSummary.overpaymentKobo)}.
@@ -375,33 +366,33 @@ export function InvoiceDetailContent({
               </div>
             ) : null}
             {response.payments.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-600">
+              <p className="mt-3 text-sm text-[var(--text-secondary)]">
                 No payment records are linked to this invoice yet.
               </p>
             ) : (
-              <div className="mt-4 divide-y divide-slate-100">
+              <div className="mt-2 divide-y divide-[var(--border-subtle)]">
                 {response.payments.map((payment) => (
                   <article className="py-3 text-sm" key={payment.id}>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <Link
-                          className="font-medium text-teal-800"
+                          className="font-medium text-[var(--accent)] hover:underline [overflow-wrap:anywhere]"
                           href={`/payments/${payment.id}`}
                         >
                           {payment.providerReference}
                         </Link>
-                        <p className="mt-1 text-slate-600">
+                        <p className="mt-1 text-[var(--text-secondary)]">
                           {formatMoney(payment.amountKobo)} •{" "}
                           {formatSettlementAccount(payment.settlementAccount)}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
                           {formatPaymentDateTime(payment.paidAt ?? payment.createdAt)}
                         </p>
                         {payment.receipt ? (
                           <p className="mt-2 text-xs">
                             Receipt:{" "}
                             <Link
-                              className="font-medium text-teal-800"
+                              className="font-medium text-[var(--accent)] hover:underline"
                               href={`/receipts/${payment.receipt.id}`}
                             >
                               {payment.receipt.receiptNumber}
@@ -418,13 +409,31 @@ export function InvoiceDetailContent({
                 ))}
               </div>
             )}
-          </div>
+          </SectionCard>
         </div>
 
-        <aside className="space-y-5">
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Summary</h2>
-            <dl className="mt-4 space-y-3 text-sm">
+        <aside className="space-y-4">
+          <SectionCard>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Activity</h2>
+            <ol className="mt-3 space-y-3">
+              {response.statusEvents.map((event) => (
+                <li className="border-l-2 border-[var(--border-default)] pl-3" key={event.id}>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">
+                    {event.fromStatus ? `${event.fromStatus} → ` : ""}
+                    {event.toStatus}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                    {new Date(event.createdAt).toLocaleString("en-NG")}
+                    {event.reason ? ` · ${event.reason.replaceAll("_", " ")}` : ""}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </SectionCard>
+
+          <SectionCard>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Summary</h2>
+            <dl className="mt-3 space-y-2.5 text-sm">
               <SummaryRow label="Subtotal" value={formatMoney(invoice.subtotalKobo)} />
               <SummaryRow label="Discount" value={formatMoney(invoice.discountKobo)} />
               <SummaryRow label="Tax" value={formatMoney(invoice.taxKobo)} />
@@ -451,53 +460,45 @@ export function InvoiceDetailContent({
               />
               <SummaryRow label="Total" strong value={formatMoney(invoice.totalKobo)} />
             </dl>
-          </div>
+          </SectionCard>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Public link</h2>
+          <SectionCard>
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer payment</h2>
             {canSharePublicUrl ? (
               <>
-                <p className="mt-2 break-all rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="mt-2 break-all rounded-[var(--radius-control)] bg-[var(--surface-raised)] p-3 font-mono text-xs text-[var(--text-secondary)]">
                   {response.publicUrl}
                 </p>
-                <button
-                  className="mt-3 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-                  onClick={() => void handleCopyPublicUrl(response.publicUrl!)}
-                  type="button"
-                >
-                  Copy public URL
-                </button>
-                {copySuccess ? <p className="mt-2 text-sm text-slate-600">{copySuccess}</p> : null}
                 {response.paymentSummary.available ? (
-                  <p className="mt-3 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm font-medium text-teal-900">
+                  <p className="mt-3 rounded-[var(--radius-control)] border border-[var(--accent-border)] bg-[var(--accent-muted)] p-3 text-sm text-[var(--accent)]">
                     Payment enabled: customers can pay{" "}
-                    {formatMoney(response.paymentSummary.amountKobo)} via Paystack from this public
-                    page.
+                    {formatMoney(response.paymentSummary.amountKobo)} via Paystack.
                   </p>
                 ) : response.paymentSummary.reason.startsWith("payment_setup_") ? (
-                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <div className="mt-3 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-3 text-sm text-[var(--warning)]">
                     <p>{response.paymentSummary.message}</p>
                     {canManagePaymentSetup ? (
                       <Link
-                        className="mt-3 inline-flex rounded-md bg-amber-900 px-3 py-2 text-sm font-semibold text-white"
+                        className="mt-3 inline-flex rounded-[var(--radius-control)] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-[var(--accent-foreground)]"
                         href="/settings/payment-setup"
                       >
                         Go to Payment Setup
                       </Link>
                     ) : null}
                   </div>
-                ) : null}
+                ) : (
+                  <p className="mt-3 text-sm text-[var(--text-secondary)]">
+                    {response.paymentSummary.message}
+                  </p>
+                )}
               </>
             ) : (
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
                 Send this draft to enable public access. Cancelled and void invoices are not
                 publicly available.
               </p>
             )}
-            <p className="mt-3 text-xs text-slate-500">
-              The public page is customer-facing and does not expose internal app data.
-            </p>
-          </div>
+          </SectionCard>
         </aside>
       </div>
 
@@ -511,7 +512,7 @@ export function InvoiceDetailContent({
         }
         description={
           dialogAction === "send"
-            ? "This enables public access and creates a shareable URL. Email sending is out of scope for T006."
+            ? "This enables public access and creates a shareable URL."
             : dialogAction === "cancel"
               ? "Cancelled invoices are retained for records and cannot be paid."
               : "Voided invoices are retained for audit history and public access will be disabled."
@@ -535,9 +536,9 @@ export function InvoiceDetailContent({
       >
         {dialogAction === "cancel" || dialogAction === "void" ? (
           <label className="block">
-            <span className="text-sm font-medium text-slate-700">Reason</span>
+            <span className="text-sm font-medium text-[var(--text-secondary)]">Reason</span>
             <textarea
-              className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="mt-1 min-h-24 w-full rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm"
               disabled={isMutating}
               onChange={(event) => setReason(event.target.value)}
               value={reason}
@@ -549,20 +550,11 @@ export function InvoiceDetailContent({
   );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-900">{value}</dd>
-    </div>
-  );
-}
-
 function SummaryRow({ label, strong, value }: { label: string; strong?: boolean; value: string }) {
   return (
     <div className={`flex justify-between gap-4 ${strong ? "text-base font-semibold" : ""}`}>
-      <dt className="text-slate-600">{label}</dt>
-      <dd className="text-slate-950">{value}</dd>
+      <dt className="text-[var(--text-secondary)]">{label}</dt>
+      <dd className="tabular-nums text-[var(--text-primary)]">{value}</dd>
     </div>
   );
 }

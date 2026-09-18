@@ -2,12 +2,13 @@ import React, { type HTMLAttributes } from "react";
 
 import { cn } from "@/lib/cn";
 
-export type StatusTone = "success" | "warning" | "danger" | "neutral";
+export type StatusTone = "success" | "warning" | "danger" | "neutral" | "info";
 
 const toneClassNames: Record<StatusTone, string> = {
   success: "bg-[var(--success-muted)] text-[var(--success)] ring-[var(--success-border)]",
   warning: "bg-[var(--warning-muted)] text-[var(--warning)] ring-[var(--warning-border)]",
   danger: "bg-[var(--danger-muted)] text-[var(--danger)] ring-[var(--danger-border)]",
+  info: "bg-[var(--info-muted)] text-[var(--info)] ring-[var(--info-border)]",
   neutral:
     "bg-[var(--neutral-state-muted)] text-[var(--neutral-state)] ring-[var(--border-default)]"
 };

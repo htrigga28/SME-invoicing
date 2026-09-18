@@ -1,18 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button, LinkButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { compactPrimaryActionClassName } from "@/components/ui/styles";
+import {
+  DataTable,
+  DataTableContainer,
+  TableHeaderCell
+} from "@/components/ui/data-table";
+import { DropdownMenu } from "@/components/ui/menu";
 import { clearStoredSession } from "@/features/auth/session";
 import { formatMoney, InvoiceStatusBadge } from "@/features/invoices/invoice-ui";
 import { isApiRequestError } from "@/lib/api";
 
 import { archiveCustomer, getCustomer } from "./customers-api";
-import { CustomerStatusBadge, formatDate, PageHeader, StatusPanel } from "./customer-ui";
+import { CustomerStatusBadge, formatDate, StatusPanel } from "./customer-ui";
 import type { CustomerDetailResponse } from "./types";
 import { canManageCustomers } from "./types";
 
@@ -41,7 +46,6 @@ export function CustomerDetailContent({
   customerId: string;
   role: "owner" | "admin" | "accountant" | "viewer";
 }) {
-  const router = useRouter();
   const [response, setResponse] = useState<CustomerDetailResponse | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +54,7 @@ export function CustomerDetailContent({
   const [isArchiving, setIsArchiving] = useState(false);
   const canManage = canManageCustomers(role);
   const customer = response?.customer;
+  const canArchive = canManage && customer?.status === "active";
 
   useEffect(() => {
     void loadCustomer();
@@ -120,13 +125,9 @@ export function CustomerDetailContent({
     return (
       <StatusPanel
         action={
-          <button
-            className={compactPrimaryActionClassName}
-            onClick={() => void loadCustomer()}
-            type="button"
-          >
+          <Button onClick={() => void loadCustomer()} size="sm" type="button">
             Retry
-          </button>
+          </Button>
         }
         message={error ?? "Could not load customer."}
         tone="error"
@@ -134,64 +135,79 @@ export function CustomerDetailContent({
     );
   }
 
+  const contactLine = [customer.email, customer.phone, customer.billingAddress]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+
   return (
-    <section className="space-y-5">
-      <PageHeader
-        action={
-          <Link
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-            href="/customers"
-          >
-            Back to customers
-          </Link>
-        }
-        description="Customer billing profile and invoice history."
-        title={customer.name}
-      />
+    <section className="space-y-4">
+      <Link
+        className="inline-flex text-sm font-semibold text-[var(--text-secondary)] hover:text-[var(--accent)]"
+        href="/customers"
+      >
+        ← Customers
+      </Link>
+
+      {/* Identity header — name / contact / summary + Edit + overflow */}
+      <header className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-2xl font-semibold tracking-tight">{customer.name}</h1>
+              <CustomerStatusBadge status={customer.status} />
+            </div>
+            <p className="mt-1.5 break-words text-sm text-[var(--text-secondary)]">{contactLine}</p>
+            {customer.status === "archived" ? (
+              <p className="mt-1.5 text-sm text-[var(--text-muted)]">
+                Archived on{" "}
+                {customer.archivedAt ? formatDate(customer.archivedAt) : "an unknown date"}.
+              </p>
+            ) : null}
+          </div>
+          {canArchive ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <LinkButton href={`/customers/${customer.id}/edit`}>Edit</LinkButton>
+              <DropdownMenu
+                items={[
+                  {
+                    label: "Archive customer",
+                    destructive: true,
+                    onSelect: () => setShowArchiveDialog(true)
+                  }
+                ]}
+                label="More customer actions"
+                trigger={<span>•••</span>}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-[var(--border-subtle)] pt-4 sm:grid-cols-4">
+          <SummaryStat label="Invoiced" value={formatMoney(response.invoiceSummary.totalInvoicedKobo)} />
+          <SummaryStat label="Paid" value={formatMoney(response.invoiceSummary.totalPaidKobo)} />
+          <SummaryStat
+            label="Balance due"
+            value={formatMoney(response.invoiceSummary.totalBalanceDueKobo)}
+          />
+          <SummaryStat label="Invoices" value={String(response.invoiceSummary.totalInvoices)} />
+        </dl>
+      </header>
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
-      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-        <div className="rounded-lg border border-slate-200 bg-white p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CustomerStatusBadge status={customer.status} />
-              {customer.status === "archived" ? (
-                <p className="mt-3 text-sm text-slate-600">
-                  Archived on{" "}
-                  {customer.archivedAt ? formatDate(customer.archivedAt) : "an unknown date"}.
-                </p>
-              ) : null}
-            </div>
-            {canManage && customer.status === "active" ? (
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
-                  href={`/customers/${customer.id}/edit`}
-                >
-                  Edit
-                </Link>
-                <button
-                  className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700"
-                  onClick={() => setShowArchiveDialog(true)}
-                  type="button"
-                >
-                  Archive
-                </button>
-              </div>
-            ) : null}
-          </div>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <InvoiceHistoryPanel response={response} />
 
-          <dl className="mt-6 grid gap-4 sm:grid-cols-2">
+        <aside className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Contact</h2>
+          <dl className="mt-3 space-y-3">
             <DetailItem label="Email" value={customer.email} />
             <DetailItem label="Phone" value={customer.phone ?? "Not provided"} />
             <DetailItem label="Billing address" value={customer.billingAddress ?? "Not provided"} />
-            <DetailItem label="Created" value={formatDate(customer.createdAt)} />
+            <DetailItem label="Customer since" value={formatDate(customer.createdAt)} />
           </dl>
-        </div>
-
-        <InvoiceHistoryPanel response={response} />
+        </aside>
       </div>
 
       {canManage && customer.status === "archived" ? (
@@ -200,14 +216,6 @@ export function CustomerDetailContent({
           tone="warning"
         />
       ) : null}
-
-      <button
-        className="text-sm font-semibold text-teal-700"
-        onClick={() => router.push("/customers")}
-        type="button"
-      >
-        Return to customer list
-      </button>
 
       <ConfirmDialog
         confirmLabel="Archive customer"
@@ -226,103 +234,97 @@ export function CustomerDetailContent({
 
 function InvoiceHistoryPanel({ response }: { response: CustomerDetailResponse }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5">
+    <div className="min-w-0 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-950">Invoice history</h2>
-          <p className="mt-1 text-sm text-slate-600">{response.invoiceSummary.message}</p>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Invoice history</h2>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            {response.invoiceSummary.message}
+          </p>
         </div>
-        <Link className="text-sm font-semibold text-teal-700 hover:text-teal-800" href="/invoices">
+        <Link
+          className="shrink-0 text-sm font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)]"
+          href="/invoices"
+        >
           View all invoices
         </Link>
       </div>
 
-      <dl className="mt-5 grid gap-4 border-y border-slate-100 py-4 sm:grid-cols-4">
-        <InvoiceSummaryMetric
-          label="Invoices"
-          value={String(response.invoiceSummary.totalInvoices)}
-        />
-        <InvoiceSummaryMetric
-          label="Invoiced"
-          value={formatMoney(response.invoiceSummary.totalInvoicedKobo)}
-        />
-        <InvoiceSummaryMetric
-          label="Paid"
-          value={formatMoney(response.invoiceSummary.totalPaidKobo)}
-        />
-        <InvoiceSummaryMetric
-          label="Balance due"
-          value={formatMoney(response.invoiceSummary.totalBalanceDueKobo)}
-        />
-      </dl>
-
       {response.invoices.length === 0 ? (
-        <div className="mt-5 rounded-md border border-dashed border-slate-300 p-5 text-sm text-slate-600">
+        <div className="mt-5 rounded-[var(--radius-control)] border border-dashed border-[var(--border-strong)] p-5 text-sm text-[var(--text-secondary)]">
           Create an invoice for this customer and it will appear here.
         </div>
       ) : (
-        <div className="mt-5 overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead>
-              <tr className="text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2">Invoice</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Issued</th>
-                <th className="px-3 py-2">Due</th>
-                <th className="px-3 py-2 text-right">Total</th>
-                <th className="px-3 py-2 text-right">Paid</th>
-                <th className="px-3 py-2 text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {response.invoices.map((invoice) => (
-                <tr key={invoice.id}>
-                  <td className="px-3 py-3 font-medium text-slate-950">
-                    <Link
-                      className="text-teal-700 hover:text-teal-800"
-                      href={`/invoices/${invoice.id}`}
-                    >
-                      {invoice.invoiceNumber}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-3">
-                    <InvoiceStatusBadge status={invoice.status} />
-                  </td>
-                  <td className="px-3 py-3 text-slate-600">{formatDate(invoice.issueDate)}</td>
-                  <td className="px-3 py-3 text-slate-600">{formatDate(invoice.dueDate)}</td>
-                  <td className="px-3 py-3 text-right text-slate-700">
-                    {formatMoney(invoice.totalKobo)}
-                  </td>
-                  <td className="px-3 py-3 text-right text-slate-700">
-                    {formatMoney(invoice.amountPaidKobo)}
-                  </td>
-                  <td className="px-3 py-3 text-right font-medium text-slate-950">
-                    {formatMoney(invoice.balanceDueKobo)}
-                  </td>
+        <DataTableContainer className="mt-5">
+          <div className="overflow-x-auto">
+            <DataTable>
+              <thead>
+                <tr>
+                  <TableHeaderCell>Invoice</TableHeaderCell>
+                  <TableHeaderCell>Status</TableHeaderCell>
+                  <TableHeaderCell>Issued</TableHeaderCell>
+                  <TableHeaderCell>Due</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Total</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Paid</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Balance</TableHeaderCell>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {response.invoices.map((invoice) => (
+                  <tr key={invoice.id}>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <Link
+                        className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]"
+                        href={`/invoices/${invoice.id}`}
+                      >
+                        {invoice.invoiceNumber}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <InvoiceStatusBadge status={invoice.status} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-[var(--text-secondary)]">
+                      {formatDate(invoice.issueDate)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-[var(--text-secondary)]">
+                      {formatDate(invoice.dueDate)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-secondary)]">
+                      {formatMoney(invoice.totalKobo)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-secondary)]">
+                      {formatMoney(invoice.amountPaidKobo)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
+                      {formatMoney(invoice.balanceDueKobo)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          </div>
+        </DataTableContainer>
       )}
     </div>
   );
 }
 
-function InvoiceSummaryMetric({ label, value }: { label: string; value: string }) {
+function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 text-sm font-semibold text-slate-950">{value}</dd>
+    <div className="min-w-0">
+      <dt className="text-xs text-[var(--text-muted)]">{label}</dt>
+      <dd className="mt-0.5 truncate text-lg font-semibold tracking-tight tabular-nums">{value}</dd>
     </div>
   );
 }
 
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-900">{value}</dd>
+    <div className="min-w-0">
+      <dt className="text-xs text-[var(--text-muted)]">{label}</dt>
+      <dd className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">
+        {value}
+      </dd>
     </div>
   );
 }
