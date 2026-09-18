@@ -5,7 +5,7 @@ import { CheckCircle2 } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { customerPaymentSection, marketingDemo } from "@/content/site-copy";
-import { enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
+import { addEditorialChapterTimeline, enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function CustomerPaymentChapter() {
   const ref = useRef<HTMLElement>(null);
@@ -18,29 +18,16 @@ export function CustomerPaymentChapter() {
       return;
     }
     return runEditorialMotion((gsap, mm) => {
-        mm.add("(min-width: 1024px)", () => {
+        addEditorialChapterTimeline(gsap, mm, el, (tl) => {
           // Public invoice paper slides from the left with a paper tilt while
           // the payment panel docks from the right; confirmation tag crosses
           // diagonally. The pair exits upward as trust takes over.
-          const tl = gsap.timeline({
-            scrollTrigger: {
-              trigger: el,
-              start: "top 85%",
-              end: "bottom 35%",
-              scrub: 0.8,
-              invalidateOnRefresh: true
-            }
-          });
           tl.fromTo(".payment-copy", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 0)
             .fromTo(".payment-doc", enterVars("left", 65), { xPercent: 0, yPercent: 0, rotation: -2.5, opacity: 1, duration: 0.5, ease: "power2.out" }, 0.05)
             .fromTo(".payment-panel-card", enterVars("right", 65), { xPercent: 0, yPercent: 0, rotation: 2.5, opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1)
             .fromTo(".payment-confirmed", enterVars("bottom-right", 60), { xPercent: 0, yPercent: 0, rotation: 0, opacity: 1, duration: 0.45, ease: "power2.out" }, 0.25)
             .to(".payment-doc", { ...exitVars("left", 55), duration: 0.8, ease: "power2.in" }, 2.9)
             .to(".payment-panel-card", { ...exitVars("right", 55), duration: 0.8, ease: "power2.in" }, 2.95);
-          return () => {
-            tl.scrollTrigger?.kill();
-            tl.kill();
-          };
         });
         mm.add("(max-width: 1023px)", () => {
           if (typeof IntersectionObserver === "undefined") {

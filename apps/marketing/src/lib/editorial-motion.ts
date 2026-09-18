@@ -12,6 +12,7 @@ export async function loadGsap() {
 
 type Gsap = Awaited<ReturnType<typeof loadGsap>>["gsap"];
 type GsapMatchMedia = ReturnType<Gsap["matchMedia"]>;
+type GsapTimeline = ReturnType<Gsap["timeline"]>;
 
 export function runEditorialMotion(setup: (gsap: Gsap, media: GsapMatchMedia) => void) {
   let disposed = false;
@@ -27,6 +28,30 @@ export function runEditorialMotion(setup: (gsap: Gsap, media: GsapMatchMedia) =>
     disposed = true;
     media?.revert();
   };
+}
+
+export function addEditorialChapterTimeline(
+  gsap: Gsap,
+  media: GsapMatchMedia,
+  trigger: Element,
+  build: (timeline: GsapTimeline) => void
+) {
+  media.add("(min-width: 1024px)", () => {
+    const timeline = gsap.timeline({
+      scrollTrigger: {
+        trigger,
+        start: "top 85%",
+        end: "bottom 35%",
+        scrub: 0.8,
+        invalidateOnRefresh: true
+      }
+    });
+    build(timeline);
+    return () => {
+      timeline.scrollTrigger?.kill();
+      timeline.kill();
+    };
+  });
 }
 
 export type EnterVector = "left" | "right" | "bottom" | "top-left" | "top-right" | "bottom-left" | "bottom-right";

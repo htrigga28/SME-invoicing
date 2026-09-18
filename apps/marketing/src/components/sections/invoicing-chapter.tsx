@@ -5,7 +5,7 @@ import { Check, Plus } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { invoicingChapter, marketingDemo } from "@/content/site-copy";
-import { enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
+import { addEditorialChapterTimeline, enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function InvoicingChapter() {
   const ref = useRef<HTMLElement>(null);
@@ -18,28 +18,15 @@ export function InvoicingChapter() {
       return;
     }
     return runEditorialMotion((gsap, mm) => {
-        mm.add("(min-width: 1024px)", () => {
+        addEditorialChapterTimeline(gsap, mm, el, (tl) => {
           // Editor enters from the left edge, preview from the right edge with
           // opposing rotation; both hold readable, then peel outward as the
           // reconciliation chapter begins entering (handoff).
-          const tl = gsap.timeline({
-            scrollTrigger: {
-              trigger: el,
-              start: "top 85%",
-              end: "bottom 35%",
-              scrub: 0.8,
-              invalidateOnRefresh: true
-            }
-          });
           tl.fromTo(".invoicing-editor", enterVars("left"), { xPercent: 0, yPercent: 0, rotation: -2, opacity: 1, duration: 0.5, ease: "power2.out" }, 0)
             .fromTo(".invoicing-preview", enterVars("right"), { xPercent: 0, yPercent: 0, rotation: 2, opacity: 1, duration: 0.5, ease: "power2.out" }, 0.06)
             .fromTo(".invoicing-intro", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 0)
             .to(".invoicing-editor", { ...exitVars("left", 60), duration: 0.8, ease: "power2.in" }, 2.9)
             .to(".invoicing-preview", { ...exitVars("right", 60), duration: 0.8, ease: "power2.in" }, 2.97);
-          return () => {
-            tl.scrollTrigger?.kill();
-            tl.kill();
-          };
         });
         mm.add("(max-width: 1023px)", () => {
           if (typeof IntersectionObserver === "undefined") {
