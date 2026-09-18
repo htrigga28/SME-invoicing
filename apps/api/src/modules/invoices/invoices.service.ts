@@ -7,6 +7,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnprocessableEntityException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -39,9 +40,12 @@ import {
   organisationPaymentAccounts,
   organisations,
   paymentEvents,
+  paymentRefunds,
   payments,
   receipts,
+  users,
   type BusinessProfile,
+  type Communication,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
@@ -51,6 +55,13 @@ import {
   type Receipt
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import {
+  CommunicationsService,
+  toDeliveryState,
+  type DeliveryState
+} from "../communications/communications.service";
+import { validateSendRecipients } from "../communications/email-provider";
+import type { SendInvoiceEmailDto } from "../communications/dto/send-invoice-email.dto";
 import { PaymentsService } from "../payments/payments.service";
 import { PaystackService } from "../paystack/paystack.service";
 import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
@@ -151,7 +162,8 @@ export class InvoicesService {
     @Inject(AuditLogService) private readonly auditLogService: AuditLogService,
     @Inject(ConfigService) private readonly configService: ConfigService,
     @Inject(PaystackService) private readonly paystackService: PaystackService,
-    @Inject(PaymentsService) private readonly paymentsService: PaymentsService
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(CommunicationsService) private readonly communicationsService: CommunicationsService
   ) {}
 
   async listInvoices(context: ActiveOrganisationContext, query: ListInvoicesQueryDto) {
@@ -311,12 +323,14 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
-    const [lineItems, statusEvents, invoicePayments, financialSummary] = await Promise.all([
-      this.findLineItems(context.activeOrganisation.id, invoiceId),
-      this.findStatusEvents(context.activeOrganisation.id, invoiceId),
-      this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId),
-      this.paymentsService.getInvoiceFinancialSummary(context.activeOrganisation.id, invoiceId)
-    ]);
+    const [lineItems, statusEvents, invoicePayments, financialSummary, deliverySummary] =
+      await Promise.all([
+        this.findLineItems(context.activeOrganisation.id, invoiceId),
+        this.findStatusEvents(context.activeOrganisation.id, invoiceId),
+        this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId),
+        this.paymentsService.getInvoiceFinancialSummary(context.activeOrganisation.id, invoiceId),
+        this.communicationsService.getDeliverySummary(context.activeOrganisation.id, invoiceId)
+      ]);
 
     const paymentAccount = await this.findPaymentAvailabilityAccount(context.activeOrganisation.id);
     const paymentSummary = this.toAuthenticatedPaymentSummary(
@@ -330,6 +344,8 @@ export class InvoicesService {
       statusEvents: statusEvents.map((event) => this.toSafeStatusEvent(event)),
       payments: invoicePayments,
       financialSummary,
+      delivery: this.toDeliveryResponse(deliverySummary),
+      viewSummary: this.toViewSummary(invoiceWithCustomer.invoice),
       publicUrl: invoiceWithCustomer.invoice.publicAccessEnabled
         ? this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
         : null,
@@ -428,12 +444,18 @@ export class InvoicesService {
     return this.getInvoice(context, invoiceId);
   }
 
-  async sendInvoice(context: ActiveOrganisationContext, invoiceId: string) {
+  async sendInvoice(
+    context: ActiveOrganisationContext,
+    invoiceId: string,
+    email?: SendInvoiceEmailDto
+  ) {
     const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
 
     if (invoiceWithCustomer.invoice.status !== "draft") {
       throw new UnprocessableEntityException("Only draft invoices can be sent.");
     }
+
+    const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email);
 
     const sentAt = new Date();
     await this.transitionInvoice(context, invoiceWithCustomer.invoice, {
@@ -449,11 +471,175 @@ export class InvoicesService {
       toStatus: "sent"
     });
 
+    const publicUrl = this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken);
+    const delivery = await this.deliverIssuedInvoiceEmail({
+      context,
+      invoice: invoiceWithCustomer.invoice,
+      customer: invoiceWithCustomer.customer,
+      publicUrl,
+      recipients,
+      subject: email?.subject
+    });
+
     const response = await this.getInvoice(context, invoiceId);
     return {
       ...response,
-      publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
+      publicUrl,
+      delivery
     };
+  }
+
+  async resendInvoiceEmail(
+    context: ActiveOrganisationContext,
+    invoiceId: string,
+    email: SendInvoiceEmailDto
+  ) {
+    const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+
+    if (
+      !invoiceWithCustomer.invoice.publicAccessEnabled ||
+      ["draft", "cancelled", "void"].includes(invoiceWithCustomer.invoice.status)
+    ) {
+      throw new UnprocessableEntityException("Only issued invoices can be emailed.");
+    }
+
+    const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email, true);
+
+    const delivery = await this.deliverIssuedInvoiceEmail({
+      context,
+      invoice: invoiceWithCustomer.invoice,
+      customer: invoiceWithCustomer.customer,
+      publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken),
+      recipients,
+      subject: email?.subject
+    });
+
+    return { delivery };
+  }
+
+  private resolveSendRecipients(
+    customer: Customer,
+    email: SendInvoiceEmailDto | undefined,
+    requireExplicit = false
+  ): { to: string[]; cc: string[] } {
+    const to = email?.to ?? (requireExplicit ? [] : customer.email ? [customer.email] : []);
+    const cc = email?.cc ?? [];
+
+    try {
+      return validateSendRecipients(to, cc);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Recipients are invalid."
+      );
+    }
+  }
+
+  private async deliverIssuedInvoiceEmail(input: {
+    context: ActiveOrganisationContext;
+    invoice: Invoice;
+    customer: Customer;
+    publicUrl: string;
+    recipients: { to: string[]; cc: string[] };
+    subject?: string | undefined;
+  }) {
+    const businessProfile = input.context.businessProfile;
+
+    try {
+      await this.communicationsService.sendInvoiceEmail({
+        organisationId: input.context.activeOrganisation.id,
+        userId: input.context.user.id,
+        invoice: { id: input.invoice.id, invoiceNumber: input.invoice.invoiceNumber },
+        customerId: input.customer.id,
+        content: {
+          customerEmail: input.customer.email,
+          customerName: input.customer.name,
+          businessName:
+            businessProfile?.businessName ?? input.context.activeOrganisation.name,
+          businessEmail: businessProfile?.email ?? null,
+          invoiceNumber: input.invoice.invoiceNumber,
+          amountDueKobo: input.invoice.balanceDueKobo,
+          dueDate: this.formatDueDate(input.invoice.dueDate),
+          publicUrl: input.publicUrl,
+          to: input.recipients.to,
+          cc: input.recipients.cc,
+          subject: input.subject
+        }
+      });
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return this.toDeliveryResponse(
+          await this.communicationsService.getDeliverySummary(
+            input.context.activeOrganisation.id,
+            input.invoice.id
+          ),
+          "Email delivery is not configured. The invoice is issued and the public link can still be shared."
+        );
+      }
+
+      if (error instanceof BadGatewayException) {
+        return this.toDeliveryResponse(
+          await this.communicationsService.getDeliverySummary(
+            input.context.activeOrganisation.id,
+            input.invoice.id
+          ),
+          "Invoice issued, but the email could not be sent. Copy the public link or try again."
+        );
+      }
+
+      throw error;
+    }
+
+    return this.toDeliveryResponse(
+      await this.communicationsService.getDeliverySummary(
+        input.context.activeOrganisation.id,
+        input.invoice.id
+      )
+    );
+  }
+
+  private toDeliveryResponse(
+    summary: {
+      state: DeliveryState;
+      attempts: number;
+      lastCommunication: ReturnType<CommunicationsService["toSafeCommunication"]> | null;
+    },
+    message?: string
+  ) {
+    const defaultMessages: Record<DeliveryState, string> = {
+      not_emailed: "This invoice has not been emailed.",
+      sending: "Email is being sent.",
+      accepted: "Email accepted by the email provider.",
+      delivered: "Email delivered.",
+      delayed: "Email delivery is delayed.",
+      failed: "Email delivery failed."
+    };
+
+    return {
+      state: summary.state,
+      message: message ?? defaultMessages[summary.state],
+      attempts: summary.attempts,
+      lastCommunication: summary.lastCommunication
+    };
+  }
+
+  private toViewSummary(invoice: Invoice) {
+    if (!invoice.viewCount && !invoice.viewedAt && !invoice.lastViewedAt) {
+      return null;
+    }
+
+    return {
+      viewCount: invoice.viewCount,
+      firstViewedAt: invoice.viewedAt,
+      lastViewedAt: invoice.lastViewedAt
+    };
+  }
+
+  private formatDueDate(dueDate: string): string {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    }).format(new Date(`${dueDate}T00:00:00.000Z`));
   }
 
   async duplicateInvoice(context: ActiveOrganisationContext, invoiceId: string) {
@@ -546,8 +732,22 @@ export class InvoicesService {
     const publicInvoice = await this.requirePublicInvoice(publicToken);
     const displayStatus = this.displayStatus(publicInvoice.invoice);
 
+    const { viewCount } = await this.communicationsService.recordInvoiceViewEvent(
+      publicInvoice.invoice.organisationId,
+      publicInvoice.invoice.id
+    );
+
     if (publicInvoice.invoice.status !== "sent" || displayStatus === "overdue") {
-      return { success: true };
+      const refreshed = await this.findInvoiceWithCustomer(
+        publicInvoice.invoice.organisationId,
+        publicInvoice.invoice.id
+      );
+      return {
+        success: true,
+        viewCount,
+        firstViewedAt: refreshed?.invoice.viewedAt ?? publicInvoice.invoice.viewedAt,
+        lastViewedAt: refreshed?.invoice.lastViewedAt ?? new Date()
+      };
     }
 
     const viewedAt = publicInvoice.invoice.viewedAt ?? new Date();
@@ -593,7 +793,7 @@ export class InvoicesService {
       });
     });
 
-    return { success: true };
+    return { success: true, viewCount, firstViewedAt: viewedAt, lastViewedAt: viewedAt };
   }
 
   async initializePublicInvoicePayment(publicToken: string) {
@@ -1281,7 +1481,9 @@ export class InvoicesService {
       publicToken: invoice.publicToken,
       customerReference: invoice.customerReference,
       notes: invoice.notes,
-      viewedAt: invoice.viewedAt
+      viewedAt: invoice.viewedAt,
+      lastViewedAt: invoice.lastViewedAt,
+      viewCount: invoice.viewCount
     };
   }
 

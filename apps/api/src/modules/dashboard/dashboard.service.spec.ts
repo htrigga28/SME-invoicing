@@ -281,6 +281,8 @@ function createInvoice(): Invoice {
     balanceDueKobo: 50000,
     sentAt: new Date("2026-07-01T00:00:00.000Z"),
     viewedAt: null,
+    lastViewedAt: null,
+    viewCount: 0,
     paidAt: null,
     cancelledAt: null,
     voidedAt: null,

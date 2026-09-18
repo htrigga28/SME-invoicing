@@ -70,6 +70,14 @@ export const paymentRefundStatusEnum = pgEnum("payment_refund_status", [
   "failed"
 ]);
 
+export const communicationStatusEnum = pgEnum("communication_status", [
+  "pending",
+  "accepted",
+  "delivered",
+  "deferred",
+  "failed"
+]);
+
 export const marketingWaitlistEntryStatusEnum = pgEnum("marketing_waitlist_entry_status", [
   "waiting",
   "invited",
@@ -320,6 +328,8 @@ export const invoices = pgTable(
     balanceDueKobo: integer("balance_due_kobo").notNull().default(0),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     viewedAt: timestamp("viewed_at", { withTimezone: true }),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+    viewCount: integer("view_count").notNull().default(0),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
@@ -802,6 +812,148 @@ export const invoiceStatusEventsRelations = relations(invoiceStatusEvents, ({ on
   })
 }));
 
+export const communications = pgTable(
+  "communications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    purpose: varchar("purpose", { length: 40 }).notNull().default("invoice_delivery"),
+    channel: varchar("channel", { length: 20 }).notNull().default("email"),
+    provider: varchar("provider", { length: 40 }).notNull().default("brevo"),
+    subject: varchar("subject", { length: 300 }),
+    toRecipients: jsonb("to_recipients").$type<string[]>().notNull(),
+    ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull(),
+    providerMessageId: varchar("provider_message_id", { length: 200 }),
+    status: communicationStatusEnum("status").notNull().default("pending"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deferredAt: timestamp("deferred_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    failureReason: varchar("failure_reason", { length: 300 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    ...timestamps
+  },
+  (table) => ({
+    organisationInvoiceIndex: index("communications_org_invoice_id_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    providerMessageIdUnique: uniqueIndex("communications_provider_message_id_unique")
+      .on(table.providerMessageId)
+      .where(sql`${table.providerMessageId} is not null`)
+  })
+);
+
+export const communicationEvents = pgTable(
+  "communication_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    communicationId: uuid("communication_id")
+      .notNull()
+      .references(() => communications.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("brevo"),
+    providerEventKey: varchar("provider_event_key", { length: 300 }).notNull().unique(),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    metadataRedacted: jsonb("metadata_redacted").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    organisationCommunicationIndex: index("communication_events_org_communication_idx").on(
+      table.organisationId,
+      table.communicationId
+    ),
+    organisationInvoiceIndex: index("communication_events_org_invoice_idx").on(
+      table.organisationId,
+      table.invoiceId
+    )
+  })
+);
+
+export const invoiceViewEvents = pgTable(
+  "invoice_view_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    source: varchar("source", { length: 60 }).notNull().default("public_invoice_page"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    organisationInvoiceIndex: index("invoice_view_events_org_invoice_idx").on(
+      table.organisationId,
+      table.invoiceId
+    )
+  })
+);
+
+export const communicationsRelations = relations(communications, ({ many, one }) => ({
+  organisation: one(organisations, {
+    fields: [communications.organisationId],
+    references: [organisations.id]
+  }),
+  invoice: one(invoices, {
+    fields: [communications.invoiceId],
+    references: [invoices.id]
+  }),
+  customer: one(customers, {
+    fields: [communications.customerId],
+    references: [customers.id]
+  }),
+  createdBy: one(users, {
+    fields: [communications.createdByUserId],
+    references: [users.id]
+  }),
+  events: many(communicationEvents)
+}));
+
+export const communicationEventsRelations = relations(communicationEvents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [communicationEvents.organisationId],
+    references: [organisations.id]
+  }),
+  communication: one(communications, {
+    fields: [communicationEvents.communicationId],
+    references: [communications.id]
+  }),
+  invoice: one(invoices, {
+    fields: [communicationEvents.invoiceId],
+    references: [invoices.id]
+  })
+}));
+
+export const invoiceViewEventsRelations = relations(invoiceViewEvents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [invoiceViewEvents.organisationId],
+    references: [organisations.id]
+  }),
+  invoice: one(invoices, {
+    fields: [invoiceViewEvents.invoiceId],
+    references: [invoices.id]
+  })
+}));
+
 export const paymentsRelations = relations(payments, ({ many, one }) => ({
   organisation: one(organisations, {
     fields: [payments.organisationId],
@@ -896,6 +1048,10 @@ export type CatalogueItem = typeof catalogueItems.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
+export type Communication = typeof communications.$inferSelect;
+export type NewCommunication = typeof communications.$inferInsert;
+export type CommunicationEvent = typeof communicationEvents.$inferSelect;
+export type InvoiceViewEvent = typeof invoiceViewEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type PaymentRefund = typeof paymentRefunds.$inferSelect;
