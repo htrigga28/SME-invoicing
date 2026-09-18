@@ -1,15 +1,14 @@
 import { BusinessOnboardingForm } from "@/features/onboarding/business-onboarding-form";
 import { OnboardingProgress } from "@/features/onboarding/onboarding-progress";
+import { BrandLogo } from "@/components/brand/brand-logo";
 
 export default function BusinessOnboardingPage() {
   return (
-    <main className="min-h-screen bg-[var(--background)] px-4 py-10 text-[var(--text-primary)] sm:px-6">
+    <main className="min-h-screen bg-[var(--canvas-warm)] px-4 py-10 text-[var(--text-primary)] sm:px-6 sm:py-14">
       <section className="mx-auto max-w-2xl">
         <OnboardingProgress currentStep={2} />
         <div className="mt-8">
-          <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-border-subtle)] bg-[var(--accent-muted)] text-sm font-black text-[var(--accent)]">
-            SI
-          </div>
+          <BrandLogo className="mb-5" />
           <p className="text-xs font-semibold uppercase text-[var(--accent)]">
             Business onboarding
           </p>

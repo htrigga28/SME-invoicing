@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   PAYMENT_STATUSES,
@@ -12,8 +13,8 @@ import {
 } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { Button, LinkButton } from "@/components/ui/button";
-import { MetricCard, SectionCard } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DataTable,
   DataTableContainer,
@@ -21,14 +22,21 @@ import {
   Pagination as DataPagination,
   TableHeaderCell
 } from "@/components/ui/data-table";
+import {
+  DataToolbar,
+  DataToolbarActions,
+  DataToolbarFilters,
+  DataToolbarSearch
+} from "@/components/ui/data-toolbar";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
-import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
-import { DateInput as DateControl, FieldLabel, FormField, Input } from "@/components/ui/form";
+import { DateInput as DateControl, Input } from "@/components/ui/form";
+import { TableRowActionMenu } from "@/components/ui/menu";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import type { Pagination } from "@/features/customers/types";
 import { isApiRequestError } from "@/lib/api";
+import { cn } from "@/lib/cn";
 
 import {
   getPaymentSummary,
@@ -144,8 +152,18 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
     setSearch(searchInput);
   }
 
+  function clearFilters() {
+    setSearch("");
+    setSearchInput("");
+    setStatus("all");
+    setReconciliationState("");
+    setDateFrom("");
+    setDateTo("");
+    setView("reconciliation");
+  }
+
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <PageHeader
         description="Track confirmed payments, pending confirmations, and payment attempts that need review."
         title="Payments"
@@ -153,30 +171,32 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard
-          label="Collected"
-          value={formatMoney(summary?.totals.collectedKobo ?? 0)}
-          helper={`${summary?.totals.successfulCount ?? 0} successful`}
-        />
-        <SummaryCard
-          label="Awaiting confirmation"
-          value={formatMoney(summary?.totals.pendingKobo ?? 0)}
-          helper={`${summary?.totals.pendingCount ?? 0} active pending • ${summary?.totals.stalePendingCount ?? 0} stale`}
-        />
-        <SummaryCard
-          label="Failed/abandoned attempts"
-          value={formatMoney(
-            (summary?.totals.failedKobo ?? 0) + (summary?.totals.abandonedKobo ?? 0)
-          )}
-          helper={`${(summary?.totals.failedCount ?? 0) + (summary?.totals.abandonedCount ?? 0)} attempts • ${summary?.totals.supersededCount ?? 0} superseded hidden`}
-        />
-        <SummaryCard
-          label="Review required"
-          value={String(summary?.totals.reviewRequiredCount ?? 0)}
-          helper="True reconciliation issues"
-        />
-      </div>
+      <Card aria-label="Payment summary" className="px-5 py-4">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4 lg:divide-x lg:divide-[var(--border-subtle)]">
+          <SummaryStat
+            label="Collected"
+            value={formatMoney(summary?.totals.collectedKobo ?? 0)}
+            helper={`${summary?.totals.successfulCount ?? 0} successful`}
+          />
+          <SummaryStat
+            label="Awaiting"
+            value={formatMoney(summary?.totals.pendingKobo ?? 0)}
+            helper={`${summary?.totals.pendingCount ?? 0} active pending • ${summary?.totals.stalePendingCount ?? 0} stale`}
+          />
+          <SummaryStat
+            label="Failed"
+            value={formatMoney(
+              (summary?.totals.failedKobo ?? 0) + (summary?.totals.abandonedKobo ?? 0)
+            )}
+            helper={`${(summary?.totals.failedCount ?? 0) + (summary?.totals.abandonedCount ?? 0)} attempts • ${summary?.totals.supersededCount ?? 0} superseded hidden`}
+          />
+          <SummaryStat
+            label="Needs review"
+            value={String(summary?.totals.reviewRequiredCount ?? 0)}
+            helper="True reconciliation issues"
+          />
+        </dl>
+      </Card>
 
       <SegmentedControl
         label="Payment view"
@@ -185,58 +205,86 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
         value={view}
       />
 
-      <FilterBar aria-label="Payment filters" onSubmit={handleSearch}>
-        <FilterGrid className="md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_150px_210px_150px_150px_auto]">
-          <FormField>
-            <FieldLabel>Search</FieldLabel>
+      <DataToolbar>
+        <DataToolbarSearch>
+          <form aria-label="Search payments" onSubmit={handleSearch} role="search">
             <Input
-              className="mt-1"
-              onChange={(event) => setSearchInput(event.target.value)}
+              aria-label="Search"
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                if (event.target.value === "") setSearch("");
+              }}
               placeholder="Reference, invoice, customer, or email"
               value={searchInput}
             />
-          </FormField>
-          <FormField>
-            <FieldLabel>Status</FieldLabel>
-            <Select
-              onChange={(event) => setStatus(event.target.value as PaymentStatus | "all")}
-              value={status}
-              wrapperClassName="mt-1"
-            >
-              <option value="all">All</option>
-              {PAYMENT_STATUSES.map((option) => (
-                <option key={option} value={option}>
-                  {PAYMENT_STATUS_LABELS[option]}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField>
-            <FieldLabel>Reconciliation</FieldLabel>
-            <Select
-              onChange={(event) =>
-                setReconciliationState(event.target.value as ReconciliationState | "")
-              }
-              value={reconciliationState}
-              wrapperClassName="mt-1"
-            >
-              <option value="">All states</option>
-              {RECONCILIATION_STATES.map((option) => (
-                <option key={option} value={option}>
-                  {RECONCILIATION_STATE_LABELS[option]}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <DateInput label="From" onChange={setDateFrom} value={dateFrom} />
-          <DateInput label="To" onChange={setDateTo} value={dateTo} />
-          <FilterActions>
-            <Button type="submit" variant="outline">
-              Apply
+          </form>
+        </DataToolbarSearch>
+        <DataToolbarFilters>
+          <label className="sr-only" htmlFor="payment-status-filter">
+            Status
+          </label>
+          <Select
+            aria-label="Status"
+            id="payment-status-filter"
+            onChange={(event) => setStatus(event.target.value as PaymentStatus | "all")}
+            value={status}
+            wrapperClassName="w-36"
+          >
+            <option value="all">All</option>
+            {PAYMENT_STATUSES.map((option) => (
+              <option key={option} value={option}>
+                {PAYMENT_STATUS_LABELS[option]}
+              </option>
+            ))}
+          </Select>
+          <label className="sr-only" htmlFor="payment-reconciliation-filter">
+            Reconciliation
+          </label>
+          <Select
+            aria-label="Reconciliation"
+            id="payment-reconciliation-filter"
+            onChange={(event) =>
+              setReconciliationState(event.target.value as ReconciliationState | "")
+            }
+            value={reconciliationState}
+            wrapperClassName="w-44"
+          >
+            <option value="">All states</option>
+            {RECONCILIATION_STATES.map((option) => (
+              <option key={option} value={option}>
+                {RECONCILIATION_STATE_LABELS[option]}
+              </option>
+            ))}
+          </Select>
+          <label className="sr-only" htmlFor="payment-date-from">
+            From
+          </label>
+          <DateControl
+            aria-label="From"
+            className="w-36"
+            id="payment-date-from"
+            onChange={(event) => setDateFrom(event.target.value)}
+            value={dateFrom}
+          />
+          <label className="sr-only" htmlFor="payment-date-to">
+            To
+          </label>
+          <DateControl
+            aria-label="To"
+            className="w-36"
+            id="payment-date-to"
+            onChange={(event) => setDateTo(event.target.value)}
+            value={dateTo}
+          />
+        </DataToolbarFilters>
+        <DataToolbarActions>
+          {isFiltered ? (
+            <Button onClick={clearFilters} size="sm" type="button" variant="ghost">
+              Clear
             </Button>
-          </FilterActions>
-        </FilterGrid>
-      </FilterBar>
+          ) : null}
+        </DataToolbarActions>
+      </DataToolbar>
 
       {state === "loading" ? <LoadingSkeleton rows={5} /> : null}
 
@@ -283,36 +331,25 @@ export function PaymentsContent({ accessToken }: { accessToken: string }) {
   );
 }
 
-function SummaryCard({ helper, label, value }: { helper: string; label: string; value: string }) {
-  return (
-    <MetricCard>
-      <p className="text-xs font-semibold uppercase text-[var(--text-muted)]">{label}</p>
-      <p className="mt-2 font-mono text-2xl font-semibold text-[var(--text-primary)] tabular-nums">
-        {value}
-      </p>
-      <p className="mt-1 text-sm text-[var(--text-muted)]">{helper}</p>
-    </MetricCard>
-  );
-}
-
-function DateInput({
+function SummaryStat({
+  helper,
   label,
-  onChange,
   value
 }: {
+  helper: string;
   label: string;
-  onChange: (value: string) => void;
   value: string;
 }) {
   return (
-    <FormField>
-      <FieldLabel>{label}</FieldLabel>
-      <DateControl
-        className="mt-1"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      />
-    </FormField>
+    <div className="min-w-0 lg:pl-4 lg:first:pl-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+        {label}
+      </dt>
+      <dd className="mt-1 truncate text-xl font-semibold tabular-nums text-[var(--text-primary)]">
+        {value}
+      </dd>
+      <dd className="mt-0.5 truncate text-xs text-[var(--text-muted)]">{helper}</dd>
+    </div>
   );
 }
 
@@ -355,10 +392,12 @@ function PaymentResults({
               <TableHeaderCell>Reconciliation</TableHeaderCell>
               <TableHeaderCell>Settlement</TableHeaderCell>
               <TableHeaderCell>Date</TableHeaderCell>
-              <TableHeaderCell className="text-right">Action</TableHeaderCell>
+              <TableHeaderCell className="w-12">
+                <span className="sr-only">Actions</span>
+              </TableHeaderCell>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[var(--border-subtle)]">
             {payments.map((payment) => (
               <PaymentTableRow key={payment.id} payment={payment} view={view} />
             ))}
@@ -366,7 +405,7 @@ function PaymentResults({
         </DataTable>
       </div>
 
-      <div className="divide-y divide-slate-100 xl:hidden">
+      <div className="divide-y divide-[var(--border-subtle)] xl:hidden">
         {payments.map((payment) => (
           <PaymentCard key={payment.id} payment={payment} view={view} />
         ))}
@@ -388,60 +427,95 @@ function PaymentResults({
 }
 
 function PaymentTableRow({ payment, view }: { payment: PaymentListItem; view: PaymentView }) {
+  const router = useRouter();
+  const href = `/payments/${payment.id}`;
+  const isReviewView = view === "review_required";
+
+  function openDetail() {
+    router.push(href);
+  }
+
   return (
     <tr
-      className={
-        payment.isSuperseded && view === "all_attempts" ? "bg-[var(--surface-raised)]" : undefined
-      }
+      aria-label={`${payment.providerReference} payment`}
+      className={cn(
+        "cursor-pointer transition duration-150 hover:bg-[var(--surface-selected)]",
+        payment.isSuperseded && view === "all_attempts" && "bg-[var(--surface-raised)]"
+      )}
+      onClick={openDetail}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") openDetail();
+      }}
+      tabIndex={0}
     >
-      <td className="px-4 py-3">
-        <DetailLink href={`/payments/${payment.id}`}>{payment.providerReference}</DetailLink>
+      <td className="whitespace-nowrap px-4 py-3.5 font-mono text-[13px]">
+        <DetailLink href={href}>{payment.providerReference}</DetailLink>
       </td>
-      <td className="px-4 py-3">
+      <td className="whitespace-nowrap px-4 py-3.5" onClick={(event) => event.stopPropagation()}>
         {payment.invoice ? (
-          <Link className="font-medium text-slate-950" href={`/invoices/${payment.invoice.id}`}>
+          <Link
+            className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]"
+            href={`/invoices/${payment.invoice.id}`}
+          >
             {payment.invoice.invoiceNumber}
           </Link>
         ) : (
-          <span className="text-slate-500">No invoice</span>
+          <span className="text-[var(--text-muted)]">No invoice</span>
         )}
       </td>
-      <td className="px-4 py-3">
-        <p className="font-medium text-slate-950">{payment.customer?.name ?? "Unknown"}</p>
-        <p className="text-slate-600">{payment.customer?.email ?? "No email"}</p>
+      <td className="px-4 py-3.5">
+        <p className="font-medium text-[var(--text-primary)]">{payment.customer?.name ?? "Unknown"}</p>
+        <p className="text-xs text-[var(--text-muted)]">{payment.customer?.email ?? "No email"}</p>
       </td>
-      <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
+      <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums text-[var(--text-secondary)]">
         {formatMoney(payment.amountKobo)}
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3.5">
         <AttemptStateBadge state={payment.attemptState} />
         {payment.supersededReason ? (
-          <p className="mt-1 max-w-48 text-xs text-slate-500">{payment.supersededReason}</p>
+          <p className="mt-1 max-w-48 text-xs text-[var(--text-muted)]">
+            {payment.supersededReason}
+          </p>
+        ) : null}
+        {isReviewView && payment.reviewReason ? (
+          <p className="mt-1 max-w-64 text-xs font-medium text-[var(--text-primary)]">
+            {payment.reviewReason}
+          </p>
+        ) : null}
+        {isReviewView ? (
+          <p className="mt-1 text-xs">
+            <DetailLink href={href}>Open detail</DetailLink>
+          </p>
         ) : null}
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3.5">
         {shouldShowReconciliation(payment) ? (
           <ReconciliationBadge state={payment.reconciliationState} />
         ) : (
-          <span className="text-slate-400">—</span>
+          <span className="text-[var(--text-muted)]">—</span>
         )}
       </td>
-      <td className="px-4 py-3 text-slate-600">
+      <td className="whitespace-nowrap px-4 py-3.5 text-[var(--text-secondary)]">
         {formatSettlementAccount(payment.settlementAccount)}
       </td>
-      <td className="px-4 py-3 text-slate-600">
+      <td className="whitespace-nowrap px-4 py-3.5 text-[var(--text-secondary)]">
         {formatDateTime(payment.paidAt ?? payment.createdAt)}
       </td>
-      <td className="px-4 py-3 text-right">
-        <LinkButton href={`/payments/${payment.id}`} size="sm" variant="outline">
-          View
-        </LinkButton>
+      <td
+        className="px-2 py-3.5 text-right"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <TableRowActionMenu items={[{ label: "View", href }]} />
       </td>
     </tr>
   );
 }
 
 function PaymentCard({ payment, view }: { payment: PaymentListItem; view: PaymentView }) {
+  const href = `/payments/${payment.id}`;
+  const isReviewView = view === "review_required";
+
   return (
     <MobileDataCard
       className={
@@ -450,15 +524,20 @@ function PaymentCard({ payment, view }: { payment: PaymentListItem; view: Paymen
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <DetailLink href={`/payments/${payment.id}`}>{payment.providerReference}</DetailLink>
-          <p className="mt-1 text-sm text-slate-600">
+          <span className="break-all font-mono text-[13px]">
+            <DetailLink href={href}>{payment.providerReference}</DetailLink>
+          </span>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
             {payment.invoice?.invoiceNumber ?? "No invoice"} • {payment.customer?.name ?? "Unknown"}
           </p>
         </div>
         <AttemptStateBadge state={payment.attemptState} />
       </div>
-      <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-        <span className="font-mono tabular-nums">{formatMoney(payment.amountKobo)}</span>
+      {isReviewView && payment.reviewReason ? (
+        <p className="text-sm font-medium text-[var(--text-primary)]">{payment.reviewReason}</p>
+      ) : null}
+      <div className="grid gap-2 text-sm text-[var(--text-secondary)] sm:grid-cols-2">
+        <span className="tabular-nums">{formatMoney(payment.amountKobo)}</span>
         <span>{formatSettlementAccount(payment.settlementAccount)}</span>
         <span>{formatDateTime(payment.paidAt ?? payment.createdAt)}</span>
         {shouldShowReconciliation(payment) ? (
@@ -468,11 +547,12 @@ function PaymentCard({ payment, view }: { payment: PaymentListItem; view: Paymen
         )}
       </div>
       {payment.supersededReason ? (
-        <p className="text-xs text-slate-500">{payment.supersededReason}</p>
+        <p className="text-xs text-[var(--text-muted)]">{payment.supersededReason}</p>
       ) : null}
-      <LinkButton href={`/payments/${payment.id}`} size="sm" variant="outline">
-        View
-      </LinkButton>
+      <div className="flex items-center justify-between gap-3">
+        <DetailLink href={href}>View details</DetailLink>
+        <TableRowActionMenu items={[{ label: "View", href }]} />
+      </div>
     </MobileDataCard>
   );
 }
@@ -490,41 +570,43 @@ function shouldShowReconciliation(payment: PaymentListItem) {
 
 function ReviewEvents({ events }: { events: PaymentReviewEvent[] }) {
   return (
-    <SectionCard>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-950">Needs review</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Safe payment event summaries that need manual inspection.
-          </p>
-        </div>
-      </div>
+    <section aria-label="Needs review" className="border-t border-[var(--border-subtle)] pt-4">
+      <h2 className="text-base font-semibold text-[var(--text-primary)]">Needs review</h2>
+      <p className="mt-1 text-sm text-[var(--text-secondary)]">
+        Safe payment event summaries that need manual inspection.
+      </p>
       {events.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-600">No payment events currently need review.</p>
+        <p className="mt-3 text-sm text-[var(--text-secondary)]">
+          No payment events currently need review.
+        </p>
       ) : (
-        <div className="mt-4 divide-y divide-slate-100">
+        <ul className="mt-2 divide-y divide-[var(--border-subtle)]">
           {events.map((event) => (
-            <article className="py-3 text-sm" key={event.id}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium text-slate-950">{event.eventType}</p>
-                  <p className="text-slate-600">
-                    {event.providerReference ?? "No reference"} •{" "}
+            <li className="py-3 text-sm" key={event.id}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="font-medium text-[var(--text-primary)]">
+                    {event.errorMessage ?? event.eventType}
+                  </p>
+                  <p className="mt-0.5 text-[var(--text-muted)]">
+                    {event.eventType} • {event.providerReference ?? "No reference"} •{" "}
                     {event.invoiceNumber ?? "No matched invoice"} •{" "}
                     {event.customerName ?? "No matched customer"}
                   </p>
+                  {event.paymentId ? (
+                    <p className="mt-1 text-xs">
+                      <DetailLink href={`/payments/${event.paymentId}`}>Open payment</DetailLink>
+                    </p>
+                  ) : null}
                 </div>
-                <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
+                <span className="shrink-0 text-[var(--text-muted)]">
+                  {formatDateTime(event.createdAt)}
+                </span>
               </div>
-              {event.errorMessage ? (
-                <p className="mt-2 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-2 text-[var(--warning)]">
-                  {event.errorMessage}
-                </p>
-              ) : null}
-            </article>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </SectionCard>
+    </section>
   );
 }

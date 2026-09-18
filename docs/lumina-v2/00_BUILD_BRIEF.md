@@ -59,10 +59,11 @@ For Lumina v2 work, use this order when documents disagree:
 2. `docs/lumina-v2/01_FEATURE_AND_BUILD_SEQUENCE.md`
 3. `docs/lumina-v2/02_UI_UX_DIRECTION.md`
 4. `docs/lumina-v2/03_CODEX_EXECUTION_GUIDE.md`
-5. `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md` for all marketing-site visual, motion, and homepage-story decisions.
-6. Existing domain-specific docs such as `product-spec.md`, `status-rules.md`, `rbac-matrix.md`, `database-schema.md`, `api-contracts.md`.
-7. Existing T017 design docs where they do not conflict with the v2 UI direction.
-8. `apps/marketing/DESIGN.md` only where it has been updated to match the Lumina v2 marketing direction.
+5. `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md` for all marketing-site art direction, motion, and homepage-story decisions.
+6. `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`, `11_CURRENT_MARKETING_UI_AUDIT.md`, and `12_MARKETING_REDESIGN_CODEX_PROMPT.md` for marketing references, current-code audit, and execution.
+7. Existing domain-specific docs such as `product-spec.md`, `status-rules.md`, `rbac-matrix.md`, `database-schema.md`, `api-contracts.md`.
+8. Existing T017 design docs where they do not conflict with the v2 UI direction.
+9. `apps/marketing/DESIGN.md` only where it has been updated to match the Lumina v2 marketing direction.
 
 Special precedence rule:
 
@@ -185,7 +186,7 @@ The first major vertical slices are:
 
 Do not wait for the entire roadmap to be designed before starting item 1.
 
-The marketing redesign may run as a separate workstream using `05_MARKETING_SITE_REDESIGN.md`; it does not need to block these product slices.
+PR #21 completed T020 and PR #22 completed the light application overhaul. **MKT-01 Marketing Site Editorial Receivables Evolution is now the explicit next work item before T021.** This does not renumber the product roadmap; after MKT-01, resume T021 Invoice Delivery / View Tracking / Unified Activity. Use `05`, `10`, `11`, and `12` in `docs/lumina-v2/` as the complete marketing implementation package.
 
 ## 8. What Not to Prioritise Yet
 

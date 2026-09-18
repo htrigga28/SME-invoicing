@@ -1,14 +1,20 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PaymentsContent } from "./payments-page";
 import { getPaymentSummary, listPaymentReviewEvents, listPayments } from "./payments-api";
 
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
+
 vi.mock("./payments-api", () => ({
   getPaymentSummary: vi.fn(),
   listPaymentReviewEvents: vi.fn(),
   listPayments: vi.fn()
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPush })
 }));
 
 const payment = {
@@ -131,7 +137,9 @@ describe("PaymentsContent", () => {
     expect(screen.getAllByText("Matched").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Successful").length).toBeGreaterThan(0);
     expect(screen.queryByRole("columnheader", { name: "Status" })).not.toBeInTheDocument();
-    expect(screen.getByText("Awaiting confirmation")).toBeInTheDocument();
+    const summary = within(screen.getByLabelText("Payment summary"));
+    expect(summary.getByText("Awaiting")).toBeInTheDocument();
+    expect(summary.getByText("Needs review")).toBeInTheDocument();
     expect(screen.getByText(/superseded hidden/i)).toBeInTheDocument();
     expect(screen.getAllByText("United Bank for Africa • ****9090").length).toBeGreaterThan(0);
     expect(screen.queryByText(/ACCT_/)).not.toBeInTheDocument();
@@ -150,7 +158,7 @@ describe("PaymentsContent", () => {
     fireEvent.change(screen.getByLabelText("Reconciliation"), {
       target: { value: "matched" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.submit(screen.getByRole("search"));
 
     await waitFor(() =>
       expect(listPayments).toHaveBeenLastCalledWith(
@@ -163,6 +171,46 @@ describe("PaymentsContent", () => {
         })
       )
     );
+  });
+
+  it("navigates to detail when a row is activated and exposes View in the row menu", async () => {
+    render(<PaymentsContent accessToken="token" />);
+
+    const row = await screen.findByRole("row", { name: /PAYSTACK_DEMO_INV000011_SUCCESSFUL/ });
+    fireEvent.click(row);
+    expect(routerPush).toHaveBeenCalledWith("/payments/payment-1");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Row actions" })[0]!);
+    expect(screen.getByRole("menuitem", { name: "View" })).toHaveAttribute(
+      "href",
+      "/payments/payment-1"
+    );
+  });
+
+  it("clears all filters back to the reconciliation default", async () => {
+    render(<PaymentsContent accessToken="token" />);
+
+    fireEvent.change(await screen.findByLabelText("Search"), {
+      target: { value: "INV000011" }
+    });
+    fireEvent.submit(screen.getByRole("search"));
+
+    await waitFor(() =>
+      expect(listPayments).toHaveBeenLastCalledWith(
+        "token",
+        expect.objectContaining({ search: "INV000011" })
+      )
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    await waitFor(() =>
+      expect(listPayments).toHaveBeenLastCalledWith(
+        "token",
+        expect.objectContaining({ status: "all", view: "reconciliation" })
+      )
+    );
+    expect(vi.mocked(listPayments).mock.lastCall?.[1]).not.toHaveProperty("search");
   });
 
   it("switches between reconciliation, all attempts, and needs review views", async () => {

@@ -1,616 +1,1031 @@
-# Lumina v2 — Marketing Site Redesign
+# Lumina v2 — Marketing Site Evolution
 
 **Status:** APPROVED FOR IMPLEMENTATION  
-**Decision date:** 2026-09-16  
-**Scope:** `apps/marketing` only unless this document explicitly references the authenticated product.  
-**Purpose:** Give Codex a concrete replacement for the current dark-first marketing direction without starting another design-planning cycle.
+**Decision date:** 2026-09-18  
+**Scope:** `apps/marketing`  
+**Authority:** This is the canonical marketing art-direction and experience specification.
+
+Companion implementation context:
+
+1. `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
+2. `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
+3. `docs/lumina-v2/12_MARKETING_REDESIGN_CODEX_PROMPT.md`
+4. `docs/lumina-v2/13_MARKETING_VISUAL_QA_SCORECARD.md`
+4. `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md` for brand relationship with the authenticated app
+5. `docs/lumina-v2/07_MOBBIN_APP_REFERENCE_LIBRARY.md` for actual product UI references
+
+If an older marketing document conflicts with this file, this file wins.
 
 ---
 
-## 1. Decision Summary
+# 1. Decision
 
-Lumina marketing should move away from the current dark graphite + neon-lime visual world.
+PR #22 has now established Lumina's authenticated product as a **light financial workspace**.
 
-The new direction is a **light, warm, inviting editorial-fintech experience** aimed at business owners, finance teams, accountants, agencies, professional-services firms, and larger receivables teams.
+The marketing site must now evolve to match that product.
 
-The site should feel:
+The new marketing direction is:
 
+> **Editorial Receivables**
+
+Lumina marketing should feel like a premium editorial presentation of real receivables software.
+
+It must be:
+
+- light;
 - financially trustworthy;
-- modern without looking crypto-adjacent;
-- warm enough for SMEs;
-- credible enough for finance managers;
-- product-led rather than illustration-led;
-- polished enough to work as a high-quality portfolio piece;
-- significantly more dynamic during scroll than a typical B2B SaaS landing page.
+- inviting to business owners;
+- credible to finance teams;
+- product-led;
+- document-led;
+- visually authored;
+- rich in scroll interaction;
+- considerably more expressive than the authenticated app;
+- grounded in actual shipped Lumina behavior.
 
-The existing **Payment Trail** concept remains useful, but its expression changes completely:
+It must not feel like:
 
-> The trail should no longer be a glowing line on a dark canvas. It should become a continuous product story in which an invoice visibly moves through creation, delivery, collection, payment, reconciliation, receipt, and cash visibility as the visitor scrolls.
-
-This document supersedes the previous assumption in `apps/marketing/DESIGN.md` that the marketing world must remain dark.
+- a dark developer tool;
+- crypto infrastructure;
+- an abstract fintech concept site;
+- a generic SaaS template;
+- a landing page made of equal feature cards;
+- an animation reel with weak product comprehension.
 
 ---
 
-## 2. Marketing Thesis
+# 1A. Dominant stylistic reference — Acctual
 
-Primary working promise:
+The uploaded Acctual scroll recording is now the **dominant reference for marketing motion, composition, typography character, cards/paper objects, and section handoffs**.
+
+This changes the weighting of the earlier reference set.
+
+Use:
+
+- **Acctual** for how the page moves and composes itself;
+- **Lumina's merged app** for what the product actually looks like and what it can truthfully do;
+- **Tola / Column** for financial warmth and restraint;
+- **Stripe / Lasso** for product-story pacing and continuity;
+- **Mobbin** for high-quality invoice and financial UI details.
+
+The target is not "make Lumina look like Acctual."
+
+The target is:
+
+> **Take Acctual's editorial motion grammar — objects entering from the sides, composing around stable typography, then physically leaving as the next section is revealed — and rebuild that behavior with Lumina's invoice, receipt, payment, reconciliation, dashboard, colors, and product truth.**
+
+Important qualities from the recording:
+
+- objects start partially or fully outside the viewport;
+- major objects move in from left/right/corners/bottom, not only upward;
+- they settle long enough for the composition to be read;
+- they then move back out of the viewport as scrolling continues;
+- the next section begins entering before the previous section has completely cleared;
+- paper/document/UI layers overlap with subtle rotation and realistic shadow;
+- edge objects are deliberately clipped by the viewport;
+- typography remains comparatively calm while visual objects carry the motion;
+- strong color-field chapters interrupt the light canvas occasionally;
+- product UI is cropped to readable, meaningful areas rather than shrunk into miniature full screens.
+
+See the detailed video-derived motion grammar in `10_MARKETING_REFERENCE_LIBRARY.md`.
+
+# 2. Brand relationship
+
+The app and marketing site should clearly belong to the same company.
+
+## Authenticated app
+
+The app is:
+
+- calm;
+- operational;
+- compact;
+- restrained;
+- low-motion;
+- optimized for repeated financial work.
+
+## Marketing
+
+Marketing is:
+
+- editorial;
+- spacious;
+- kinetic;
+- narrative;
+- product-demonstrative;
+- optimized for understanding and conversion.
+
+Shared DNA:
+
+- warm off-white canvas;
+- white surfaces;
+- deep Lumina green;
+- dark ink;
+- Hanken Grotesk;
+- tabular financial numerals;
+- semantic status colors;
+- realistic product UI;
+- no decorative crypto gradients.
+
+The marketing site may use more scale, overlap, motion, color fields, and whitespace than the app.
+
+---
+
+# 3. Locked marketing palette
+
+Use these as the starting tokens.
+
+```text
+Canvas               #F6F7F4
+Canvas Warm          #FAFAF7
+Paper                #FFFFFF
+Surface Soft         #F0F2EF
+Soft Sage            #EAF3ED
+Soft Blue            #EAF2F8
+
+Ink                  #17211C
+Ink Secondary        #4F5F56
+Ink Muted            #768078
+
+Brand Green          #245C46
+Brand Green Hover    #1B4A38
+Signal Lime          #C1FF72
+
+Success              #237A57
+Warning              #956800
+Danger               #B54747
+Info                 #2F6F9F
+
+Border Subtle        #E8EBE6
+Border Default       #DCE2DC
+```
+
+Rules:
+
+- light backgrounds dominate;
+- primary CTAs use deep green, not lime;
+- lime is a signal, not the environment;
+- lime may appear at decisive financial moments such as "paid", "matched", active trail progress, or a small CTA accent;
+- one deep-green full-width closing section is allowed;
+- black full-screen sections are not part of this direction;
+- gradients are not needed for the core identity;
+- soft sage and soft blue are used for chapter rhythm, not random decoration.
+
+---
+
+# 4. Typography
+
+Keep:
+
+- Hanken Grotesk;
+- JetBrains Mono only for invoice numbers, payment references, receipt IDs, timestamps, and selected data labels.
+
+Do not introduce a new display font during this implementation.
+
+## Display behavior
+
+- hero: `clamp(3.4rem, 7.5vw, 7rem)`;
+- line-height approximately `0.92–0.98`;
+- negative tracking approximately `-0.03em`;
+- use editorial line breaks intentionally;
+- avoid overly centered corporate presentation.
+
+## Body
+
+- 16–20px depending on section;
+- generous line-height;
+- concise business language;
+- avoid infrastructure jargon in primary marketing copy.
+
+---
+
+# 5. Product truth boundary
+
+The redesign must show what exists today.
+
+## Safe to present as shipped
+
+- reusable products/services;
+- professional invoice authoring;
+- ad-hoc invoice lines;
+- payment terms;
+- customer reference / PO;
+- customer memo;
+- live invoice preview;
+- draft/send workflow;
+- public invoice;
+- Paystack payment initialization;
+- partial/full payment state;
+- provider-confirmed payment truth;
+- reconciliation;
+- review-required state;
+- overpayment;
+- refund workflow;
+- immutable receipts;
+- dashboard metrics;
+- outstanding/overdue visibility;
+- exports;
+- audit logs;
+- roles/team;
+- payment setup.
+
+## Not safe to present as shipped yet
+
+- automatic reminder sequences;
+- recurring invoices;
+- collections workspace;
+- promise to pay;
+- Customer 360;
+- customer portal;
+- disputes;
+- cash forecasting;
+- AI collections;
+- AI reconciliation;
+- NRS integration;
+- multi-currency;
+- accounting/ERP integrations.
+
+Do not create fake UI for unshipped features.
+
+---
+
+# 6. Locked marketing message
+
+Primary proposition:
 
 > **Turn every invoice into predictable cash.**
 
-Supporting product story:
+Supporting line:
 
-> Create professional invoices, follow up automatically, accept payments, reconcile what arrived, and know what needs attention next.
+> **Create professional invoices, collect payments, reconcile what arrived, and know exactly what needs attention.**
 
-Supporting positioning:
+Audience:
 
-- For small businesses: **Send invoices. Get paid. Stop chasing.**
-- For finance teams: **Know what is owed, what is late, and what needs attention.**
-- Long term: **Automate invoice-to-cash without replacing the systems your business already uses.**
+> **Built for growing Nigerian businesses and the people responsible for getting them paid.**
 
-Do not present Lumina as generic bookkeeping, banking, payroll, or all-in-one business software.
+Supporting shorthand:
+
+> **Invoice. Pay. Reconcile. Know.**
+
+This shorthand may be used as a visual motif, but not as the hero headline.
 
 ---
 
-## 3. Visual Direction
+# 7. Locked homepage architecture
 
-### Overall aesthetic
-
-Use a light editorial-fintech system built from:
-
-- warm off-white page backgrounds;
-- white document/product surfaces;
-- deep green/ink typography;
-- pale sage and pale blue section fields;
-- restrained borders;
-- subtle ambient shadows;
-- controlled use of Lumina lime as an action/highlight color rather than the page environment;
-- real-looking Lumina product UI as the dominant visual asset.
-
-Avoid:
-
-- black/charcoal as the default page background;
-- neon glow effects;
-- crypto-style gradients;
-- excessive glassmorphism;
-- equal feature-card grids as the main storytelling device;
-- giant generic 3D objects unrelated to receivables;
-- decorative motion that does not explain the product.
-
-### Starting palette
-
-These are directional tokens, not a requirement to hard-code exact values if accessibility/testing suggests adjustment:
+The homepage should follow this exact sequence unless implementation constraints justify a small local adjustment.
 
 ```text
-Canvas / warm neutral    #F7F7F2
-Paper                    #FFFFFF
-Soft sage                #E7EFE6
-Soft blue                #E9F1F7
-Ink                      #17211C
-Muted ink                #68746D
-Brand green              #275C46
-Action lime              #B7E56B
-Review / amber           #D89B3C
-Danger / coral           #C85D57
+00 Header
+01 Hero
+02 Audience bridge
+03 Signature Invoice → Cash story
+04 Invoicing chapter
+05 Payment outcomes / reconciliation explorer
+06 Receivables visibility
+07 Customer payment experience
+08 Trust & control
+09 FAQ
+10 Closing CTA
+11 Footer
 ```
 
-Rules:
+Do not add more homepage sections merely because a reference has them.
 
-- White/off-white should dominate.
-- Green should feel established and financial, not fluorescent.
-- Lime should be reserved for primary CTA, active trail moments, and selective emphasis.
-- Pale sage/blue should create section rhythm and visual relief.
-- Semantic state colors remain semantic.
+Do not add customer logos, testimonials, pricing, case studies, resources, or comparison grids unless real content exists.
 
 ---
 
-## 4. Typography
+# 8. Header
 
-The existing Hanken Grotesk can remain if it still works after the redesign.
-
-Target behavior:
-
-- Large, confident but not shouty display typography.
-- Dark ink rather than white display text.
-- Strong editorial line breaks.
-- Body copy should be readable and businesslike, not overly technical.
-- JetBrains Mono may remain for product references, invoice IDs, amounts, timestamps, and demo-data labels.
-- Do not turn all financial data into monospaced typography.
-
-Hero and section headings should feel closer to premium financial software than developer tooling.
-
----
-
-## 5. Reference Set
-
-Codex has access to Mobbin MCP. Inspect these references directly before implementing the redesign.
-
-### Ramp — restraint and whitespace
-
-Mobbin section:
-https://mobbin.com/sites/sections/83a61ac1-4ad8-48d0-91be-13ac7b374e22
-
-Borrow:
-
-- white-space confidence;
-- simple navigation;
-- decisive headline hierarchy;
-- light financial-product feel;
-- product/object focus without excessive surrounding decoration.
-
-Do not copy Ramp's exact visual identity.
-
-### Stripe — visual confidence and product storytelling
-
-Mobbin section:
-https://mobbin.com/sites/sections/033e268c-5938-4b45-97c3-4f355f1a63c8
-
-Borrow:
-
-- large-scale product confidence;
-- strong type hierarchy;
-- clear product proof near the hero;
-- transitions between business promise and real product capability.
-
-Avoid copying Stripe's color language or decorative ribbon motif.
-
-### Monarch — approachable finance tone
-
-Mobbin section:
-https://mobbin.com/sites/sections/24964640-6293-40e9-994e-591814a32ec5
-
-Borrow:
-
-- inviting financial-product tone;
-- soft color use;
-- approachable product framing;
-- obvious product UI without visual intimidation.
-
-Lumina must remain more B2B and operational than Monarch.
-
-### Sequence — soft B2B finance presentation
-
-Mobbin section:
-https://mobbin.com/sites/sections/ca1841d9-bfa2-43c6-ad49-ba6eceddf894
-
-Borrow:
-
-- soft light background treatment;
-- mature B2B finance tone;
-- editorial headline treatment;
-- product UI embedded in a calm visual field.
-
-### Existing product references
-
-For actual Lumina UI shown inside marketing compositions, also use the product references already listed in `02_UI_UX_DIRECTION.md`, especially Stripe, Mercury, Midday, Xero, and Airwallex.
-
-The marketing site should show the **future Lumina v2 UI direction**, not freeze itself around outdated v1 screenshots.
-
----
-
-## 6. Core Homepage Narrative
-
-The homepage should not be a sequence of generic feature blocks. It should behave like one continuous demonstration of the receivables lifecycle.
-
-Recommended structure:
-
-### 1. Hero — outcome first
-
-Goal: immediately communicate the value proposition and show Lumina as a real product.
-
-Suggested hierarchy:
+Target navigation:
 
 ```text
-Turn every invoice
-into predictable cash.
+Lumina
 
-Create invoices, follow up automatically,
-collect payments and know what needs attention next.
+Product
+  Invoicing
+  Payments & reconciliation
+  Receipts & control
 
-[Create account]   [See how it works]
+How it works
+Trust
+FAQ
+
+Sign in
+Create account
 ```
 
-Visual:
+Behavior:
 
-- large Lumina product composition;
-- invoice/document surface in the foreground;
-- subtle receivables/dashboard context behind it;
-- light page field;
-- no dark full-screen backdrop;
-- motion on load should be controlled and fast.
+- fixed/sticky;
+- starts light/transparent;
+- receives a subtle white/warm background and border after scroll;
+- no dark floating capsule;
+- Product dropdown stays compact;
+- no elaborate dark preview pane;
+- mobile uses simple accordion/drawer behavior;
+- preserve keyboard/focus/escape behavior.
 
-### 2. Credibility / audience bridge
+Primary CTA:
+`Create account`
 
-Explain who Lumina is built for without fake customer logos or fabricated proof.
+No pricing link until pricing exists.
 
-Possible audience line:
+---
 
-- Growing businesses.
-- Agencies and professional services.
-- Finance and receivables teams.
+# 9. Hero
 
-If real proof does not exist, do not invent customer logos, transaction volumes, awards, or adoption metrics.
+## Content
 
-### 3. Signature scroll sequence — Invoice to Cash
+Eyebrow:
 
-This is the main cinematic section.
+> **RECEIVABLES FOR GROWING BUSINESSES**
 
-Narrative:
+Headline:
+
+> **Turn every invoice into predictable cash.**
+
+Support:
+
+> **Create professional invoices, collect payments, reconcile what arrived, and know exactly what needs attention.**
+
+Primary CTA:
+
+> **Create account**
+
+Secondary:
+
+> **See how it works**
+
+Trust note:
+
+> **Built for NGN invoicing and Paystack payment flows.**
+
+## Layout
+
+Desktop:
+- left/upper-left copy block;
+- product composition occupies 50–60% of visual field;
+- one invoice is the dominant object;
+- supporting dashboard/payment states sit behind or adjacent;
+- asymmetrical, not centered-template style.
+
+Mobile:
+- copy first;
+- CTAs;
+- one readable invoice visual;
+- no tiny overlapping windows.
+
+## Hero visual
+
+Replace the old all-at-once Payment Trail mosaic.
+
+New hero scene:
+
+- invoice document in foreground;
+- invoice editor or dashboard edge behind;
+- one small matched/payment state;
+- realistic Lumina data;
+- no more than three layers.
+
+Hero motion:
+- headline/copy stagger: 350–650ms;
+- product scene enters with 12–24px translate + opacity;
+- secondary layers settle after primary document;
+- no blur-heavy entrance;
+- no looping hero motion that distracts from reading.
+
+---
+
+# 10. Audience bridge
+
+Purpose:
+explain who Lumina is for without fabricated social proof.
+
+Copy direction:
+
+```text
+For the people who turn finished work into cash.
+
+Growing businesses
+Agencies & professional services
+Finance & receivables teams
+```
+
+Presentation:
+- simple text-led band;
+- subtle divider;
+- small supporting statements;
+- no fake logos;
+- no invented user counts.
+
+This section should be short.
+
+---
+
+# 11. Signature experience — Invoice to Cash
+
+This is the main authored interaction.
+
+ID:
+`how-it-works`
+
+Working component:
+`InvoiceToCashStory`
+
+## Canonical narrative
 
 ```text
 CREATE
-Invoice is assembled
-↓
-SEND
-Customer-facing document becomes active
-↓
-COLLECT
-Reminder and communication events appear
-↓
-PAY
-Payment confirmation enters the trail
-↓
-RECONCILE
-Payment resolves against the invoice
-↓
-KNOW
-Dashboard / customer account / expected-cash state updates
+→ SHARE
+→ PAY
+→ VERIFY
+→ MATCH
+→ KNOW
 ```
 
-This should feel like one connected system rather than six disconnected screenshots.
+Use one continuous financial object.
 
-### 4. Collections — stop chasing manually
-
-Use a pinned or staged Collections workspace.
-
-Story:
-
-- accounts needing attention appear;
-- overdue balance becomes clear;
-- reminder action or promise-to-pay event enters;
-- list reprioritizes or resolves as state changes.
-
-### 5. Reconciliation — money becomes truth
-
-Visually demonstrate:
+Canonical synthetic data:
 
 ```text
-Payment arrives
-→ reference/customer/amount evaluated
-→ matched to invoice
-→ invoice balance changes
-→ receipt becomes available
+Business: Adebayo Studio
+Customer: Northstar Projects
+Invoice: INV-000184
+Total: ₦78,400
+Provider reference: T8129-4F3A-90LX
+Receipt: RCT-000241
+Final balance: ₦0
 ```
 
-Keep this understandable to a business owner. Do not make the section read like payment-infrastructure documentation.
+Do not randomly change names/amounts between stages.
 
-### 6. Customer experience / portal
+## Desktop structure
 
-Show the customer's side:
+Recommended:
+- 360–440vh section;
+- visual stage pinned;
+- textual step rail scrolls;
+- 6 equal-ish beats;
+- visual stays inside a normal max-width page frame;
+- do not pin the entire header/page.
 
-- clean invoice;
+### CREATE
+
+Product state:
+- invoice editor;
+- selected customer;
+- catalogue/ad-hoc items;
+- total;
+- live preview.
+
+Copy:
+`Build the invoice with the details your customer actually needs.`
+
+### SHARE
+
+Product state:
+- editor chrome reduces;
+- invoice document becomes dominant;
+- public invoice/share state appears.
+
+Copy:
+`Send one clear document instead of another email attachment chain.`
+
+### PAY
+
+Product state:
+- customer-facing invoice;
 - amount due;
-- payment CTA;
-- receipt/statement access;
-- account overview when portal support exists.
+- Paystack payment CTA.
 
-### 7. Visibility — know what happens next
+Copy:
+`Your customer sees what is due and has one clear next step.`
 
-Transition from individual invoice to overall receivables visibility:
+### VERIFY
 
+Product state:
+- payment confirmation;
+- reference enters;
+- provider confirmation status.
+
+Copy:
+`Lumina waits for provider-confirmed payment truth.`
+
+Do not headline webhook/signature implementation details.
+
+### MATCH
+
+Product state:
+- provider reference connects to invoice;
+- status becomes matched;
+- balance becomes `₦0 due`.
+
+Copy:
+`The payment resolves against the invoice instead of becoming another mystery transfer.`
+
+### KNOW
+
+Product state:
+- receipt appears;
+- invoice/receipt compress into dashboard state;
+- paid state;
+- updated operational metrics.
+
+Copy:
+`The invoice, payment, receipt, and business position stay connected.`
+
+## Motion
+
+Use GSAP + ScrollTrigger.
+
+- scrub for primary state progression;
+- transforms + opacity + clip-path;
+- no rotation gimmicks;
+- no springy bounce;
+- no glow;
+- no frame-by-frame React state;
+- avoid animating layout properties when transform works;
+- keep text DOM order logical.
+
+## Mobile
+
+No pinning.
+
+Use:
+- six vertical story cards/chapters;
+- each product state appears after its copy;
+- short in-view translate/opacity;
+- visual continuity through consistent invoice number and paper treatment.
+
+## Reduced motion
+
+- no scrub;
+- no pin;
+- all six states remain available in reading order;
+- optional short fades only.
+
+---
+
+# 12. Invoicing chapter
+
+ID:
+`invoicing`
+
+Headline:
+
+> **Compose the invoice once. Let the customer see exactly what you meant.**
+
+Body:
+
+> **Build from reusable products and services or add an item on the fly. Set payment terms, add a customer reference, and preview the customer-facing invoice before it leaves your workspace.**
+
+Visual:
+- editor/preview split;
+- full document preview;
+- catalogue picker appears contextually;
+- line item changes update preview;
+- product visuals derive from merged PR #22 UI.
+
+Composition:
+- one dominant product surface;
+- no equal cards;
+- allow product UI to extend beyond content column slightly on desktop.
+
+Motion:
+- section heading reveal;
+- editor enters;
+- preview slides/settles;
+- one line item may animate into the preview to demonstrate cause/effect.
+
+Do not make the section a form tutorial.
+
+---
+
+# 13. Payment outcomes / reconciliation explorer
+
+ID:
+`reconciliation`
+
+Headline:
+
+> **Know what happened after checkout.**
+
+Support:
+
+> **Matched payments stay simple. Real exceptions stay visible until they are resolved.**
+
+Retain three states:
+
+1. Matched
+2. Needs review
+3. Refund confirmed
+
+Use the existing accessible tabs pattern.
+
+Visual:
+- open editorial split;
+- financial amount;
+- payment/invoice references;
+- current state;
+- concise next action.
+
+Animation:
+- 160–220ms;
+- opacity + x translation;
+- no blur.
+
+No ScrollTrigger pinning here.
+
+---
+
+# 14. Receivables visibility
+
+ID:
+`visibility`
+
+Headline:
+
+> **See what needs attention before it becomes a surprise.**
+
+Support:
+
+> **Outstanding balances, overdue invoices, confirmed collections, and real reconciliation issues share one operating view.**
+
+Primary visual:
+- merged Lumina overview/dashboard;
+- large central panel;
+- realistic implemented data.
+
+Show:
 - outstanding;
 - overdue;
-- aging;
-- accounts needing attention;
-- later: expected cash / DSO.
+- net collected;
+- needs attention;
+- recent matched payment;
+- aging/cashflow if space allows.
 
-### 8. Control / trust
-
-Communicate real existing or approved capabilities only:
-
-- team roles;
-- payment/reconciliation traceability;
-- audit history;
-- secure payment-provider integration;
-- receipts;
-- future compliance only when actually available or explicitly labelled as future/roadmap.
-
-### 9. Product ecosystem
-
-Present the connected product areas without a generic six-card grid if a more editorial layout works:
-
-- Invoicing;
-- Collections;
-- Payments;
-- Reconciliation;
-- Customer accounts;
-- Insights.
-
-### 10. Closing CTA
-
-Return to the core outcome:
-
-> Turn outstanding invoices into a workflow you can actually control.
-
-Primary CTA should be singular and obvious.
+Motion:
+- metrics count or settle once;
+- chart reveal once;
+- recent payment row slides in;
+- do not continuously animate finance values.
 
 ---
 
-## 7. Motion and Scroll Choreography
+# 15. Customer payment experience
 
-Motion is a major part of the new marketing direction, but it must explain product behavior.
+ID:
+`customer-payment`
 
-### Primary motion patterns
+Eyebrow:
 
-#### Sticky product storytelling
+> **A BETTER WAY TO GET PAID**
 
-Keep one Lumina product surface pinned while copy/state changes as the user scrolls.
+Headline:
 
-Use for:
+> **Give the customer one clear invoice and one clear next step.**
 
-- invoice-to-cash sequence;
-- collections;
-- reconciliation.
+Body:
 
-#### Object continuity
+> **Customers can open a public invoice without a Lumina account and pay online when your business payment setup is active.**
 
-Where feasible, keep one identifiable invoice/document/payment object present across multiple scroll beats so the visitor sees state transformation rather than unrelated screenshots.
+Visual:
+- public invoice;
+- amount due;
+- due date;
+- merchant identity;
+- `Pay ₦78,400 online` CTA;
+- payment confirmation state.
 
-#### Masked/revealed typography
+Motion:
+- invoice sheet enters as paper;
+- payment panel docks beside it;
+- confirmed state replaces CTA after a short demonstration.
 
-Section headings may reveal through masks/clips when entering major chapters.
-
-Use selectively; do not animate every heading identically.
-
-#### Layered product surfaces
-
-Product cards, payment events, messages, receipts, and dashboard panels may stack or slide into place as the financial trail evolves.
-
-#### Animated data
-
-Animate values/charts only when the change communicates the story:
-
-- overdue decreases;
-- paid amount increases;
-- matched state resolves;
-- dashboard totals update.
-
-Do not use fake metrics as visual decoration.
-
-#### Subtle parallax
-
-Use small depth differences for document sheets/background fields where it improves spatial composition.
-
-#### Scroll-linked progress
-
-A restrained line/progress indicator may represent the Payment Trail through a signature section.
-
-It must be secondary to the product itself.
-
-#### Section color transitions
-
-Move between warm canvas, white, soft sage, and soft blue to provide chapter rhythm.
-
-Avoid every section being enclosed in a separate rounded container.
+Do not show a customer portal.
 
 ---
 
-## 8. Motion Technology
+# 16. Trust and control
 
-Preferred implementation approach:
+ID:
+`trust`
 
-- Use **Motion** for standard component entrance/exit, hover, micro-interactions, and light in-view transitions.
-- Use **GSAP + ScrollTrigger** only for the signature pinned/scroll-linked sequences that genuinely need timeline control.
-- Do not rebuild ordinary UI animation in GSAP when CSS/Motion is sufficient.
-- Avoid large animation dependencies for effects that can be done with CSS.
+Headline:
 
-### Performance rules
+> **Financial clarity without becoming your bank.**
 
-- Animate transforms and opacity wherever possible.
-- Avoid scroll listeners that trigger React renders on every frame.
-- Lazy-load heavy visual sequences below the fold where appropriate.
-- Avoid large autoplay videos unless they have a clear benefit over live HTML/CSS product demonstrations.
-- Protect Core Web Vitals.
+Support:
 
----
+> **Lumina keeps invoice and payment operations connected while Paystack handles the payment flow and your team keeps role-scoped control.**
 
-## 9. Responsive Motion
+Use these real control statements:
 
-Desktop and mobile do not require effect parity.
+- **Provider-confirmed payment status**  
+  Payment state follows Paystack confirmation rather than optimistic UI state.
 
-### Desktop
+- **No business secret keys in the app**  
+  Businesses do not paste Paystack secret keys into Lumina.
 
-Can use:
+- **Masked payout context**  
+  Operational views avoid exposing full payout account details.
 
-- sticky/pinned sections;
-- layered windows;
-- lateral motion;
-- scroll-linked transformations;
-- richer product choreography.
+- **Role-scoped access and audit history**  
+  Team roles and audit logs keep sensitive actions accountable.
 
-### Tablet
-
-Reduce layer count and pinned duration.
-
-### Mobile
-
-Do not shrink the desktop choreography.
-
-Instead:
-
-- convert horizontal compositions to vertical sequences;
-- reduce or remove long pinned sections;
-- use short in-view transitions;
-- preserve object continuity through stacked states;
-- keep product text/data readable;
-- prioritize performance and touch scrolling.
-
-Mobile must remain polished even when it uses simpler motion.
+Presentation:
+- text-led;
+- structured rows or columns;
+- one small payment-setup/audit visual;
+- no central network hub;
+- no pseudo-security badges;
+- no invented certifications.
 
 ---
 
-## 10. Reduced Motion and Accessibility
+# 17. FAQ
 
-Every signature sequence must have a `prefers-reduced-motion` path.
+Keep current FAQ topics where still accurate.
 
-Reduced-motion mode should:
+Required questions include:
 
-- remove scrubbed/parallax motion;
-- show states directly or use short fades;
-- preserve all text/content;
-- preserve logical reading order;
-- never hide information behind animation completion.
+- Does Lumina hold my funds?
+- Do I provide my Paystack secret key?
+- How does Lumina know an invoice was paid?
+- What happens if a customer pays twice?
+- Can customers pay without an account?
+- Is Lumina accounting software?
+- Which country/currency is currently supported?
 
-Keyboard users and screen readers must receive content in sensible DOM order regardless of visual pinning.
-
----
-
-## 11. Product UI Inside Marketing
-
-Marketing visuals should be built from realistic Lumina interfaces, not generic fake dashboard art.
-
-Rules:
-
-- Product surfaces must reflect the actual/future approved domain model.
-- Use realistic demo data and label synthetic data where necessary.
-- Do not display impossible product capabilities as if already shipped.
-- It is acceptable for marketing compositions to use purpose-built product-demo components rather than literal screenshots if they accurately represent the product direction.
-- Keep customer-facing invoice/payment surfaces lighter and more document-like than internal operational views.
+Design:
+- simple separators;
+- open/close disclosure;
+- no large cards.
 
 ---
 
-## 12. Header / Navigation Direction
+# 18. Closing CTA
 
-Use a light header/navigation system.
+Use the single strongest brand field.
 
-Desktop:
+Background:
+- Brand Green `#245C46`
 
-- compact logo;
-- Product;
-- Solutions;
-- Resources when useful;
-- Pricing when real;
+Text:
+- white / warm white
+
+Optional accent:
+- small lime signal
+
+Headline:
+
+> **Turn outstanding invoices into a workflow you can control.**
+
+Support:
+
+> **Create your Lumina workspace and send your first professional invoice.**
+
+Primary:
+`Create account`
+
+Secondary:
+`Sign in`
+
+Do not repeat a detailed 3-step onboarding flow unless it remains visually simple.
+
+---
+
+# 19. Footer
+
+Light footer.
+
+- warm/off-white background;
+- brand;
+- short descriptor;
+- product anchors;
+- Trust;
+- FAQ;
 - Sign in;
-- one primary CTA.
+- Privacy;
+- Terms.
 
-Do not make the nav itself a visual spectacle.
-
-If Product uses an expanded panel, it should preview real areas such as:
-
-- Invoicing;
-- Collections;
-- Payments & reconciliation;
-- Customer portal;
-- Insights.
-
-Mobile should use a simple drawer/accordion and never depend on hover.
+Do not use a second giant CTA.
 
 ---
 
-## 13. Component and Layout Rules
+# 20. Section color rhythm
 
-Do:
+Recommended page rhythm:
 
-- use generous whitespace;
-- use product UI as visual proof;
-- vary section density and composition;
-- let certain sections be mostly typography and space;
-- use large screenshots/product compositions without trapping all of them in identical cards;
-- use subtle paper/document metaphors where appropriate to invoicing.
+```text
+Header                  warm transparent / white
+Hero                    Canvas Warm
+Audience                Canvas Warm
+Invoice → Cash          White
+Invoicing               Soft Sage
+Reconciliation          Canvas Warm
+Visibility              White
+Customer payment        Soft Blue
+Trust                   Canvas Warm
+FAQ                     White
+Closing CTA             Brand Green
+Footer                   Canvas Warm
+```
 
-Do not:
+This is directional but should stay close.
 
-- create one reusable `FeatureCard` and build the whole homepage from it;
-- wrap every section in a rounded rectangle;
-- use the same fade-up animation everywhere;
-- use lime borders around every element;
-- use large gradients merely to make empty areas look designed;
-- use irrelevant stock imagery.
-
----
-
-## 14. Implementation Sequence for the Marketing Redesign
-
-This work can run as its own implementation task and does **not** require another research/planning gate.
-
-### Pass 1 — Foundation
-
-- Replace dark-first marketing tokens with the new light system.
-- Rework page background and typography.
-- Rebuild header/navigation.
-- Rebuild hero.
-- Establish new section spacing/rhythm.
-- Preserve existing SEO, structured data, routes, signup/waitlist behavior, and analytics behavior.
-
-### Pass 2 — Signature Payment Trail
-
-- Build the invoice-to-cash scroll sequence.
-- Use real Lumina demo states.
-- Add reduced-motion behavior.
-- Add mobile alternative choreography.
-
-### Pass 3 — Product Chapters
-
-- Collections section.
-- Reconciliation section.
-- Customer/payment experience.
-- Visibility/insights section.
-- Trust/control section.
-
-### Pass 4 — Polish
-
-- Responsive QA.
-- Scroll timing.
-- Typography refinement.
-- State transitions.
-- performance profiling;
-- reduced-motion QA;
-- accessibility QA;
-- final browser screenshot review.
-
-Do not wait for all future product features to exist before redesigning the marketing site. Where a future section would misrepresent unshipped functionality, either omit it, label it accurately, or use currently implemented capability.
+Do not alternate colors mechanically every section.
+Use transitions to create chapters.
 
 ---
 
-## 15. Browser QA Requirements
+# 21. Motion system
 
-Codex should inspect at minimum:
+Motion should be noticeable but authored.
 
-- 1440px desktop;
-- 1280px laptop;
-- 768px tablet;
-- 390px mobile.
+## Level 1 — micro
 
-Review:
+Use CSS:
+- hover;
+- focus;
+- button arrow;
+- nav dropdown;
+- tab state;
+- small product control response.
 
-- hero hierarchy;
-- readability on bright/light backgrounds;
-- product UI legibility;
-- sticky section start/end behavior;
-- scroll-jank;
-- overlap/z-index problems;
-- content clipping;
-- long-copy wraps;
-- CTA visibility;
-- motion timing;
-- reduced-motion fallback;
-- keyboard navigation;
-- mobile scroll feel;
-- Lighthouse/Core Web Vitals regressions where practical.
+Duration:
+120–220ms.
 
-Take browser screenshots at important breakpoints and compare the overall quality against the reference set rather than comparing pixel-for-pixel.
+## Level 2 — section entrance
+
+Use CSS or GSAP:
+- masked/clip heading;
+- 12–24px translate;
+- product layer settling;
+- opacity.
+
+Duration:
+350–700ms.
+
+Do not apply the same fade-up utility to every element.
+
+## Level 3 — signature scroll
+
+Use GSAP ScrollTrigger only for:
+- Invoice → Cash;
+- optionally one small reconciliation/dashboard transition if genuinely necessary.
+
+Prefer one excellent pinned story over several average pinned sections.
 
 ---
 
-## 16. Definition of Done
+# 22. Performance constraints
 
-The redesign is successful when:
+- no autoplay background video as primary product proof;
+- no large canvas/WebGL;
+- no Three.js;
+- no 3D library;
+- no animation library beyond existing GSAP unless explicitly approved;
+- lazy-load below-fold heavy client components if useful;
+- no React state update per animation frame;
+- transforms/opacity first;
+- clean up ScrollTriggers on unmount;
+- refresh ScrollTrigger on meaningful resize/layout changes;
+- avoid CLS from animation setup.
 
-- Lumina no longer reads as a dark developer-tool/crypto-style fintech brand;
-- the site feels welcoming to business and finance customers;
-- the first viewport clearly explains the product outcome;
-- real product UI appears early and remains central to the story;
-- scrolling visibly demonstrates the invoice-to-cash lifecycle;
-- motion feels authored rather than templated;
-- mobile remains deliberate and performant;
-- the website and authenticated product feel related without being visually identical;
-- no existing signup, SEO, routing, or product-integrity behavior regresses.
+Goal:
+marketing should still feel fast on a midrange mobile device.
+
+---
+
+# 23. Responsive rules
+
+## Desktop >= 1200
+
+Allowed:
+- overlap;
+- wide product compositions;
+- pinned signature sequence;
+- large type;
+- product layers.
+
+## Tablet 768–1199
+
+- reduce overlap;
+- reduce pin duration or disable if unstable;
+- retain strong visual hierarchy;
+- make product surfaces readable.
+
+## Mobile < 768
+
+- no desktop pin choreography;
+- one column;
+- product UI simplified;
+- no tiny dashboard replicas;
+- avoid horizontal scroll except intentional small control rails;
+- 44px+ controls;
+- product visuals should use cropped/selected information rather than shrinking entire desktop screens.
+
+---
+
+# 24. Accessibility
+
+- semantic DOM order must match reading order;
+- every interactive scenario must work by keyboard;
+- header menus preserve current accessibility;
+- reduced-motion path is mandatory;
+- no content should require animation completion;
+- color is never the only status signal;
+- maintain AA contrast for copy/controls;
+- decorative animated elements use `aria-hidden`;
+- product demo regions need useful labels but should not overwhelm screen readers with every decorative value.
+
+---
+
+# 25. SEO / functional constraints
+
+Preserve:
+
+- metadata;
+- structured data;
+- sitemap;
+- robots;
+- legal pages;
+- sign-in URL handling;
+- create-account URL handling;
+- marketing anchor helpers;
+- existing environment-aware root/app URL behavior.
+
+Do not change application/backend contracts for the marketing redesign.
+
+---
+
+# 26. Reference policy
+
+Mandatory research before coding:
+
+Read:
+- `10_MARKETING_REFERENCE_LIBRARY.md`.
+
+At minimum inspect:
+- Tola;
+- Acctual;
+- Column;
+- Stripe 2026;
+- Lasso;
+- PayFlexi Pinterest;
+- merged Lumina app;
+- Stripe/Mercury/Airwallex Mobbin invoice flows.
+
+For each major section, follow the explicit reference-to-section mapping in `10`.
+
+Do not browse randomly after that unless a concrete implementation problem remains.
+
+---
+
+# 27. Implementation order
+
+One PR.
+
+```text
+MKT-01A  Foundation + token migration
+MKT-01B  Header + footer + global shell
+MKT-01C  Hero
+MKT-01D  Signature Invoice → Cash
+MKT-01E  Invoicing chapter
+MKT-01F  Reconciliation explorer
+MKT-01G  Receivables visibility
+MKT-01H  Customer payment
+MKT-01I  Trust + FAQ + closing CTA
+MKT-01J  Legal migration + dead CSS cleanup
+MKT-01K  Responsive / reduced-motion / accessibility QA
+MKT-01L  Browser polish and PR
+```
+
+Do not stop after MKT-01C and call the redesign complete.
+
+---
+
+# 28. Definition of done
+
+The redesign is complete only when:
+
+- marketing no longer renders the old dark system;
+- `color-scheme: dark` is gone from marketing;
+- hero clearly explains invoicing/receivables;
+- an invoice is the primary visual object;
+- the signature lifecycle is genuinely scroll-authored on desktop;
+- mobile has its own deliberate story;
+- merged app design and marketing visuals feel related;
+- T020 invoice quality is represented;
+- no unshipped feature is presented as live;
+- old orbit/network/topology visual language is removed;
+- no generic repeated feature-card homepage remains;
+- legal pages are light;
+- header/footer are light;
+- reduced motion works;
+- browser QA is completed at 1440 / 1280 / 768 / 390;
+- lint/typecheck/tests/build pass;
+- screenshots are reviewed and at least one polish pass follows visual inspection.

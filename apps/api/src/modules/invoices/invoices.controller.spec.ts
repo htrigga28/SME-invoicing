@@ -15,12 +15,13 @@ describe("InvoicesController RBAC metadata", () => {
     expect(rolesFor("getInvoice")).toEqual(expectedRoles);
   });
 
-  it("excludes viewers from invoice create, edit, and send", () => {
+  it("excludes viewers from invoice create, edit, send, and duplicate", () => {
     const expectedMutationRoles = ["owner", "admin", "accountant"];
 
     expect(rolesFor("createInvoice")).toEqual(expectedMutationRoles);
     expect(rolesFor("updateInvoice")).toEqual(expectedMutationRoles);
     expect(rolesFor("sendInvoice")).toEqual(expectedMutationRoles);
+    expect(rolesFor("duplicateInvoice")).toEqual(expectedMutationRoles);
   });
 
   it("restricts cancel and void to owner and admin", () => {

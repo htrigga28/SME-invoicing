@@ -8,9 +8,14 @@ import type { InvoiceDetailResponse } from "./types";
 
 vi.mock("./invoices-api", () => ({
   cancelInvoice: vi.fn(),
+  duplicateInvoice: vi.fn(),
   getInvoice: vi.fn(),
   sendInvoice: vi.fn(),
   voidInvoice: vi.fn()
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() })
 }));
 
 const invoiceResponse = {
@@ -32,6 +37,7 @@ const invoiceResponse = {
     currency: "NGN",
     issueDate: "2026-06-01",
     dueDate: "2026-06-15",
+    customerReference: "PO-2026-042",
     notes: "Payment due in 14 days.",
     publicToken: "public-token",
     subtotalKobo: 100000,
@@ -119,6 +125,8 @@ describe("InvoiceDetailContent public URL", () => {
     await waitFor(() => expect(screen.getByText("Public URL copied.")).toBeInTheDocument());
     expect(screen.getByText(/Payment enabled/)).toBeInTheDocument();
     expect(screen.getByText("Not paid yet")).toBeInTheDocument();
+    expect(screen.getByText(/invoice sent/)).toBeInTheDocument();
+    expect(screen.queryByText(/invoice_sent/)).not.toBeInTheDocument();
   });
 
   it("shows webhook-confirmed paid amount, balance, and paid date", async () => {
@@ -140,7 +148,7 @@ describe("InvoiceDetailContent public URL", () => {
 
     render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
 
-    expect(await screen.findByText("Paid")).toBeInTheDocument();
+    expect(await screen.findAllByText("Paid")).not.toHaveLength(0);
     expect(screen.getAllByText("NGN 975.00").length).toBeGreaterThan(0);
     expect(screen.getByText("NGN 0.00")).toBeInTheDocument();
     expect(screen.getByText("30 Jun 2026")).toBeInTheDocument();

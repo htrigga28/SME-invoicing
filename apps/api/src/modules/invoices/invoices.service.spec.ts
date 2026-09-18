@@ -4,6 +4,7 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common";
 
+import { MAX_KOBO } from "../../common/money-limits";
 import {
   auditLogs,
   payments,
@@ -35,7 +36,9 @@ type ServiceInternals = {
   findLineItems: jest.Mock;
   findPaymentAvailabilityAccount: jest.Mock;
   findPublicInvoice: jest.Mock;
+  requireInvoice: jest.Mock;
   requireActivePaymentAccount: jest.Mock;
+  createInvoice: jest.Mock;
 };
 
 const activePaymentAccount = {
@@ -59,6 +62,7 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     currency: "NGN",
     issueDate: "2026-06-01",
     dueDate: "2099-07-15",
+    customerReference: null,
     notes: "Thank you.",
     subtotalKobo: 100000,
     discountKobo: 10000,
@@ -231,12 +235,98 @@ describe("InvoicesService validation helpers", () => {
       service.normalizeLineItems([{ description: " ", quantity: 1, unitPriceKobo: 1000 }])
     ).toThrow(BadRequestException);
   });
+
+  it("accepts the money ceiling and rejects line and subtotal overflow", () => {
+    const service = setup();
+
+    expect(
+      service.calculateAndValidateTotals(
+        [{ description: "Maximum", quantity: 1, unitPriceKobo: MAX_KOBO }],
+        { discountKobo: 0, taxKobo: 0 }
+      ).totalKobo
+    ).toBe(MAX_KOBO);
+    expect(() =>
+      service.calculateAndValidateTotals(
+        [{ description: "Overflow", quantity: 2, unitPriceKobo: MAX_KOBO }],
+        { discountKobo: 0, taxKobo: 0 }
+      )
+    ).toThrow(BadRequestException);
+    expect(() =>
+      service.calculateAndValidateTotals(
+        [
+          { description: "First", quantity: 1, unitPriceKobo: MAX_KOBO },
+          { description: "Second", quantity: 1, unitPriceKobo: 1 }
+        ],
+        { discountKobo: 0, taxKobo: 0 }
+      )
+    ).toThrow(BadRequestException);
+  });
+});
+
+describe("InvoicesService duplication", () => {
+  it("copies only allow-listed snapshots into a new draft request", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-09-17T10:00:00.000Z"));
+    const service = setup();
+    const source = createInvoice({
+      issueDate: "2026-06-01",
+      dueDate: "2026-06-15",
+      customerReference: "PO-ORIGINAL",
+      discountKobo: 500,
+      taxKobo: 700
+    });
+    service.requireInvoice = jest
+      .fn()
+      .mockResolvedValue({ invoice: source, customer: createCustomer() });
+    service.findLineItems = jest.fn().mockResolvedValue([createLineItem()]);
+    service.createInvoice = jest.fn().mockResolvedValue({ invoice: { id: "new-invoice" } });
+    const context = { activeOrganisation: { id: "org-1" }, user: { id: "user-1" } } as never;
+
+    await expect(
+      (service as unknown as InvoicesService).duplicateInvoice(context, source.id)
+    ).resolves.toEqual({ invoice: { id: "new-invoice" } });
+
+    expect(service.createInvoice).toHaveBeenCalledWith(
+      context,
+      expect.objectContaining({
+        customerId: source.customerId,
+        issueDate: "2026-09-17",
+        dueDate: "2026-10-01",
+        notes: source.notes,
+        discountKobo: 500,
+        taxKobo: 700,
+        lineItems: [{ description: "Design retainer", quantity: 1, unitPriceKobo: 100000 }]
+      })
+    );
+    expect(service.createInvoice.mock.calls[0][1]).not.toHaveProperty("customerReference");
+    jest.useRealTimers();
+  });
+
+  it("rejects duplication for an archived customer", async () => {
+    const service = setup();
+    service.requireInvoice = jest.fn().mockResolvedValue({
+      invoice: createInvoice(),
+      customer: createCustomer({ archivedAt: now })
+    });
+    service.createInvoice = jest.fn();
+    const context = { activeOrganisation: { id: "org-1" }, user: { id: "user-1" } } as never;
+
+    await expect(
+      (service as unknown as InvoicesService).duplicateInvoice(context, "invoice-1")
+    ).rejects.toThrow(
+      "Archived customers cannot be used for duplicated invoices. Reactivate the customer or choose an active customer."
+    );
+    expect(service.createInvoice).not.toHaveBeenCalled();
+  });
 });
 
 describe("InvoicesService public invoice access", () => {
   it("returns safe customer-facing public invoice data for a valid token", async () => {
     const service = setup();
-    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    service.findPublicInvoice = jest
+      .fn()
+      .mockResolvedValue(
+        createPublicInvoiceRow(createInvoice({ customerReference: "PO-2026-042" }))
+      );
     service.findLineItems = jest.fn().mockResolvedValue([createLineItem()]);
     service.findPaymentAvailabilityAccount = jest.fn().mockResolvedValue(activePaymentAccount);
 
@@ -245,7 +335,8 @@ describe("InvoicesService public invoice access", () => {
     expect(response.invoice).toMatchObject({
       invoiceNumber: "INV-000001",
       status: "sent",
-      totalKobo: 97500
+      totalKobo: 97500,
+      customerReference: "PO-2026-042"
     });
     expect(response.business).toMatchObject({ businessName: "Akin & Co Creative Services" });
     expect(response.customer).toMatchObject({ name: "Lagos Bright Prints" });

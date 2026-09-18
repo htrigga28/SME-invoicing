@@ -2,13 +2,36 @@ const DEFAULT_SITE_URL = "http://localhost:3002";
 const DEFAULT_APP_URL = "http://localhost:3000";
 
 export function getSiteUrl() {
-  return trimTrailingSlash(process.env.NEXT_PUBLIC_SITE_URL ?? DEFAULT_SITE_URL);
+  return getRequiredPublicUrl(
+    "NEXT_PUBLIC_SITE_URL",
+    process.env.NEXT_PUBLIC_SITE_URL,
+    DEFAULT_SITE_URL
+  );
 }
 
 export function getAppUrl() {
-  return trimTrailingSlash(process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL);
+  return getRequiredPublicUrl(
+    "NEXT_PUBLIC_APP_URL",
+    process.env.NEXT_PUBLIC_APP_URL,
+    DEFAULT_APP_URL
+  );
 }
 
+function getRequiredPublicUrl(
+  name: string,
+  value: string | undefined,
+  developmentFallback: string
+) {
+  if (value) {
+    return trimTrailingSlash(value);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`${name} is required in production.`);
+  }
+
+  return developmentFallback;
+}
 export function getAppLoginUrl() {
   return `${getAppUrl()}/login`;
 }

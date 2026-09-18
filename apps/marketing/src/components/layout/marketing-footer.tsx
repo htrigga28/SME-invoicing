@@ -1,10 +1,8 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { footer, navigation } from "@/content/site-copy";
 import { getAppLoginUrl, getMarketingAnchorHref } from "@/lib/urls";
 
@@ -15,17 +13,9 @@ export function MarketingFooter() {
 
   return (
     <footer className="marketing-footer">
-      <div className="shell-container footer-lead">
-        <div>
-          <span className="data-label">THE PAYMENT TRAIL</span>
-          <h2>{footer.heading}</h2>
-        </div>
-        <SignupAnchor>Create account</SignupAnchor>
-      </div>
-
       <div className="shell-container footer-grid">
         <div className="footer-brand">
-          <BrandLogo className="footer-logo" />
+          <BrandLogo />
           <p>{footer.descriptor}</p>
           <span className="footer-boundary">{footer.boundaryNote}</span>
         </div>
@@ -42,7 +32,7 @@ export function MarketingFooter() {
               href: resolveHref(item.href),
               label: item.label
             })),
-            { href: getAppLoginUrl(), label: "Sign In" }
+            { href: getAppLoginUrl(), label: "Sign in" }
           ]}
           title="Explore"
         />
@@ -56,9 +46,7 @@ export function MarketingFooter() {
       </div>
       <div className="shell-container footer-bottom">
         <p>&copy; {currentYear} Lumina</p>
-        <a href={resolveHref("#get-started")}>
-          Get started <ArrowUpRight aria-hidden="true" />
-        </a>
+        <p>Built for NGN invoicing and Paystack payment flows.</p>
       </div>
     </footer>
   );

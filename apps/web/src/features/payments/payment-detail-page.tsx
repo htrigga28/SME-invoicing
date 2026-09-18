@@ -166,7 +166,7 @@ export function PaymentDetailContent({
           title={payment.providerReference}
         />
         <Link
-          className="self-start rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+          className="self-start rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] transition duration-150 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
           href="/payments"
         >
           Back to payments
@@ -174,7 +174,7 @@ export function PaymentDetailContent({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
           <div className="flex flex-wrap gap-2">
             <AttemptStateBadge state={payment.attemptState} />
             {shouldShowDetailReconciliation(payment) ? (
@@ -186,7 +186,7 @@ export function PaymentDetailContent({
             tone={getAttemptPanelTone(payment)}
           />
           {payment.reviewDetails ? (
-            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-3 text-sm text-[var(--warning)]">
               <p className="font-semibold">Review details</p>
               <p className="mt-1">
                 Expected: {formatReviewAmount(payment.reviewDetails.expectedAmountKobo)} · Received:{" "}
@@ -195,7 +195,7 @@ export function PaymentDetailContent({
             </div>
           ) : null}
           {financialSummary?.hasOverpayment ? (
-            <div className="mt-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+            <div className="mt-4 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-3 text-sm text-[var(--warning)]">
               <p className="font-semibold">Overpayment detected</p>
               <p className="mt-1">
                 Customer payments exceed the invoice total by{" "}
@@ -203,7 +203,7 @@ export function PaymentDetailContent({
               </p>
               {canRefundOverpayment ? (
                 <button
-                  className="mt-3 rounded-md bg-orange-800 px-3 py-2 text-sm font-semibold text-white"
+                  className="mt-3 rounded-[var(--radius-control)] bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-[var(--accent-foreground)] transition duration-150 hover:bg-[var(--accent-hover)]"
                   onClick={() => setRefundDialogOpen(true)}
                   type="button"
                 >
@@ -228,13 +228,15 @@ export function PaymentDetailContent({
           </dl>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Settlement account used</h2>
-          <p className="mt-2 text-sm font-medium text-slate-900">
+        <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Settlement account used
+          </h2>
+          <p className="mt-2 text-sm font-medium text-[var(--text-primary)]">
             {formatSettlementAccount(settlementAccount)}
           </p>
           {settlementAccountContext ? (
-            <span className="mt-3 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+            <span className="mt-3 inline-flex rounded-full bg-[var(--neutral-state-muted)] px-2.5 py-1 text-xs font-medium text-[var(--neutral-state)]">
               {settlementAccountContext.isCurrentActiveAccount
                 ? "Current payout account"
                 : "Historical account"}
@@ -253,7 +255,7 @@ export function PaymentDetailContent({
               />
             </dl>
           ) : (
-            <p className="mt-3 text-sm text-amber-800">
+            <p className="mt-3 text-sm text-[var(--warning)]">
               No matching stored payout account was found for this payment.
             </p>
           )}
@@ -261,12 +263,15 @@ export function PaymentDetailContent({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Linked invoice</h2>
+        <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Linked invoice</h2>
           {invoice ? (
             <div className="mt-4 space-y-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <Link className="font-medium text-teal-800" href={`/invoices/${invoice.id}`}>
+                <Link
+                  className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]"
+                  href={`/invoices/${invoice.id}`}
+                >
                   {invoice.invoiceNumber}
                 </Link>
                 <InvoiceStatusBadge status={invoice.status} />
@@ -288,46 +293,55 @@ export function PaymentDetailContent({
               ) : null}
             </div>
           ) : (
-            <p className="mt-3 text-sm text-slate-600">No invoice is linked to this payment.</p>
+            <p className="mt-3 text-sm text-[var(--text-secondary)]">
+              No invoice is linked to this payment.
+            </p>
           )}
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-slate-950">Linked customer</h2>
+        <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Linked customer</h2>
           {customer ? (
             <div className="mt-4 space-y-3 text-sm">
-              <Link className="font-medium text-teal-800" href={`/customers/${customer.id}`}>
+              <Link
+                className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]"
+                href={`/customers/${customer.id}`}
+              >
                 {customer.name}
               </Link>
               <DetailItem label="Email" value={customer.email} />
               <DetailItem label="Phone" value={customer.phone ?? "Not provided"} />
             </div>
           ) : (
-            <p className="mt-3 text-sm text-slate-600">No customer is linked to this payment.</p>
+            <p className="mt-3 text-sm text-[var(--text-secondary)]">
+              No customer is linked to this payment.
+            </p>
           )}
         </section>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-slate-950">Event timeline</h2>
+      <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Event timeline</h2>
         {events.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-600">No webhook events are linked yet.</p>
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">
+            No webhook events are linked yet.
+          </p>
         ) : (
-          <div className="mt-4 divide-y divide-slate-100">
+          <div className="mt-4 divide-y divide-[var(--border-subtle)]">
             {events.map((event) => (
               <article className="py-3 text-sm" key={event.id}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="font-medium text-slate-950">{event.eventType}</p>
-                    <p className="text-slate-600">
+                    <p className="font-medium text-[var(--text-primary)]">{event.eventType}</p>
+                    <p className="text-[var(--text-secondary)]">
                       {event.processed ? "Processed" : "Unprocessed"} •{" "}
                       {event.providerReference ?? "No reference"}
                     </p>
                   </div>
-                  <span className="text-slate-500">{formatDateTime(event.createdAt)}</span>
+                  <span className="text-[var(--text-muted)]">{formatDateTime(event.createdAt)}</span>
                 </div>
                 {event.errorMessage ? (
-                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+                  <p className="mt-2 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-2 text-[var(--warning)]">
                     {event.errorMessage}
                   </p>
                 ) : null}
@@ -337,41 +351,54 @@ export function PaymentDetailContent({
         )}
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-slate-950">Receipt</h2>
+      <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Receipt</h2>
         {receipt ? (
           <div className="mt-4 space-y-3 text-sm">
-            <Link className="font-medium text-teal-800" href={`/receipts/${receipt.id}`}>
+            <Link
+              className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]"
+              href={`/receipts/${receipt.id}`}
+            >
               {receipt.receiptNumber}
             </Link>
-            <p className="text-slate-600">Issued {formatDateTime(receipt.issuedAt)}</p>
-            <Link className="font-medium text-teal-800" href={receipt.publicUrl} target="_blank">
+            <p className="text-[var(--text-secondary)]">Issued {formatDateTime(receipt.issuedAt)}</p>
+            <Link
+              className="font-medium text-[var(--accent)] hover:text-[var(--accent-hover)]"
+              href={receipt.publicUrl}
+              target="_blank"
+            >
               Open public receipt
             </Link>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-slate-600">
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">
             {response.receiptPlaceholder ?? "No receipt is linked to this payment."}
           </p>
         )}
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-slate-950">Refunds</h2>
+      <section className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Refunds</h2>
         {refunds.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-600">No refunds are linked to this payment.</p>
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">
+            No refunds are linked to this payment.
+          </p>
         ) : (
-          <div className="mt-4 divide-y divide-slate-100">
+          <div className="mt-4 divide-y divide-[var(--border-subtle)]">
             {refunds.map((refund) => (
               <article className="py-3 text-sm" key={refund.id}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="font-medium text-slate-950">{formatMoney(refund.amountKobo)}</p>
-                    <p className="text-slate-600">
+                    <p className="font-medium text-[var(--text-primary)]">
+                      {formatMoney(refund.amountKobo)}
+                    </p>
+                    <p className="text-[var(--text-secondary)]">
                       {refund.status.replaceAll("_", " ")} • {refund.reason}
                     </p>
                   </div>
-                  <span className="text-slate-500">{formatDateTime(refund.createdAt)}</span>
+                  <span className="text-[var(--text-muted)]">
+                    {formatDateTime(refund.createdAt)}
+                  </span>
                 </div>
               </article>
             ))}
@@ -390,9 +417,9 @@ export function PaymentDetailContent({
         title="Resolve overpayment"
       >
         <label className="block text-sm">
-          <span className="font-medium text-slate-700">Reason</span>
+          <span className="font-medium text-[var(--text-secondary)]">Reason</span>
           <textarea
-            className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2"
+            className="mt-1 min-h-24 w-full rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)]"
             onChange={(event) => setRefundReason(event.target.value)}
             placeholder="Duplicate customer payment"
             value={refundReason}
@@ -464,8 +491,10 @@ function formatReviewAmount(value: number | null) {
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 break-words text-sm text-slate-900">{value}</dd>
+      <dt className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words text-sm text-[var(--text-primary)]">{value}</dd>
     </div>
   );
 }

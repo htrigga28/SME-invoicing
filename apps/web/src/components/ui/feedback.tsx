@@ -77,11 +77,13 @@ export function EmptyState({
 
 export function ErrorState({
   className,
+  detail,
   message,
   onRetry,
   title = "Something went wrong"
 }: {
   className?: string;
+  detail?: string;
   message: string;
   onRetry?: () => void;
   title?: string;
@@ -89,23 +91,27 @@ export function ErrorState({
   return (
     <section
       className={cn(
-        "rounded-[var(--radius-card)] border border-[var(--danger-border)] bg-[var(--danger-muted)] p-6 text-sm text-[var(--danger)]",
+        "rounded-[var(--radius-card)] border border-[var(--danger-border)] bg-[var(--danger-muted)] p-6 text-[var(--danger)] sm:p-7",
         className
       )}
+      role="alert"
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex gap-3">
-          <AlertCircle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
-          <div>
-            <h2 className="font-semibold text-[var(--text-primary)]">{title}</h2>
-            <p className="mt-1 leading-6">{message}</p>
-          </div>
+      <div className="flex items-start gap-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--danger-border)] bg-[var(--surface-card)]">
+          <AlertCircle aria-hidden="true" className="h-5 w-5" />
         </div>
-        {onRetry ? (
-          <Button onClick={onRetry} size="sm" type="button" variant="outline">
-            Retry
-          </Button>
-        ) : null}
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6">{message}</p>
+          {detail ? <p className="mt-2 max-w-2xl text-sm leading-6">{detail}</p> : null}
+          {onRetry ? (
+            <div className="mt-4">
+              <Button onClick={onRetry} size="sm" type="button" variant="outline">
+                Try again
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </section>
   );

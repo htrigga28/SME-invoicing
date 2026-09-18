@@ -6,7 +6,7 @@ export function DisplayMetric({ className, ...props }: HTMLAttributes<HTMLParagr
   return (
     <p
       className={cn(
-        "font-mono text-4xl font-semibold leading-none text-[var(--text-primary)] tabular-nums md:text-5xl",
+        "text-4xl font-semibold leading-none tracking-tight text-[var(--text-primary)] tabular-nums md:text-5xl",
         className
       )}
       {...props}
@@ -63,9 +63,6 @@ export function ReferenceText({ className, ...props }: HTMLAttributes<HTMLElemen
 
 export function MoneyText({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (
-    <span
-      className={cn("font-mono font-semibold text-[var(--text-primary)] tabular-nums", className)}
-      {...props}
-    />
+    <span className={cn("font-semibold text-[var(--text-primary)] tabular-nums", className)} {...props} />
   );
 }

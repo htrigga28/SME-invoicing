@@ -3,18 +3,14 @@ import { DEFAULT_CURRENCY, formatKoboToNaira } from "@sme-invoicing/shared";
 import { LinkButton } from "@/components/ui/button";
 import { SectionCard } from "@/components/ui/card";
 import { MoneyText } from "@/components/ui/typography";
+import { BrandLogo } from "@/components/brand/brand-logo";
 
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)]">
       <header className="border-b border-[var(--border-subtle)] bg-[var(--topbar-background)] backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
-          <span className="flex items-center gap-3 text-sm font-semibold text-[var(--text-primary)]">
-            <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-border-subtle)] bg-[var(--accent-muted)] text-xs font-black text-[var(--accent)]">
-              SI
-            </span>
-            SME Invoicing
-          </span>
+          <BrandLogo />
           <LinkButton href="/login" size="sm" variant="secondary">
             Login
           </LinkButton>
@@ -26,7 +22,7 @@ export default function HomePage() {
             Financial operations workspace
           </p>
           <h1 className="mt-3 text-4xl font-semibold tracking-normal text-[var(--text-primary)] sm:text-5xl">
-            SME Invoice & Payment Reconciliation Platform
+            Invoice payment clarity for Nigerian SMEs
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--text-secondary)]">
             Create invoices, reconcile Paystack payments, issue receipts, and export operational

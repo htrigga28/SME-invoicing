@@ -1,24 +1,29 @@
 ---
-name: Lumina Marketing v2
-description: A light editorial-fintech expression of the Payment Trail for invoicing and receivables.
+name: Lumina Marketing — Editorial Receivables
+description: A light, product-led, document-led marketing system for invoicing and receivables.
 colors:
-  canvas: "#F7F7F2"
+  canvas: "#F6F7F4"
+  canvas-warm: "#FAFAF7"
   paper: "#FFFFFF"
-  sage: "#E7EFE6"
-  blue-soft: "#E9F1F7"
+  surface-soft: "#F0F2EF"
+  sage: "#EAF3ED"
+  blue-soft: "#EAF2F8"
   ink: "#17211C"
-  ink-muted: "#68746D"
-  brand: "#275C46"
-  signal: "#B7E56B"
-  review: "#D89B3C"
-  exception: "#C85D57"
+  ink-secondary: "#4F5F56"
+  ink-muted: "#768078"
+  brand: "#245C46"
+  brand-hover: "#1B4A38"
+  signal: "#C1FF72"
+  success: "#237A57"
+  warning: "#956800"
+  danger: "#B54747"
 typography:
   display:
     fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "clamp(3.25rem, 8vw, 6rem)"
+    fontSize: "clamp(3.4rem, 7.5vw, 7rem)"
     fontWeight: 620
     lineHeight: 0.94
-    letterSpacing: "-0.035em"
+    letterSpacing: "-0.03em"
   body:
     fontFamily: "Hanken Grotesk, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1rem"
@@ -29,233 +34,325 @@ typography:
     fontSize: "0.75rem"
     fontWeight: 600
     lineHeight: 1.4
-rounded:
-  compact: "9px"
-  navigation: "10px"
-  control: "12px"
-  floating: "14px"
-  surface: "16px"
-  pill: "999px"
-spacing:
-  compact: "8px"
-  control: "12px"
-  section: "clamp(88px, 11vw, 168px)"
-components:
-  button-primary:
-    backgroundColor: "{colors.signal}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.control}"
-    padding: "12px 20px"
-  product-surface:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.surface}"
-    padding: "16px"
 ---
 
-# Design System: Lumina Marketing v2
+# Lumina Marketing Design System
 
 ## Authority
 
-The canonical marketing redesign brief is:
+Read these before changing the marketing site:
 
-`docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`
+1. `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`
+2. `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
+3. `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
+4. `docs/lumina-v2/12_MARKETING_REDESIGN_CODEX_PROMPT.md`
+5. `docs/lumina-v2/13_MARKETING_VISUAL_QA_SCORECARD.md`
 
-Read that document before modifying the marketing homepage, motion system, visual tokens, product storytelling, or responsive choreography.
+If this file conflicts with those, `05_MARKETING_SITE_REDESIGN.md` wins for art direction and `12_MARKETING_REDESIGN_CODEX_PROMPT.md` wins for execution.
 
-If this file conflicts with `05_MARKETING_SITE_REDESIGN.md`, the v2 redesign brief wins.
-
-The previous dark graphite + neon-lime marketing world is **SUPERSEDED**.
+The old dark graphite + neon-lime marketing world is **SUPERSEDED**.
 
 ---
 
-## Creative North Star — The Payment Trail, Reframed
+# Creative North Star
 
-The Payment Trail remains the creative idea, but it is now expressed as a light, product-led receivables story.
+Working direction:
 
-The visitor should see an invoice move through:
+> **Editorial Receivables**
+
+Lumina marketing should look like the premium editorial expression of the real Lumina application.
+
+The primary visual object is the **invoice/document**.
+
+The central story is:
 
 ```text
-Create
-→ Send
-→ Collect
-→ Pay
-→ Reconcile
-→ Know
+CREATE
+→ SHARE
+→ PAY
+→ VERIFY
+→ MATCH
+→ KNOW
 ```
 
-The page should demonstrate that transformation while the visitor scrolls instead of presenting disconnected feature cards.
-
-The site should feel:
-
-- inviting;
-- financially trustworthy;
-- modern;
-- editorial;
-- product-specific;
-- operational;
-- suitable for both growing businesses and finance teams.
-
-It should **not** feel like crypto software, developer infrastructure, or a neon fintech dashboard.
+This is a product lifecycle, not a decorative line diagram.
 
 ---
 
-## Color System
+# Relationship to the product app
 
-Light surfaces dominate.
+The authenticated app is:
+- calm;
+- operational;
+- compact;
+- low-motion.
 
-- **Canvas** (`#F7F7F2`): warm neutral page field.
-- **Paper** (`#FFFFFF`): product/document surfaces.
-- **Soft Sage** (`#E7EFE6`): section rhythm and calm finance tone.
-- **Soft Blue** (`#E9F1F7`): secondary section field.
-- **Ink** (`#17211C`): primary type.
-- **Muted Ink** (`#68746D`): secondary type.
-- **Brand Green** (`#275C46`): restrained financial brand color.
-- **Action Lime** (`#B7E56B`): primary action and selective active-state emphasis.
-- **Review Amber** (`#D89B3C`) and **Exception Coral** (`#C85D57`): semantic states.
+Marketing is:
+- spacious;
+- narrative;
+- kinetic;
+- product-demonstrative.
+
+Shared:
+- warm light canvas;
+- white working surfaces;
+- deep green;
+- dark ink;
+- Hanken Grotesk;
+- real financial state;
+- restrained semantic colors.
+
+Marketing may use:
+- larger typography;
+- more overlap;
+- more paper/document layering;
+- more scroll motion;
+- larger chapter color changes.
+
+Marketing must not invent a different fake product UI.
+
+---
+
+# Color
+
+## Base
+
+- Canvas: `#F6F7F4`
+- Canvas Warm: `#FAFAF7`
+- Paper: `#FFFFFF`
+- Surface Soft: `#F0F2EF`
+- Sage: `#EAF3ED`
+- Soft Blue: `#EAF2F8`
+
+## Text
+
+- Ink: `#17211C`
+- Secondary: `#4F5F56`
+- Muted: `#768078`
+
+## Brand
+
+- Primary Green: `#245C46`
+- Hover Green: `#1B4A38`
+- Signal Lime: `#C1FF72`
+
+## State
+
+- Success: `#237A57`
+- Warning: `#956800`
+- Danger: `#B54747`
+- Info: `#2F6F9F`
 
 Rules:
 
-- Lime is an accent, not the environment.
-- Avoid full-screen black/graphite sections unless there is a strong, exceptional narrative reason.
-- Avoid decorative glow.
-- Avoid crypto-style color gradients.
-- Accessibility takes precedence over exact token values.
+- Deep green is the primary CTA.
+- Lime is not a primary button fill.
+- Lime is a small signal at key financial state changes.
+- White/off-white dominate.
+- No decorative neon glow.
+- No black full-screen default sections.
+- No crypto gradient system.
 
 ---
 
-## Typography
+# Typography
 
-Hanken Grotesk remains the default marketing family unless implementation testing proves another choice materially better.
+Keep Hanken Grotesk.
+
+Do not add another display font for this implementation.
+
+Use JetBrains Mono only for:
+- invoice IDs;
+- payment references;
+- receipt IDs;
+- timestamps;
+- selected demo-data labels.
+
+Normal financial values should generally stay in Hanken with tabular numerals.
+
+---
+
+# Layout
+
+The homepage must not be a stack of equal cards.
 
 Use:
 
-- broad, confident editorial display type;
-- dark ink on light backgrounds;
-- readable business-facing body copy;
-- JetBrains Mono only for references, timestamps, IDs, and specific product/demo data.
+- large editorial headings;
+- asymmetric text/product compositions;
+- large readable product UI;
+- one signature pinned story;
+- open whitespace;
+- paper/document layers;
+- subtle background chapter changes.
 
-Do not make every financial value monospaced.
+Avoid:
 
----
-
-## Layout
-
-The site should alternate between:
-
-- generous text-led whitespace;
-- large product compositions;
-- pinned/sticky product demonstrations;
-- quiet section transitions;
-- denser operational UI sequences.
-
-Avoid building the homepage as a uniform grid of equal rounded cards.
-
-Product UI should be the primary visual proof.
+- card grids as the main structure;
+- bento-for-bento's-sake;
+- generic abstract 3D;
+- glass panels;
+- tiny unreadable dashboards.
 
 ---
 
-## Motion
+# Hero
 
-Motion is a signature part of the marketing experience.
+Locked headline:
 
-Use it to explain how receivables state changes.
+> **Turn every invoice into predictable cash.**
 
-Preferred patterns:
+The invoice is the hero object.
 
-- sticky product storytelling;
-- one invoice/document continuing across multiple scroll beats;
-- layered payment/reminder/receipt surfaces;
-- scroll-linked state transitions;
-- masked section-title reveals;
-- restrained parallax;
-- meaningful animated amounts/statuses;
-- background transitions between canvas, paper, sage, and soft blue.
+Hero scene:
+- invoice document foreground;
+- editor/dashboard context behind;
+- one matched/payment state as a supporting layer.
 
-Avoid repeating generic fade-up animations on every section.
-
-Implementation preference:
-
-- **Motion** for normal in-view/micro interaction.
-- **GSAP + ScrollTrigger** only for signature pinned/scrubbed sequences.
-- CSS for simple transitions when sufficient.
-
-All signature motion must have reduced-motion and mobile-specific alternatives.
+Do not place six unrelated mini-panels in the hero.
 
 ---
 
-## Product Surfaces
+# Signature experience
 
-Marketing visuals should resemble real Lumina behavior.
+The primary scroll-authored interaction is:
 
-Do:
+```text
+CREATE
+SHARE
+PAY
+VERIFY
+MATCH
+KNOW
+```
 
-- show invoice creation;
-- show customer invoice/payment experience;
-- show reminders/collection events;
-- show reconciliation;
-- show receipts;
-- show receivables/dashboard state;
-- use realistic demo data.
+Use one invoice through all six steps.
 
-Do not:
+Desktop:
+- GSAP ScrollTrigger;
+- sticky/pinned product stage;
+- narrative rail;
+- transforms/opacity/clip-path.
 
-- invent shipped functionality;
-- fabricate customer proof or metrics;
-- show impossible payment/reconciliation states;
-- use generic fake dashboard art disconnected from Lumina.
+Mobile:
+- sequential vertical states;
+- no long pin.
 
----
-
-## Homepage Story
-
-The canonical order is defined in `05_MARKETING_SITE_REDESIGN.md`, with these major chapters:
-
-1. Outcome-led hero.
-2. Audience/credibility bridge.
-3. Signature invoice-to-cash scroll sequence.
-4. Collections.
-5. Reconciliation.
-6. Customer/payment experience.
-7. Receivables visibility.
-8. Trust/control.
-9. Product ecosystem.
-10. Closing CTA.
+Reduced motion:
+- sequential static/short-fade presentation.
 
 ---
 
-## References
+# Motion technology
 
-Use Mobbin MCP and inspect the canonical references listed in `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`.
+The marketing package already has GSAP.
 
-Primary inspiration sources:
+Use:
 
-- Ramp — restraint and whitespace.
-- Stripe — product confidence and storytelling.
-- Monarch — approachable financial tone.
-- Sequence — soft B2B finance presentation.
+- CSS for hover and simple transitions;
+- GSAP for authored sequences;
+- GSAP ScrollTrigger for the signature scroll section.
 
-Synthesize; do not copy.
+Do not add Motion/Framer Motion.
+
+Do not add:
+- Lenis;
+- Three.js;
+- WebGL;
+- another animation library;
+- cursor followers;
+- magnetic buttons;
+- 3D tilt.
 
 ---
 
-## Do / Don't
+# Homepage order
 
-### Do
+```text
+Hero
+Audience bridge
+Invoice → Cash signature story
+Invoicing
+Payment outcomes / reconciliation
+Receivables visibility
+Customer payment
+Trust & control
+FAQ
+Closing CTA
+```
 
-- Show real product behavior.
-- Preserve the Payment Trail as one continuous narrative.
-- Use light backgrounds and warm whitespace.
-- Let product UI dominate illustrations.
-- Make scroll progression communicate financial progression.
-- Keep mobile intentional even when effects are simplified.
-- Respect reduced-motion preferences.
+Header/footer live in root layout.
 
-### Don't
+---
 
-- Restore the old dark-first identity by default.
-- Rebuild the homepage from identical feature cards.
-- Use fake logos, metrics, awards, certification, or customer proof.
-- Use lime on every border/control.
-- Put animation ahead of content comprehension.
-- shrink desktop pinned choreography directly onto mobile.
+# Product-truth rule
+
+Safe to show as shipped:
+- T020 invoice editor;
+- catalogue/ad-hoc lines;
+- payment terms;
+- customer reference;
+- live preview;
+- public invoice;
+- Paystack payment;
+- reconciliation;
+- overpayment/review;
+- refund workflow;
+- receipts;
+- dashboard;
+- exports;
+- audit;
+- team/RBAC;
+- payment setup.
+
+Do not show as shipped:
+- automatic reminders;
+- recurring billing;
+- collections queue;
+- customer portal;
+- promise to pay;
+- disputes;
+- forecasting;
+- AI;
+- NRS;
+- multi-currency;
+- ERP/accounting integrations.
+
+---
+
+# Reference rule
+
+Do not browse randomly.
+
+Use the mapped references in:
+
+`docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
+
+Primary:
+- Tola;
+- Acctual;
+- Column;
+- Stripe 2026;
+- Lasso;
+- PayFlexi Pinterest;
+- Mobbin invoice flows;
+- merged Lumina app.
+
+Each reference has a specific assignment.
+
+Synthesize.
+Do not clone.
+
+---
+
+# Definition of quality
+
+The result should feel:
+
+- more welcoming than the old site;
+- more original than a standard B2B SaaS template;
+- more understandable than an abstract fintech concept site;
+- more kinetic than the authenticated product;
+- grounded in a real invoice-to-payment workflow.
+
+If a visual effect makes the product harder to understand, remove it.

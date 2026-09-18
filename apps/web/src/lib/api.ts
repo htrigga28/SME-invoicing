@@ -1,4 +1,6 @@
 const DEFAULT_API_URL = "http://localhost:4000";
+const NETWORK_ERROR_MESSAGE =
+  "Lumina could not connect to the service. This part of the app is temporarily unavailable.";
 
 type ApiErrorPayload = {
   error?: unknown;
@@ -13,7 +15,7 @@ const statusMessages: Record<number, string> = {
   409: "This action conflicts with the current state of the record.",
   422: "Some details are invalid. Please review the form.",
   500: "Something went wrong on our side. Please try again.",
-  503: "The payment provider is currently unavailable. Please try again later."
+  503: "This service is temporarily unavailable. Try again in a moment."
 };
 
 export class ApiRequestError extends Error {
@@ -32,7 +34,17 @@ export function isApiRequestError(error: unknown): error is ApiRequestError {
 }
 
 export function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (apiUrl) {
+    return apiUrl;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("NEXT_PUBLIC_API_URL is required in production.");
+  }
+
+  return DEFAULT_API_URL;
 }
 
 export function getApiErrorMessage(
@@ -72,7 +84,7 @@ export async function apiRequest<TResponse>(
     request.body = JSON.stringify(body);
   }
 
-  const response = await fetch(new URL(path, getApiBaseUrl()), request);
+  const response = await fetchApi(new URL(path, getApiBaseUrl()), request);
 
   if (!response.ok) {
     const responseBody = await readApiErrorResponse(response);
@@ -105,7 +117,7 @@ export async function apiDownload(
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
 
-  const response = await fetch(new URL(path, getApiBaseUrl()), {
+  const response = await fetchApi(new URL(path, getApiBaseUrl()), {
     ...requestInit,
     method: requestInit.method ?? "GET",
     headers
@@ -125,6 +137,18 @@ export async function apiDownload(
     blob: await response.blob(),
     filename: getDownloadFilename(response.headers.get("Content-Disposition"))
   };
+}
+
+async function fetchApi(input: URL, init: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new ApiRequestError(NETWORK_ERROR_MESSAGE, 0);
+    }
+
+    throw error;
+  }
 }
 
 export function extractApiErrorMessage(status: number, responseBody?: ApiErrorPayload) {
@@ -176,6 +200,9 @@ function getUsefulMessage(value: unknown) {
 
   if (
     /^API request failed with status \d+$/i.test(message) ||
+    /(failed to fetch|network(?:error| request failed)|connection (?:was )?terminated unexpectedly|econn(?:reset|refused)|socket hang up)/i.test(
+      message
+    ) ||
     /^(Bad Request|Unauthorized|Forbidden|Not Found|Conflict|Unprocessable Entity|Internal Server Error|Service Unavailable)( Exception)?$/i.test(
       message
     )

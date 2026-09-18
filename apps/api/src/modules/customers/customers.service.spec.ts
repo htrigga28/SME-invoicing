@@ -81,6 +81,7 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     currency: "NGN",
     issueDate: "2026-06-01",
     dueDate: "2026-06-15",
+    customerReference: null,
     notes: "Payment due in 14 days.",
     subtotalKobo: 100000,
     discountKobo: 10000,

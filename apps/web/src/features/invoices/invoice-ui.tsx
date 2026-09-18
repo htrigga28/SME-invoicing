@@ -20,14 +20,16 @@ export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
 
 export function PageHeader({
   action,
+  actions,
   description,
   title
 }: {
   action?: ReactNode;
+  actions?: ReactNode;
   description: string;
   title: string;
 }) {
-  return <SharedPageHeader actions={action} description={description} title={title} />;
+  return <SharedPageHeader actions={actions ?? action} description={description} title={title} />;
 }
 
 export function PrimaryLink({ children, href }: { children: ReactNode; href: string }) {

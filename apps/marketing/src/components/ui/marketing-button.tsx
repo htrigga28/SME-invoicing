@@ -7,17 +7,17 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "outline";
 type ButtonSize = "default" | "lg" | "icon";
 
 const baseClassName =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-control)] text-sm font-semibold transition-[transform,background-color,color,border-color] duration-[160ms] ease-[var(--ease-out)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)] disabled:pointer-events-none disabled:opacity-70";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-control)] text-sm font-semibold transition-[transform,background-color,color,border-color] duration-[160ms] ease-[var(--ease-out)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--brand)] disabled:pointer-events-none disabled:opacity-70";
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "marketing-button-primary bg-[var(--accent)] px-5 py-2.5 hover:-translate-y-0.5 hover:bg-[var(--accent-hover)] active:translate-y-0",
+    "marketing-button-primary bg-[var(--brand)] px-5 py-2.5 text-white hover:-translate-y-0.5 hover:bg-[var(--brand-hover)] active:translate-y-0",
   secondary:
-    "bg-[var(--surface-raised)] px-5 py-2.5 text-[var(--text-primary)] hover:-translate-y-0.5 hover:bg-[var(--surface-elevated)]",
+    "bg-[var(--brand-soft)] px-5 py-2.5 text-[var(--brand)] hover:-translate-y-0.5 hover:bg-[#ddebe2]",
   ghost:
-    "px-4 py-2.5 text-[var(--text-secondary)] hover:bg-[var(--hover-subtle)] hover:text-[var(--text-primary)]",
+    "px-4 py-2.5 text-[var(--ink-secondary)] hover:bg-[var(--hover-subtle)] hover:text-[var(--ink)]",
   outline:
-    "border border-[var(--border-default)] px-5 py-2.5 text-[var(--text-primary)] hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--hover-subtle)]"
+    "border border-[var(--border-default)] bg-[var(--paper)] px-5 py-2.5 text-[var(--ink)] hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:bg-[var(--surface-raised)]"
 };
 
 const sizes: Record<ButtonSize, string> = {

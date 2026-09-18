@@ -27,6 +27,7 @@ const publicInvoice = {
     currency: "NGN",
     issueDate: "2026-06-01",
     dueDate: "2026-06-15",
+    customerReference: "PO-2026-042",
     notes: "Payment due in 14 days.",
     subtotalKobo: 100000,
     discountKobo: 10000,
@@ -97,12 +98,12 @@ describe("PublicInvoicePage", () => {
   it("renders public invoice content without authenticated navigation", async () => {
     render(<PublicInvoicePage token="public-token" />);
 
-    expect(await screen.findByText("Akin & Co Creative Services")).toBeInTheDocument();
-    expect(screen.getByText("INV-000007")).toBeInTheDocument();
-    expect(screen.getByText("Lagos Bright Prints")).toBeInTheDocument();
+    expect(await screen.findAllByText("Akin & Co Creative Services")).not.toHaveLength(0);
+    expect(screen.getAllByText("INV-000007").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Lagos Bright Prints").length).toBeGreaterThan(0);
     expect(screen.getByText("Design retainer")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Pay .* online/ })).toBeEnabled();
-    expect(screen.getByText("Powered by SME Invoicing")).toBeInTheDocument();
+    expect(screen.getByText("Powered by Lumina")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Dashboard/ })).not.toBeInTheDocument();
   });
 
@@ -191,7 +192,7 @@ describe("PublicInvoicePage", () => {
     await screen.findByText("This invoice has no outstanding balance.");
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);
     expect(screen.queryByText("Payment confirmation pending")).not.toBeInTheDocument();
-    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getAllByText("Paid").length).toBeGreaterThan(0);
     expect(
       screen.queryByRole("button", { name: "Pay online unavailable" })
     ).not.toBeInTheDocument();
@@ -232,7 +233,7 @@ describe("PublicInvoicePage", () => {
       )
     );
     expect(await screen.findByText("Payment confirmed")).toBeInTheDocument();
-    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getAllByText("Paid").length).toBeGreaterThan(0);
   });
 
   it("keeps callback payment state neutral when verification is pending", async () => {
@@ -320,7 +321,7 @@ describe("PublicInvoicePage", () => {
 
     render(<PublicInvoicePage paymentCallback token="public-token" />);
 
-    expect(await screen.findByText("Paid")).toBeInTheDocument();
+    expect(await screen.findAllByText("Paid")).not.toHaveLength(0);
     expect(screen.getByText("This invoice has no outstanding balance.")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Pay online unavailable" })

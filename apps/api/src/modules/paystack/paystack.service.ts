@@ -11,6 +11,8 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
+import { assertKoboAmount } from "../../common/money-limits";
+
 type PaystackInitializeInput = {
   amountKobo: number;
   bearer: "subaccount";
@@ -214,9 +216,7 @@ export class PaystackService {
       throw new ServiceUnavailableException("Paystack is not configured.");
     }
 
-    if (!Number.isInteger(input.amountKobo) || input.amountKobo <= 0) {
-      throw new BadRequestException("Refund amount must be a positive integer.");
-    }
+    assertKoboAmount(input.amountKobo, "Refund amount", 1);
 
     const baseUrl =
       this.configService.get<string>("PAYSTACK_BASE_URL") ?? "https://api.paystack.co";

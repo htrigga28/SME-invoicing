@@ -271,6 +271,7 @@ function createInvoice(): Invoice {
     currency: "NGN",
     issueDate: "2026-07-01",
     dueDate: "2026-07-20",
+    customerReference: null,
     notes: null,
     subtotalKobo: 50000,
     discountKobo: 0,

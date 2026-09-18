@@ -28,7 +28,7 @@ describe("marketing SEO helpers", () => {
 
     expect(metadata.metadataBase?.toString()).toBe("https://lumina.test/");
     expect(metadata.description).toContain("Paystack payments");
-    expect(metadata.title).toMatchObject({ default: "Lumina - Invoice Payment Clarity for Nigerian SMEs" });
+    expect(metadata.title).toMatchObject({ default: "Lumina - Receivables for Growing Businesses" });
     expect(metadata.alternates).toMatchObject({ canonical: "/" });
     expect(metadata.openGraph).toMatchObject({
       siteName: "Lumina",
@@ -44,8 +44,8 @@ describe("marketing SEO helpers", () => {
   });
 
   it("keeps section anchors local on the homepage and route-aware elsewhere", () => {
-    expect(getMarketingAnchorHref("/", "#outcomes")).toBe("#outcomes");
-    expect(getMarketingAnchorHref("/privacy", "#outcomes")).toBe("/#outcomes");
+    expect(getMarketingAnchorHref("/", "#reconciliation")).toBe("#reconciliation");
+    expect(getMarketingAnchorHref("/privacy", "#reconciliation")).toBe("/#reconciliation");
   });
 
   it("returns sitemap and robots entries for public marketing routes only", () => {

@@ -1,6 +1,6 @@
 # Codex Task Board
 
-This board tracks the planned milestone execution for the SME Invoice & Payment Reconciliation Platform. Each task should be completed on its own branch and reviewed through a pull request into `main`.
+This board tracks the planned milestone execution for the SME Invoice & Payment Reconciliation Platform. Each task should be completed on its own branch and reviewed through a pull request into `dev`.
 
 Status values:
 
@@ -31,6 +31,9 @@ Status values:
 | T017 App-Wide UI/UX Redesign and Design System Migration | In Progress | `codex/T017-ui-redesign-design-system` | [#17](https://github.com/htrigga28/SME-invoicing/pull/17) | Redesign the full frontend around a reusable dark fintech design system spanning shells, public pages, tables, forms, status, charts, print, and responsive states. | Semantic tokens, fonts, shared primitives, shell redesign, route migrations, docs, and validation pass without changing backend/business/payment/auth behavior. |
 | T018 Marketing Website, Waitlist and SEO Foundation | In Review | `codex/T018-marketing-website-waitlist-seo` | [#18](https://github.com/htrigga28/SME-invoicing/pull/18) | Create the public Lumina marketing app, waitlist flow, SEO foundation, and marketing documentation. | `apps/marketing` exists, waitlist submissions are API-backed, SEO routes/metadata are implemented, and validation passes without renaming `apps/web`. |
 | T019 Deployment, Portfolio and Launch Hardening | Not Started | `task/T019-deployment-portfolio-launch-hardening` | TBD | Finalize deployment configuration, portfolio-facing docs, demo safety, launch hardening, and production operations checklist. | The project is deployable, documented, and safe to present with realistic payment-setup and marketing-domain assumptions. |
+| T020 Invoice Experience 2.0 | Done | `feat/t020-invoice-experience` | [#21](https://github.com/htrigga28/SME-invoicing/pull/21) | Add reusable products/services, richer invoice metadata, responsive editor and live preview, safe duplication, and coherent invoice management polish. | Authorised users can create, preview, save/send, and duplicate professional invoices with catalogue or ad-hoc lines while current financial and payment rules remain intact. |
+| MKT-01 Marketing Site Editorial Receivables Evolution | Done | `feat/marketing-editorial-receivables` | [#23](https://github.com/htrigga28/SME-invoicing/pull/23) | Replace the old dark marketing implementation with the light Editorial Receivables system, including a real invoice-led hero, ScrollTrigger invoice-to-cash story, T020 invoicing showcase, reconciliation/visibility/customer-payment chapters, and full responsive/reduced-motion polish. | Marketing is light, product-led, truthful to shipped capability, visually related to the merged app, scroll-authored on desktop, purpose-built on mobile, and validated by browser QA plus lint/typecheck/tests/build. |
+| T021 Invoice Delivery, View Tracking and Unified Activity | Not Started | `feat/t021-invoice-delivery-activity` | TBD | Add real invoice email delivery, To/CC recipients, Brevo delivery/failure tracking, repeated public-invoice view tracking, manual resend, and one unified invoice lifecycle timeline. | A finance user can issue and email an invoice, see provider delivery state, see first/last/customer view activity, resend failed delivery, and understand delivery/payment/reconciliation/receipt history from one invoice timeline without changing financial truth. |
 
 ## Task Execution Notes
 
@@ -57,6 +60,14 @@ Status values:
 - T016 replaces the Audit Logs placeholder with Owner/Admin read-only search, filters, pagination, safe metadata summaries, and detail inspection.
 - The unresolved global button/select UI issue is deferred to T017.
 - T017 expands the UI polish pass into an app-wide dark fintech design-system migration. It must not be marked Done until validation and manual QA acceptance are complete.
+- T017 visual direction (dark command-center + neon lime + global utility remapper) is SUPERSEDED for `apps/web` by `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md`. Domain/accessibility/workflow guidance from T017 still applies where compatible. Implemented light system is documented in `docs/design-system.md` / `docs/design-direction.md`.
+- Lumina v2 app overhaul (08_APP_OVERHAUL_CODEX_PROMPT) executed on `dev`: light Clear Financial Workspace foundation, shell/navigation regroup (Overview/Receivables/Operations/Settings), dashboard/invoices/payments/customers flagship migration with Mobbin-referenced patterns, supporting routes, public/entry flows, legacy palette sweep, typecheck/lint/tests green (147/147 web). See docs/lumina-v2/06, 07, 09 for authority/references/audit.
 - T017 now includes shared filter bars, segmented controls, and data-table primitives across Customers, Invoices, Payments, Receipts, and Audit Logs.
 - T018 creates a separate `apps/marketing` public site for the root domain while keeping `apps/web` as the authenticated product app for `app.<root-domain>`.
 - Deployment and portfolio hardening moved to T019 so T018 can focus on marketing, waitlist, and SEO foundations.
+
+- PR #22 merged the light authenticated-app overhaul into `dev`; marketing work must now use the merged app as visual/product truth.
+- MKT-01 shipped in PR #23. T021 Invoice Delivery / View Tracking / Unified Activity is now the next product task.
+- MKT-01 authority: `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`, `10_MARKETING_REFERENCE_LIBRARY.md`, `11_CURRENT_MARKETING_UI_AUDIT.md`, `12_MARKETING_REDESIGN_CODEX_PROMPT.md`, and `13_MARKETING_VISUAL_QA_SCORECARD.md`.
+
+- T021 execution authority: `docs/lumina-v2/14_T021_INVOICE_DELIVERY_ACTIVITY_CODEX_PROMPT.md`; preserve invoice status as document/financial state and model email delivery/public-view state separately.

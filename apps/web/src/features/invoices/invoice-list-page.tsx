@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { INVOICE_STATUSES, type InvoiceStatus } from "@sme-invoicing/shared";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { Button, LinkButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   DataTable,
   DataTableContainer,
@@ -13,9 +14,10 @@ import {
   Pagination as DataPagination,
   TableHeaderCell
 } from "@/components/ui/data-table";
+import { DataToolbar, DataToolbarActions, DataToolbarFilters, DataToolbarSearch, StatusTabs } from "@/components/ui/data-toolbar";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
-import { FilterActions, FilterBar, FilterGrid } from "@/components/ui/filter-bar";
-import { FieldLabel, FormField, Input } from "@/components/ui/form";
+import { Input } from "@/components/ui/form";
+import { TableRowActionMenu } from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCustomers } from "@/features/customers/customers-api";
@@ -35,6 +37,16 @@ import type { Invoice } from "./types";
 import { canManageInvoices } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
+type StatusTab = "" | "draft" | "overdue" | "paid" | "sent";
+type DisplayStatusTab = StatusTab | "__none";
+
+const STATUS_TABS: Array<{ label: string; value: StatusTab }> = [
+  { label: "All", value: "" },
+  { label: "Draft", value: "draft" },
+  { label: "Sent", value: "sent" },
+  { label: "Overdue", value: "overdue" },
+  { label: "Paid", value: "paid" }
+];
 
 export function InvoiceListPage() {
   return (
@@ -53,6 +65,7 @@ export function InvoiceListContent({
   accessToken: string;
   role: "owner" | "admin" | "accountant" | "viewer";
 }) {
+  const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
@@ -73,6 +86,13 @@ export function InvoiceListContent({
     () => search.trim().length > 0 || status !== "" || customerId !== "",
     [customerId, search, status]
   );
+
+  const activeTab: DisplayStatusTab =
+    status === "draft" || status === "overdue" || status === "paid" || status === "sent"
+      ? status
+      : status === ""
+        ? ""
+        : "__none";
 
   useEffect(() => {
     void loadInvoices(1);
@@ -117,63 +137,86 @@ export function InvoiceListContent({
   }
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <PageHeader
-        action={canManage ? <PrimaryLink href="/invoices/new">New invoice</PrimaryLink> : null}
+        actions={canManage ? <PrimaryLink href="/invoices/new">New invoice</PrimaryLink> : null}
         description="Create and track customer invoices."
         title="Invoices"
       />
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
 
-      <FilterBar aria-label="Invoice filters" onSubmit={handleSearch}>
-        <FilterGrid className="lg:grid-cols-[1fr_180px_220px_auto]">
-          <FormField>
-            <FieldLabel>Search</FieldLabel>
+      <StatusTabs<DisplayStatusTab>
+        label="Invoice status"
+        value={activeTab}
+        onChange={(v) => setStatus(v as InvoiceStatus | "")}
+        options={STATUS_TABS}
+      />
+
+      <DataToolbar>
+        <DataToolbarSearch>
+          <form onSubmit={handleSearch} role="search" aria-label="Search invoices">
             <Input
-              className="mt-1"
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Invoice number, customer, or email"
+              aria-label="Search invoices"
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                if (event.target.value === "") setSearch("");
+              }}
+              placeholder="Search invoice, customer, email…"
               value={searchInput}
             />
-          </FormField>
-          <FormField>
-            <FieldLabel>Status</FieldLabel>
-            <Select
-              onChange={(event) => setStatus(event.target.value as InvoiceStatus | "")}
-              value={status}
-              wrapperClassName="mt-1"
+          </form>
+        </DataToolbarSearch>
+        <DataToolbarFilters>
+          <label className="sr-only" htmlFor="invoice-status-filter">Status</label>
+          <Select
+            id="invoice-status-filter"
+            aria-label="Status"
+            onChange={(event) => setStatus(event.target.value as InvoiceStatus | "")}
+            value={status}
+            wrapperClassName="w-40"
+          >
+            <option value="">All statuses</option>
+            {INVOICE_STATUSES.map((option) => (
+              <option key={option} value={option}>
+                {option.replaceAll("_", " ")}
+              </option>
+            ))}
+          </Select>
+          <label className="sr-only" htmlFor="invoice-customer-filter">Customer</label>
+          <Select
+            id="invoice-customer-filter"
+            aria-label="Customer"
+            onChange={(event) => setCustomerId(event.target.value)}
+            value={customerId}
+            wrapperClassName="w-48"
+          >
+            <option value="">All customers</option>
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.id}>
+                {customer.name}
+              </option>
+            ))}
+          </Select>
+        </DataToolbarFilters>
+        <DataToolbarActions>
+          {isFiltered ? (
+            <Button
+              onClick={() => {
+                setSearch("");
+                setSearchInput("");
+                setStatus("");
+                setCustomerId("");
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
             >
-              <option value="">All statuses</option>
-              {INVOICE_STATUSES.map((option) => (
-                <option key={option} value={option}>
-                  {option.replaceAll("_", " ")}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField>
-            <FieldLabel>Customer</FieldLabel>
-            <Select
-              onChange={(event) => setCustomerId(event.target.value)}
-              value={customerId}
-              wrapperClassName="mt-1"
-            >
-              <option value="">All customers</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FilterActions>
-            <Button type="submit" variant="outline">
-              Apply
+              Clear
             </Button>
-          </FilterActions>
-        </FilterGrid>
-      </FilterBar>
+          ) : null}
+        </DataToolbarActions>
+      </DataToolbar>
 
       {state === "loading" ? <LoadingSkeleton rows={5} /> : null}
 
@@ -214,39 +257,61 @@ export function InvoiceListContent({
                 <tr>
                   <TableHeaderCell>Invoice</TableHeaderCell>
                   <TableHeaderCell>Customer</TableHeaderCell>
-                  <TableHeaderCell>Issue</TableHeaderCell>
                   <TableHeaderCell>Due</TableHeaderCell>
                   <TableHeaderCell className="text-right">Total</TableHeaderCell>
                   <TableHeaderCell className="text-right">Balance</TableHeaderCell>
                   <TableHeaderCell>Status</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Actions</TableHeaderCell>
+                  <TableHeaderCell className="w-12"><span className="sr-only">Actions</span></TableHeaderCell>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--border-subtle)]">
                 {invoices.map((invoice) => (
-                  <tr key={invoice.id}>
-                    <td className="px-4 py-3 font-medium text-slate-950">
-                      <Link href={`/invoices/${invoice.id}`}>{invoice.invoiceNumber}</Link>
+                  <tr
+                    key={invoice.id}
+                    className="cursor-pointer hover:bg-[var(--surface-selected)]"
+                    onClick={() => router.push(`/invoices/${invoice.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") router.push(`/invoices/${invoice.id}`);
+                    }}
+                    tabIndex={0}
+                    aria-label={`${invoice.invoiceNumber} ${invoice.customer.name}`}
+                  >
+                    <td className="px-4 py-3.5">
+                      <span className="font-medium text-[var(--text-primary)]">{invoice.invoiceNumber}</span>
+                      {invoice.customerReference ? (
+                        <p className="mt-0.5 font-mono text-xs text-[var(--text-muted)]">
+                          {invoice.customerReference}
+                        </p>
+                      ) : null}
+                      <p className="mt-0.5 text-xs text-[var(--text-muted)]">{formatDate(invoice.issueDate)}</p>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-950">{invoice.customer.name}</p>
-                      <p className="text-slate-600">{invoice.customer.email}</p>
+                    <td className="px-4 py-3.5">
+                      <p className="font-medium text-[var(--text-primary)]">{invoice.customer.name}</p>
+                      <p className="text-xs text-[var(--text-muted)]">{invoice.customer.email}</p>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(invoice.issueDate)}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(invoice.dueDate)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
+                    <td className="whitespace-nowrap px-4 py-3.5 text-[var(--text-secondary)]">{formatDate(invoice.dueDate)}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums text-[var(--text-secondary)]">
                       {formatMoney(invoice.totalKobo)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-700 tabular-nums">
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums">
                       {formatMoney(invoice.balanceDueKobo)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <InvoiceStatusBadge status={invoice.status} />
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <LinkButton href={`/invoices/${invoice.id}`} size="sm" variant="outline">
-                        View
-                      </LinkButton>
+                    <td
+                      className="px-2 py-3.5 text-right"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <TableRowActionMenu
+                        items={[
+                          { label: "View", href: `/invoices/${invoice.id}` },
+                          ...(canManage && invoice.status === "draft"
+                            ? [{ label: "Edit", href: `/invoices/${invoice.id}/edit` }]
+                            : [])
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -254,27 +319,25 @@ export function InvoiceListContent({
             </DataTable>
           </div>
 
-          <div className="divide-y divide-slate-100 lg:hidden">
+          <div className="divide-y divide-[var(--border-subtle)] lg:hidden">
             {invoices.map((invoice) => (
               <MobileDataCard key={invoice.id}>
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <Link className="font-medium text-slate-950" href={`/invoices/${invoice.id}`}>
+                  <div className="min-w-0">
+                    <Link className="font-medium text-[var(--text-primary)]" href={`/invoices/${invoice.id}`}>
                       {invoice.invoiceNumber}
                     </Link>
-                    <p className="text-sm text-slate-600">{invoice.customer.name}</p>
+                    <p className="truncate text-sm text-[var(--text-secondary)]">{invoice.customer.name}</p>
+                    <p className="mt-0.5 text-xs text-[var(--text-muted)]">Due {formatDate(invoice.dueDate)}</p>
                   </div>
                   <InvoiceStatusBadge status={invoice.status} />
                 </div>
-                <div className="grid grid-cols-2 gap-3 text-sm text-slate-600">
-                  <span>Due {formatDate(invoice.dueDate)}</span>
-                  <span className="text-right font-mono tabular-nums">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-[var(--text-muted)]">{formatMoney(invoice.totalKobo)} total</span>
+                  <span className="font-semibold tabular-nums">
                     {formatMoney(invoice.balanceDueKobo)} due
                   </span>
                 </div>
-                <LinkButton href={`/invoices/${invoice.id}`} size="sm" variant="outline">
-                  View
-                </LinkButton>
               </MobileDataCard>
             ))}
           </div>

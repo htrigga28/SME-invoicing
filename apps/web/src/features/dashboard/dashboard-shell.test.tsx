@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardShell } from "./dashboard-shell";
@@ -98,7 +98,7 @@ describe("DashboardShell", () => {
     );
   });
 
-  it("shows the active Payment Setup state once online payments are active", async () => {
+  it("keeps the active Payment Setup state quiet", async () => {
     getDashboardOverview.mockResolvedValueOnce(
       createDashboardOverview({
         paymentSetup: {
@@ -112,10 +112,9 @@ describe("DashboardShell", () => {
 
     render(<DashboardShell />);
 
-    expect(await screen.findByText("Online payments active")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.queryByText("Online payments are not configured")).not.toBeInTheDocument()
-    );
+    await screen.findByText("Net collected");
+    expect(screen.queryByText("Online payments active")).not.toBeInTheDocument();
+    expect(screen.queryByText("Online payments are not configured")).not.toBeInTheDocument();
   });
 
   it("renders period and current dashboard metrics from the overview response", async () => {
@@ -126,6 +125,24 @@ describe("DashboardShell", () => {
     expect(screen.getByText("Outstanding")).toBeInTheDocument();
     expect(screen.getByText("NGN 45,000.00")).toBeInTheDocument();
     expect(screen.getByTestId("cashflow-chart")).toBeInTheDocument();
+  });
+
+  it("keeps dashboard attention in setup, review, overdue, pending order", async () => {
+    render(<DashboardShell />);
+
+    const attention = await screen.findByRole("region", { name: "Attention" });
+    expect(within(attention).getByText("Online payments are not configured")).toBeInTheDocument();
+    expect(within(attention).getByRole("link", { name: "Set up online payments" })).toHaveAttribute(
+      "href",
+      "/settings/payment-setup"
+    );
+    const attentionLinks = within(attention).getAllByRole("link").map((link) => link.textContent);
+    expect(attentionLinks).toEqual([
+      "Set up online payments",
+      "Needs review1 payment issue",
+      "Overdue1 overdue invoice",
+      "Pending2 awaiting confirmation"
+    ]);
   });
 });
 

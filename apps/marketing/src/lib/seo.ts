@@ -5,9 +5,9 @@ import { getAbsoluteSiteUrl, getSiteUrl } from "@/lib/urls";
 
 export function getMarketingMetadata(): Metadata {
   const siteUrl = getSiteUrl();
-  const title = "Lumina - Invoice Payment Clarity for Nigerian SMEs";
+  const title = "Lumina - Receivables for Growing Businesses";
   const description =
-    "Know what got paid without the spreadsheet chase. Lumina connects invoices, Paystack payments, payout routes, refunds, and receipts for Nigerian SMEs.";
+    "Turn every invoice into predictable cash. Lumina helps growing businesses create professional invoices, collect Paystack payments, reconcile what arrived, and know what needs attention.";
 
   return {
     metadataBase: new URL(siteUrl),
@@ -33,7 +33,7 @@ export function getMarketingMetadata(): Metadata {
           url: "/opengraph-image",
           width: 1200,
           height: 630,
-          alt: "Lumina — know what got paid without the spreadsheet chase."
+          alt: "Lumina — turn every invoice into predictable cash."
         }
       ]
     },
@@ -58,8 +58,8 @@ export function getMarketingMetadata(): Metadata {
 }
 
 export const marketingViewport: Viewport = {
-  colorScheme: "dark",
-  themeColor: "#070A08"
+  colorScheme: "light",
+  themeColor: "#FAFAF7"
 };
 
 export function getOrganizationJsonLd() {

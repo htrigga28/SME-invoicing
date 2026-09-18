@@ -16,9 +16,15 @@
 
 # FIRST BUILD CYCLE
 
-These are the tasks to start next.
+T020 shipped in PR #21, the light authenticated-app overhaul shipped in PR #22, and **MKT-01 — Marketing Site Editorial Receivables Evolution shipped in PR #23**.
 
-## T020 — Invoice Experience 2.0
+The product sequence now resumes at **T021 — Invoice Delivery, View Tracking and Unified Activity**.
+
+Execution prompt: `docs/lumina-v2/14_T021_INVOICE_DELIVERY_ACTIVITY_CODEX_PROMPT.md`.
+
+T021 should be implemented before T022 so the communications/event foundation can be reused by recurring billing and reminder automation without duplicating delivery history.
+
+## T020 — Invoice Experience 2.0 — DONE
 
 ### Goal
 

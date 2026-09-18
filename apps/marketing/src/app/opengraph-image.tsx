@@ -12,19 +12,19 @@ export default function OpenGraphImage() {
     <div
       style={{
         alignItems: "center",
-        background: "#070A08",
-        color: "#f5f7ef",
+        background: "#FAFAF7",
+        color: "#17211C",
         display: "flex",
         height: "100%",
         justifyContent: "center",
-        padding: 72,
+        padding: 48,
         width: "100%"
       }}
     >
       <div
         style={{
-          background: "#0D120F",
-          border: "1px solid rgba(193,255,114,0.18)",
+          background: "#FFFFFF",
+          border: "1px solid #DCE2DC",
           borderRadius: 24,
           display: "flex",
           flexDirection: "column",
@@ -34,13 +34,13 @@ export default function OpenGraphImage() {
           width: "100%"
         }}
       >
-        <div style={{ alignItems: "center", display: "flex", gap: 20 }}>
+        <div style={{ alignItems: "center", display: "flex", gap: 16 }}>
           <div
             style={{
               alignItems: "center",
-              background: "#C1FF72",
+              background: "#245C46",
               borderRadius: 10,
-              color: "#070A08",
+              color: "#FFFFFF",
               display: "flex",
               fontSize: 32,
               fontWeight: 800,
@@ -57,41 +57,41 @@ export default function OpenGraphImage() {
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div
             style={{
-              color: "#C1FF72",
-              fontSize: 24,
+              color: "#245C46",
+              fontSize: 22,
               fontWeight: 700,
-              letterSpacing: 0,
+              letterSpacing: 2,
               textTransform: "uppercase"
             }}
           >
-            Invoice payment clarity for Nigerian SMEs
+            Receivables for growing businesses
           </div>
           <div
             style={{
-              fontSize: 72,
+              fontSize: 68,
               fontWeight: 800,
-              letterSpacing: 0,
+              letterSpacing: -1,
               lineHeight: 0.95,
-              marginTop: 24,
+              marginTop: 20,
               maxWidth: 880
             }}
           >
-            Know what got paid—without the spreadsheet chase.
+            Turn every invoice into predictable cash.
           </div>
           <div
             style={{
               alignItems: "center",
-              color: "#aeb8a7",
+              color: "#4F5F56",
               display: "flex",
               fontSize: 20,
-              gap: 16,
-              marginTop: 30
+              gap: 14,
+              marginTop: 28
             }}
           >
-            <span>Invoice</span><span style={{ color: "#C1FF72" }}>→</span>
-            <span>Provider confirmation</span><span style={{ color: "#C1FF72" }}>→</span>
-            <span>Matched</span><span style={{ color: "#C1FF72" }}>→</span>
-            <span>Receipt</span>
+            <span>Invoice</span><span style={{ color: "#245C46" }}>→</span>
+            <span>Pay</span><span style={{ color: "#245C46" }}>→</span>
+            <span>Reconcile</span><span style={{ color: "#245C46" }}>→</span>
+            <span>Know</span>
           </div>
         </div>
       </div>

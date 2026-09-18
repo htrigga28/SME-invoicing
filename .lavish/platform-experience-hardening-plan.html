@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Lumina platform experience hardening plan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;450;500;580;600;620;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --night:#070a08; --graphite:#0d110e; --ledger:#121813; --raised:#182019;
+      --ink:#f5f7ef; --muted:#aeb8a7; --signal:#c1ff72; --signal-deep:#91d63f;
+      --mint:#72e6b1; --amber:#f6c96b; --coral:#ff7878; --line:#273128;
+      --sans:"Hanken Grotesk",ui-sans-serif,system-ui,sans-serif;
+      --mono:"JetBrains Mono",ui-monospace,monospace;
+    }
+    * { box-sizing:border-box; }
+    html { background:var(--night); scroll-behavior:smooth; }
+    body { margin:0; background:var(--night); color:var(--ink); font:450 16px/1.65 var(--sans); }
+    a { color:inherit; }
+    .skip { position:fixed; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    .skip:focus { left:1rem; top:1rem; z-index:9; width:auto; height:auto; margin:0; padding:.6rem 1rem; overflow:visible; clip:auto; white-space:normal; border-radius:10px; background:var(--signal); color:var(--night); font-weight:700; }
+    .shell { width:min(1240px,calc(100% - 40px)); margin:0 auto; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:24px 0; border-bottom:1px solid var(--line); }
+    .brand { display:flex; align-items:center; gap:.7rem; font-weight:700; letter-spacing:-.02em; }
+    .brand-mark { display:grid; place-items:center; width:34px; height:34px; border:1px solid #58733b; border-radius:10px; background:#182412; color:var(--signal); }
+    .meta { color:var(--muted); font:500 12px/1.45 var(--mono); text-align:right; }
+    main { padding-bottom:90px; }
+    .opening { display:grid; grid-template-columns:minmax(0,7fr) minmax(260px,4fr); gap:clamp(30px,7vw,88px); align-items:end; min-height:540px; padding:clamp(70px,10vw,130px) 0 80px; }
+    h1,h2,h3 { margin:0; text-wrap:balance; }
+    h1 { max-width:820px; font-size:clamp(3rem,7vw,6rem); line-height:.94; letter-spacing:-.045em; font-weight:620; }
+    h2 { font-size:clamp(2rem,4vw,3.8rem); line-height:1; letter-spacing:-.035em; font-weight:620; }
+    h3 { font-size:1.15rem; line-height:1.25; font-weight:600; }
+    p { margin:0; }
+    .lede { max-width:67ch; margin-top:24px; color:var(--muted); font-size:1.12rem; }
+    .decision { border-top:1px solid var(--signal); padding-top:18px; }
+    .decision strong { display:block; color:var(--signal); font-size:1.2rem; line-height:1.25; }
+    .decision p { margin-top:10px; color:var(--muted); }
+    .section { padding:84px 0; border-top:1px solid var(--line); }
+    .section-head { display:grid; grid-template-columns:minmax(0,5fr) minmax(0,7fr); gap:40px; align-items:start; margin-bottom:42px; }
+    .section-head p { max-width:66ch; color:var(--muted); }
+    .signal { color:var(--signal); font:600 12px/1.4 var(--mono); letter-spacing:.04em; }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .stat { min-width:0; padding:24px; border-right:1px solid var(--line); }
+    .stat:last-child { border-right:0; }
+    .stat strong { display:block; font:600 clamp(1.5rem,4vw,2.8rem)/1 var(--mono); color:var(--ink); overflow-wrap:anywhere; }
+    .stat span { display:block; margin-top:9px; color:var(--muted); font-size:.9rem; }
+    .comparison { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+    .compare-side { min-width:0; padding:30px; background:var(--ledger); }
+    .compare-side.target { background:var(--raised); }
+    .compare-side h3 { margin-bottom:20px; }
+    .compare-side ul { margin:0; padding-left:1.15rem; }
+    .compare-side li+li { margin-top:10px; }
+    .compare-side.target h3 { color:var(--signal); }
+    .table-wrap { width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:14px; background:var(--ledger); }
+    table { width:100%; min-width:780px; border-collapse:collapse; }
+    caption { padding:18px 20px; text-align:left; color:var(--muted); }
+    th,td { padding:15px 18px; border-top:1px solid var(--line); text-align:left; vertical-align:baseline; }
+    th { color:var(--muted); font-size:.78rem; font-weight:600; }
+    td { font-size:.92rem; }
+    code,.path { font:500 .82rem/1.55 var(--mono); overflow-wrap:anywhere; }
+    .path { color:var(--mint); }
+    .phase-map { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .phase { min-width:0; padding:22px; border:1px solid var(--line); border-radius:14px; background:var(--ledger); }
+    .phase b { display:block; margin-bottom:8px; color:var(--signal); font:600 12px/1.4 var(--mono); }
+    .phase p { color:var(--muted); font-size:.92rem; }
+    .diagram { padding:26px; border:1px solid var(--line); border-radius:16px; background:var(--ledger); overflow:auto; }
+    .mermaid { min-width:0; }
+    details { border-top:1px solid var(--line); }
+    details:last-child { border-bottom:1px solid var(--line); }
+    summary { cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:22px 0; font-size:1.15rem; font-weight:600; }
+    summary::-webkit-details-marker { display:none; }
+    summary::after { content:"+"; color:var(--signal); font:600 1.4rem var(--mono); }
+    details[open] summary::after { content:"−"; }
+    .detail-body { padding:0 0 30px; }
+    .detail-grid { display:grid; grid-template-columns:minmax(0,4fr) minmax(0,8fr); gap:32px; }
+    .detail-grid h3 { color:var(--signal); }
+    .detail-grid ul,.detail-grid ol { margin:0; padding-left:1.2rem; }
+    .detail-grid li+li { margin-top:8px; }
+    .file-list { color:var(--muted); }
+    .file-list li { overflow-wrap:anywhere; }
+    .rules { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:24px; }
+    .rule { padding:20px; border-left:2px solid var(--signal); background:var(--ledger); }
+    .rule.warn { border-color:var(--amber); }
+    .rule p { margin-top:6px; color:var(--muted); font-size:.92rem; }
+    .checklist { columns:2; column-gap:48px; padding-left:1.2rem; }
+    .checklist li { break-inside:avoid; margin-bottom:10px; }
+    .risk-high { color:var(--amber); font-weight:600; }
+    .terminal { margin:16px 0 0; padding:20px; overflow:auto; border:1px solid var(--line); border-radius:12px; background:#080b09; color:var(--mint); font:500 13px/1.7 var(--mono); white-space:pre-wrap; }
+    .code-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    .code-panel { min-width:0; }
+    .code-panel h3 { margin-bottom:10px; }
+    #seed-diff,#jest-diff { min-height:220px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#0d1117; }
+    .source-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .source-item { padding:16px 18px; border:1px solid var(--line); border-radius:12px; background:var(--ledger); }
+    .source-item b { display:block; }
+    .source-item span { color:var(--muted); font-size:.88rem; }
+    footer { display:flex; justify-content:space-between; gap:20px; padding:30px 0; border-top:1px solid var(--line); color:var(--muted); font-size:.85rem; }
+    :focus-visible { outline:2px solid var(--signal); outline-offset:3px; }
+    @media (max-width:900px) {
+      .opening,.section-head,.detail-grid { grid-template-columns:1fr; }
+      .opening { min-height:auto; }
+      .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .stat:nth-child(2) { border-right:0; }
+      .stat:nth-child(-n+2) { border-bottom:1px solid var(--line); }
+      .phase-map { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .code-grid,.source-list { grid-template-columns:1fr; }
+    }
+    @media (max-width:620px) {
+      .shell { width:min(100% - 24px,1240px); }
+      header { align-items:flex-start; }
+      .meta { max-width:16ch; }
+      .opening { padding:70px 0 58px; }
+      .section { padding:62px 0; }
+      .comparison,.phase-map,.rules { grid-template-columns:1fr; }
+      .stats { grid-template-columns:1fr; }
+      .stat { border-right:0; border-bottom:1px solid var(--line); }
+      .stat:last-child { border-bottom:0; }
+      .checklist { columns:1; }
+      footer { flex-direction:column; }
+    }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to plan</a>
+  <div class="shell">
+    <header>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>Lumina</span></div>
+      <div class="meta">Implementation plan<br>26 August 2026</div>
+    </header>
+    <main id="main">
+      <section class="opening">
+        <div>
+          <p class="signal">Platform experience hardening</p>
+          <h1>Fix verified defects, then make payment work easier to read.</h1>
+          <p class="lede">This plan repairs root setup, unstable throttle tests, mobile overflow, unnamed invoice controls, and split branding. It then adds bounded attention hierarchy, truthful product proof, and one restrained GSAP motion system.</p>
+        </div>
+        <aside class="decision">
+          <strong>Preserve Lumina. Do not redesign it.</strong>
+          <p>Use the current dark graphite field, lime signal, financial state colors, Hanken Grotesk, JetBrains Mono, and existing product components.</p>
+        </aside>
+      </section>
+
+      <section class="section" aria-labelledby="evidence-title">
+        <div class="section-head"><h2 id="evidence-title">The baseline gives the order of work.</h2><p>Verified E2E defects lead. Product polish follows only where it makes those paths clearer. The change must keep payment truth, tenant isolation, role permissions, public tokens, and audit safety unchanged.</p></div>
+        <div class="stats">
+          <div class="stat"><strong>2</strong><span>Throttle tests time out only in the full parallel API suite.</span></div>
+          <div class="stat"><strong>446 px</strong><span>Measured document width in a 361 px mobile content viewport.</span></div>
+          <div class="stat"><strong>0</strong><span>Accessible names on the verified quantity and unit-price spin buttons.</span></div>
+          <div class="stat"><strong>1 command</strong><span>Target setup and seed path from the repository root.</span></div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="target-title">
+        <div class="section-head"><h2 id="target-title">Move from a working demo to a dependable product path.</h2><p>The target state reduces developer setup friction and owner decision friction. It does not add a new business rule, API contract, or database migration.</p></div>
+        <div class="comparison">
+          <article class="compare-side"><h3>Current verified behavior</h3><ul><li>Root database commands miss root <code>.env</code>.</li><li>Seed deletes demo receipts and payments, then a global backfill can create new IDs, tokens, sequence values, and audit rows.</li><li>Full API concurrency times out two real HTTP tests, but a serial pass alone does not prove the cause.</li><li>Long references widen the mobile dashboard.</li><li>A fixed mobile action can cover status content.</li><li>Invoice spin buttons have no unique names.</li><li>Product and onboarding surfaces still show old names or <code>SI</code>.</li><li>Marketing uses <code>motion</code>; product motion is absent.</li></ul></article>
+          <article class="compare-side target"><h3>Accepted target</h3><ul><li>One explicit API root environment loader with a tested configuration matrix.</li><li>One guarded, scoped, transaction-safe seed with stable repeat snapshots.</li><li>Measured throttle policy based on CI-like concurrency, CPU, duration, and handle evidence.</li><li>Full references wrap inside the viewport.</li><li>One action is in-flow on mobile and fixed on desktop.</li><li>Every line-item control has a stable unique label.</li><li>Lumina continues from onboarding through public documents.</li><li>GSAP is the only general animation library with lifecycle tests.</li></ul></article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="decisions-title">
+        <div class="section-head"><h2 id="decisions-title">The plan resolves the three open choices.</h2><p>The seed path, animation migration, and dashboard attention treatment have implementation choices. No blocking product question remains.</p></div>
+        <div class="table-wrap"><table><caption>Resolved implementation decisions</caption><thead><tr><th scope="col">Area</th><th scope="col">Decision</th><th scope="col">Why this is the smallest reliable change</th></tr></thead><tbody>
+          <tr><th scope="row">Seed and receipts</th><td>Run a non-production, opt-in, scoped seed in one transaction. Generate missing demo receipts in that transaction. Require an explicit organisation for standalone backfill.</td><td>Repeats preserve IDs, tokens, sequence values, and audit counts. Other organisations are never scanned.</td></tr>
+          <tr><th scope="row">Root environment</th><td>Add one API-local root loader and import it from Drizzle, the API module, and scripts.</td><td>It needs no new package and no shell-specific environment syntax. Process values keep priority.</td></tr>
+          <tr><th scope="row">Throttle tests</th><td>Measure CI-like worker modes before setting a cap. Keep both HTTP tests together and change workers only when repeated evidence proves contention.</td><td>A serial pass alone cannot hide a server, timer, or shared-state defect. The default timeout stays unchanged.</td></tr>
+          <tr><th scope="row">Mobile action</th><td>Use one action element. Keep it in-flow on mobile and fixed on desktop.</td><td>It cannot cover a mobile warning and it keeps the desktop shortcut.</td></tr>
+          <tr><th scope="row">Dashboard attention</th><td>Move current Payment Setup and review data before charts.</td><td>The response already contains the required truth. No API or rules engine is needed.</td></tr>
+          <tr><th scope="row">Motion</th><td>Use GSAP core in both apps. Remove <code>motion</code> and do not add <code>@gsap/react</code>.</td><td>React effects and <code>gsap.context()</code> give enough lifecycle control.</td></tr>
+          <tr><th scope="row">Marketing proof</th><td>Refine current demonstration surfaces and use one record across them.</td><td>Consistent product evidence is more useful than a new section.</td></tr>
+          <tr><th scope="row">Browser gate</th><td>Add one guarded runner with a unique database, build-time URLs, migration, seed, health checks, logs, teardown, and Playwright.</td><td>Two complete lifecycle runs prove repeatability without a page-object framework.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="section" aria-labelledby="flow-title">
+        <div class="section-head"><h2 id="flow-title">Existing data drives the attention path.</h2><p>The dashboard continues to call <code>GET /dashboard/overview</code> once. The client adds no cache and no financial derivation. Marketing uses the same invoice, reference, balance, and receipt in each related demonstration.</p></div>
+        <div class="diagram"><div class="mermaid">
+flowchart TD
+  A[Owner signs in] --> B[GET dashboard overview]
+  B --> C{Existing attention data}
+  C -->|Setup incomplete| D[Payment Setup action]
+  C -->|Review items| E[Review issue action]
+  C -->|No urgent item| F[Current position]
+  D --> G[In-flow mobile invoice action]
+  E --> G
+  F --> G
+  G --> H[Labelled line items]
+  H --> I[Server saves invoice]
+  I --> J[Send and open public Lumina invoice]
+        </div></div>
+        <div class="diagram" style="margin-top:16px"><div class="mermaid">
+flowchart LR
+  A[INV-000184] --> B[Paystack checkout]
+  B --> C[T8129-4F3A-90LX]
+  C --> D[Matched payment]
+  D --> E[Updated balance]
+  E --> F[RCT-000241]
+        </div></div>
+      </section>
+
+      <section class="section" aria-labelledby="phase-title">
+        <div class="section-head"><h2 id="phase-title">Six implementation phases keep risk visible.</h2><p>Each phase has a focused exit gate. Baseline capture is phase zero. No implementation starts from an assumed defect.</p></div>
+        <div class="phase-map">
+          <article class="phase"><b>0 · Reproduce</b><h3>Protect the baseline</h3><p>Record setup, test timing, overflow, screenshots, and accessible names.</p></article>
+          <article class="phase"><b>1 · Stabilize</b><h3>Setup, seed, test</h3><p>Load root environment, complete demo data, and control network-test scheduling.</p></article>
+          <article class="phase"><b>2 · Identify</b><h3>Brand and labels</h3><p>Carry Lumina through app surfaces and label compact invoice rows.</p></article>
+          <article class="phase"><b>3 · Prioritize</b><h3>Mobile and attention</h3><p>Wrap references, move the action, and put verified work first.</p></article>
+          <article class="phase"><b>4–5 · Explain</b><h3>GSAP and proof</h3><p>Use causal motion and consistent product demonstration data.</p></article>
+          <article class="phase"><b>6 · Prove</b><h3>Real-stack gate</h3><p>Run owner, viewer, public, responsive, and reduced-motion paths.</p></article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="detail-title">
+        <div class="section-head"><h2 id="detail-title">Implementation detail</h2><p>Open each phase to review its file boundary, work, tests, and exit condition. These details match the Markdown execution plan.</p></div>
+
+        <details open><summary>Phase 0 · Reproduce and protect the baseline</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><p class="file-list">No file changes.</p></div><div><h3>Work and gate</h3><ul><li>Record Git state and preserve the brief and Kickoff configuration.</li><li>Use a safe local root <code>.env</code>. Run one focused smoke baseline: root migration and seed, both throttle specs together with <code>--runInBand</code>, and one representative API-suite result.</li><li>Capture 375 by 812 and 1440 by 900 dashboard views. Record <code>scrollWidth</code>.</li><li>Record invoice spin-button names.</li><li>Repeated worker-mode diagnostics move to Phase 1; do not run five full suites here.</li><li>Exit only when every known defect has a repeatable check and no implementation file changed.</li></ul></div></div></div></details>
+
+        <details><summary>Phase 1 · Fix setup, scoped seed safety, and measured test scheduling</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>New <span class="path">apps/api/src/config/load-root-env.ts</span></li><li><span class="path">apps/api/src/app.module.ts</span></li><li><span class="path">apps/api/drizzle.config.ts</span></li><li><span class="path">apps/api/drizzle.test.config.ts</span></li><li>API seed, receipt service, and maintenance scripts</li><li>Configuration and seed integration tests</li><li><span class="path">apps/api/package.json</span></li><li><span class="path">apps/api/jest.config.cjs</span></li><li>New <span class="path">apps/api/src/public-rate-limits.spec.ts</span></li><li>Two current controller specs</li></ul></div><div><h3>Work</h3><ol><li>Load the root <code>.env</code> from a loader-file path. Test source and compiled commands from root and package cwd.</li><li>Let process values win. Test missing file, production mode, missing opt-in, and secret-free logs. Do not add a config package or shell wrappers.</li><li>Require non-production mode and <code>ALLOW_DEMO_SEED=true</code> before a demo write transaction.</li><li>Wrap demo writes in one transaction scoped to the fixed demo organisation. Never delete payments, events, receipts, invoice events, or audit logs. Upsert by deterministic keys.</li><li>Generate missing demo receipts inside that transaction through the existing receipt path. Add an audit row only for a newly created receipt.</li><li>Require an explicit organisation for standalone backfill. It must reject empty scope and never scan every successful payment.</li><li>Run a non-demo sentinel snapshot before and after two seed runs. Preserve demo IDs, public tokens, sequence values, and receipt audit counts.</li><li>Move only two HTTP throttle tests into one file. Preserve forwarded IP checks, 201, 429, and <code>finally</code> cleanup.</li><li>Measure default, <code>--maxWorkers=2</code>, <code>--maxWorkers=50%</code>, and <code>--runInBand</code> with <code>CI=true</code> using one representative run per mode. Record wall and per-file duration, CPU, worker count, and handles. Use <code>--detectOpenHandles</code> once on a failing mode.</li><li>Add a worker cap only when repeated evidence proves contention. Otherwise fix the confirmed lifecycle defect. Never increase <code>testTimeout</code>, add retries, or suppress failures. After selecting a policy, run the full API suite five consecutive times only at that policy.</li></ol><h3 style="margin-top:24px">Exit</h3><ul><li>Root migration, test migration, seed, scoped backfill, and reconciliation read the root environment.</li><li>Production or missing-opt-in seed exits before writes.</li><li>Two seed repeats preserve IDs, tokens, sequence, and audit counts. A sentinel organisation is unchanged.</li><li>Five API suites pass only at the selected measured policy with the default timeout.</li><li>No secret appears in captured logs.</li></ul></div></div></div></details>
+
+        <details><summary>Phase 2 · Restore Lumina identity and invoice accessibility</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>New web brand component and test</li><li>Web layout, home, auth card, sidebar, and business onboarding</li><li>Onboarding progress component and test</li><li>Public invoice and receipt pages and tests</li><li>API OpenAPI metadata</li><li>Invoice form and new component test</li></ul></div><div><h3>Work and tests</h3><ul><li>Create one small web brand component with current tokens.</li><li>Replace user-visible <code>SI</code>, old product names, and old powered-by text. Keep package names, database names, environment keys, and routes.</li><li>Use Lumina in metadata, API docs, auth, navigation, home, onboarding, public invoice, and public receipt surfaces.</li><li>Give each line-item description, quantity, and unit-price field an explicit stable label.</li><li>Include the one-based row number, for example <code>Line item 1 quantity</code>.</li><li>Keep compact desktop and stacked mobile entry, add/remove, validation, disabled state, and total preview.</li><li>Test unique names after row add and remove. Test keyboard submission and validation.</li><li>Assert onboarding and signup progress no longer show <code>SI</code>.</li><li>Exit when no user-visible old brand string or unnamed spin button remains.</li></ul></div></div></div></details>
+
+        <details><summary>Phase 3 · Fix mobile layout and attention hierarchy</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>App shell and tests</li><li>Dashboard shell and tests</li><li>Dashboard charts only if measured</li><li>Shared web CSS only for shared responsive or reduced-motion rules</li></ul></div><div><h3>Work and tests</h3><ul><li>Place one create-invoice action in content flow. Make it full width on mobile and fixed only on desktop.</li><li>Keep viewer and route visibility rules.</li><li>Move Payment Setup and review items before charts. Use current response data only.</li><li>Use one lime primary action. Keep other actions secondary.</li><li>Wrap the complete reference with <code>overflow-wrap: anywhere</code>. Do not hide it or truncate its only copy.</li><li>Add <code>min-width:0</code> to owners of variable text. Do not conceal the defect with page-level overflow hiding.</li><li>Keep loading, error, retry, empty, permission, and period states.</li><li>Scripted checks use 375 and 1440 CSS pixels. Use 320, 768, 1024, and 2053 only for targeted manual checks when changed evidence warrants them.</li><li>At 375 pixels, status and warning text must not sit behind the action. Touch targets remain 40 pixels or larger.</li></ul></div></div></div></details>
+        <details><summary>Phase 3 · Fix mobile layout and attention hierarchy</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>App shell and tests</li><li>Dashboard shell and tests</li><li>Dashboard charts only if measured</li><li>Shared web CSS only for shared responsive or reduced-motion rules</li></ul></div><div><h3>Work and tests</h3><ul><li>Place one create-invoice action in content flow. Make it full width on mobile and fixed only on desktop.</li><li>Keep viewer and route visibility rules.</li><li>Move Payment Setup and review items before charts. Use current response data only.</li><li>Use one lime primary action. Keep other actions secondary.</li><li>Wrap the complete reference with <code>overflow-wrap: anywhere</code>. Do not hide it or truncate its only copy.</li><li>Add <code>min-width:0</code> to owners of variable text. Do not conceal the defect with page-level overflow hiding.</li><li>Keep loading, error, retry, empty, permission, and period states.</li><li>Scripted checks use 375 and 1440 CSS pixels. Use 320, 768, 1024, and 2053 only for targeted manual checks when changed evidence warrants them.</li><li>At 375 pixels, status and warning text must not sit behind the action. Touch targets remain 40 pixels or larger.</li></ul></div></div><h3 style="margin-top:24px">Presentation matrix</h3><div class="table-wrap"><table><caption>Existing dashboard fields only</caption><thead><tr><th scope="col">Condition</th><th scope="col">First attention row</th><th scope="col">Rule</th></tr></thead><tbody><tr><th scope="row">Setup not active</th><td>Payment Setup</td><td>Owner/Admin gets the existing CTA. Other roles get explanatory text.</td></tr><tr><th scope="row">Active + review &gt; 0</th><td>Needs review</td><td>Link to the existing payment review view.</td></tr><tr><th scope="row">Active + no review + overdue &gt; 0</th><td>Overdue</td><td>Link to the existing invoice list.</td></tr><tr><th scope="row">Active + no review/overdue + pending &gt; 0</th><td>Pending confirmations</td><td>Link to existing payments.</td></tr><tr><th scope="row">All zero and active</th><td>Current position</td><td>No warning row.</td></tr><tr><th scope="row">Combined conditions</th><td>Setup, review, overdue, pending</td><td>Show every non-zero row in that order. Do not prioritise by a new amount rule.</td></tr></tbody></table></div></div></details>
+
+        <details><summary>Phase 4 · Migrate to restrained GSAP motion</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>Marketing and web package manifests</li><li><span class="path">pnpm-lock.yaml</span></li><li>Delete marketing motion adapter</li><li>Marketing hero, header, connected trail, outcomes, and tests</li><li>Web dashboard, invoice form, tests, and CSS</li></ul></div><div><h3>Rules</h3><ul><li>Import GSAP inside client-only effects or a client-only module. Never register GSAP or <code>ScrollTrigger</code> during server render.</li><li>Use <code>gsap.context()</code> and <code>revert()</code>. Register <code>ScrollTrigger</code> only where used.</li><li>Keep the motion-preference helper app-local and inline in each application; do not add a shared animation framework or provider. On a preference change, kill and revert active timelines, then apply the final state or start the no-preference timeline.</li><li>Render visible final HTML first. Apply transforms after mount only for no-preference users.</li><li>For reduced motion, create no timeline and no scroll trigger. Set the final state immediately and keep it after a runtime preference change.</li><li>Keep most motion from 160 to 420 milliseconds. Do not animate large layout or blur fields.</li><li>Do not add global reveals, parallax, marquees, bounce, or repeating decorative pulses.</li><li>Do not delay click, submit, focus, error, or navigation behavior.</li></ul><h3 style="margin-top:24px">Accepted surfaces and lifecycle tests</h3><ul><li>Marketing: one hero sequence, one trail progress, incoming outcome state, menu entrance, and incoming preview. Prefer GSAP core or a native scroll signal for trail progress; use ScrollTrigger only when demonstrated parity or lifecycle need requires a continuous trigger.</li><li>Product: one successful dashboard attention update, one added invoice row, and its related total change.</li><li>Remove all <code>motion/react</code> imports and dependency entries. Both apps use GSAP, with no second general animation library.</li><li>Mount components in React Strict Mode, unmount, remount, and change routes. Assert contexts revert, ScrollTriggers are killed, and no stale transforms or listeners remain.</li><li>Toggle reduced motion while mounted. Assert that no timeline or trigger is created while reduced motion is active.</li><li>Exit when reduced motion has identical content and action access and tests show no timer leak.</li></ul></div></div></div></details>
+
+        <details><summary>Phase 5 · Strengthen product proof without a redesign</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>Marketing site copy</li><li>Hero payment trail visual</li><li>Connected payment trail</li><li>Outcome explorer</li><li>Operations field</li><li>Applicable component and SEO tests</li></ul></div><div><h3>Work and gate</h3><ul><li>Use <code>INV-000184</code>, <code>T8129-4F3A-90LX</code>, and <code>RCT-000241</code> across the related story.</li><li>Keep invoice, payment, balance, overpayment, refund, and net amounts consistent.</li><li>Add <code>Illustrative demo data</code> to every synthetic product surface.</li><li>Apply Mobbin principles for one coherent invoice artifact, explicit readiness, compact totals, operational state grouping, and nearby actions. Do not copy a product screen or brand.</li><li>Keep Lumina color, type, shapes, language, Paystack boundaries, and static clarity.</li><li>Remove repeated text only when the adjacent product state proves the same fact.</li><li>Keep approved demonstration copy and identifiers in one typed <code>site-copy.ts</code> source; use one focused rendered-copy and structured-data deny-list test for settlement wording, invented proof, guarantees, and unsupported metrics. Test identifiers, amounts, demo labels, SEO claims, keyboard tabs, menus, mobile accordion, and focus.</li><li>Exit when a visitor can explain the invoice-to-receipt trail without animation.</li></ul></div></div></div></details>
+
+        <details><summary>Phase 6 · Add the real-stack browser gate</summary><div class="detail-body"><div class="detail-grid"><div><h3>Files</h3><ul class="file-list"><li>New <span class="path">e2e/playwright.config.ts</span></li><li>New <span class="path">e2e/platform-experience-hardening.spec.ts</span></li><li>New <span class="path">e2e/run-e2e.mjs</span></li><li>Root package manifest and lock</li><li>Git ignore if required</li><li>README consolidated final documentation pass</li></ul></div><div><h3>Deterministic lifecycle</h3><ol><li>Create a unique, narrow database target. Refuse a blank or broad target.</li><li>Build with final public URLs. Then migrate and run the guarded seed twice.</li><li>Snapshot demo and sentinel IDs, tokens, sequence, and audit counts.</li><li>Start built API on 4100, product on 3100, and marketing on 3102. Capture logs.</li><li>Health-check API <code>/health</code> and both built roots before Playwright.</li><li>Run Playwright with explicit base URLs. Save traces and screenshots.</li><li>On failure, print log paths without secrets. In <code>finally</code>, stop processes, close handles, and drop only the unique database.</li><li>Run the complete lifecycle twice. A missing prerequisite fails the command.</li><li>CI keeps unit and build checks normal. pnpm test:e2e is a local/release gate run twice; do not promise or add a dedicated CI E2E job in this scope unless infrastructure and workflow scope are explicitly provisioned later.</li></ol></div></div></div></details>
+      </section>
+
+      <section class="section" aria-labelledby="matrix-title">
+        <div class="section-head"><h2 id="matrix-title">The real-stack matrix proves roles, public paths, and mobile behavior.</h2><p>Run the built applications against the real local API and isolated PostgreSQL database. The matrix does not call live Paystack.</p></div>
+        <div class="table-wrap"><table><caption>Playwright hardening matrix</caption><thead><tr><th scope="col">Case</th><th scope="col">Role and viewport</th><th scope="col">Required evidence</th></tr></thead><tbody>
+          <tr><th scope="row">Marketing proof</th><td>Signed out, 1440 and 375</td><td>Lumina identity, product demos, demo labels, navigation, no overflow.</td></tr>
+          <tr><th scope="row">Reduced motion</th><td>Signed out, 1440 and 375</td><td>All proof is visible. Menus and tabs work without trail motion.</td></tr>
+          <tr><th scope="row">Owner dashboard</th><td>Owner, 1440 and 375</td><td>Attention order, full reference wrap, no overflow, no covered status.</td></tr>
+          <tr><th scope="row">Invoice authoring</th><td>Owner, 1440 and 375</td><td>Unique labels, customer selection, line add, totals, save, and send.</td></tr>
+          <tr><th scope="row">Public invoice</th><td>Signed out, 375 and 1440</td><td>Sent invoice opens with Lumina. No workspace navigation or internal IDs.</td></tr>
+          <tr><th scope="row">Payments and receipts</th><td>Owner, 1440 and 375</td><td>Seeded confirmed payment and receipt are visible. References wrap.</td></tr>
+          <tr><th scope="row">Team permissions</th><td>Owner then Viewer, both sizes</td><td>Owner sees team settings. Viewer receives a clear denial state.</td></tr>
+          <tr><th scope="row">Public receipt</th><td>Signed out, 375 and 1440</td><td>Receipt opens with Lumina and no internal IDs.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="section" aria-labelledby="code-title">
+        <div class="section-head"><h2 id="code-title">Two small configuration changes express the core reliability choice.</h2><p>These are proposed diffs for review. They are not implementation changes. Receipt safety remains in the current service, and the test timeout remains unchanged.</p></div>
+        <div class="code-grid"><article class="code-panel"><h3>Complete demo seed</h3><div id="seed-diff"></div></article><article class="code-panel"><h3>Bound API scheduling</h3><div id="jest-diff"></div></article></div>
+      </section>
+
+      <section class="section" aria-labelledby="validation-title">
+        <div class="section-head"><h2 id="validation-title">Validation is layered and explicit.</h2><p>Local commands, repeated API runs, built real-stack checks, visual inspection, and one final Impeccable detector pass are separate evidence.</p></div>
+        <div class="rules"><article class="rule"><h3>Focused checks</h3><p>Run the combined throttle spec, API suite, web tests, marketing tests, and application typechecks during implementation.</p></article><article class="rule"><h3>Repository gate</h3><p>Run lint, typecheck, unit test, build, and <code>test:e2e</code> before delivery.</p></article><article class="rule"><h3>Dependency gate</h3><p>Search for all old motion imports. Use <code>pnpm why</code> to prove <code>motion</code> left and GSAP is shared.</p></article><article class="rule"><h3>UI gate</h3><p>Run the Impeccable detector once on final changed UI targets. Fix scoped errors and record evidence for a false positive.</p></article></div>
+        <pre class="terminal" aria-label="Validation commands">pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+
+pnpm --filter @sme-invoicing/api exec jest src/public-rate-limits.spec.ts --runInBand
+rg "motion/react|motion/react-m|LazyMotion|AnimatePresence|useReducedMotion|useScroll" apps/marketing/src
+pnpm why motion
+pnpm why gsap</pre>
+      </section>
+
+      <section class="section" aria-labelledby="accept-title">
+        <div class="section-head"><h2 id="accept-title">Acceptance is about observed behavior.</h2><p>No item passes because the code appears correct. Each item needs command, browser, accessibility, or dependency evidence.</p></div>
+        <ul class="checklist"><li>Root environment supports all API database and maintenance commands.</li><li>One seed command produces payments and receipts without duplicates.</li><li>Lint, typecheck, tests, and build pass.</li><li>Throttle cases pass alone, together, and five full API runs pass only at the selected worker policy.</li><li>No broad timeout increase exists.</li><li>Scripted dashboard checks at 375 and 1440 have no overflow; wider and narrow sizes are targeted manual checks when warranted.</li><li>Create action covers no status content.</li><li>Attention uses only current API truth.</li><li>Every line-item numeric input has a unique name.</li><li>Lumina is continuous across public and private surfaces.</li><li>GSAP is the single general animation library.</li><li>Reduced motion has complete stable content.</li><li>Marketing proof uses one typed approved-copy source and a focused rendered-copy/structured-data deny-list test, and is marked as demo data.</li><li>Real-stack owner, viewer, invoice, payment, and receipt paths pass.</li><li>Final changed UI passes the detector.</li><li>No unrelated Ponytail candidate enters the diff.</li></ul>
+      </section>
+
+      <section class="section" aria-labelledby="risk-title">
+        <div class="section-head"><h2 id="risk-title">The highest risks have narrow fallbacks.</h2><p>No database migration is planned. Runtime areas can roll back independently, but an animation library migration must remain complete per surface.</p></div>
+        <div class="table-wrap"><table><caption>Risk, mitigation, and rollback</caption><thead><tr><th scope="col">Risk</th><th scope="col">Mitigation</th><th scope="col">Rollback or fallback</th></tr></thead><tbody>
+          <tr><th scope="row">Root loader replaces deployed values</th><td>Process values win. Test with and without the file.</td><td>Revert loader imports and README together.</td></tr>
+          <tr><th scope="row">Seed backfill fails</th><td>Chain with failure propagation and retain repair command.</td><td>Revert orchestration only. Keep standalone backfill.</td></tr>
+          <tr><th scope="row">Worker bound hides a leak</th><td>Combine tests, keep cleanup, diagnose worker modes, then run five suites only at the selected policy; detect handles once.</td><td>Remove scheduling change only after a confirmed lifecycle fix.</td></tr>
+          <tr><th scope="row">Attention implies new accounting truth</th><td>Use current counts, records, states, and links only.</td><td>Return panels to former order. No API rollback is needed.</td></tr>
+          <tr><th scope="row">Long rows reduce scanning</th><td>Wrap identifiers only and keep amount and state stable.</td><td>Use a local expandable reference, not page overflow or hidden text.</td></tr>
+          <tr><th scope="row">GSAP changes keyboard behavior</th><td>Keep React state, ARIA, focus, Escape, and click logic unchanged.</td><td>Ship the complete static state and remove the failed animation.</td></tr>
+          <tr><th scope="row">Two motion systems remain</th><td>Use import and dependency gates.</td><td>Revert the incomplete surface as one unit.</td></tr>
+          <tr><th scope="row">Playwright scope grows</th><td>One config and one scenario file. No page objects.</td><td>Remove test files, but execute the same matrix manually.</td></tr>
+          <tr><th scope="row">Ponytail audit expands scope</th><td>Only remove replaced motion code or exact changed-file duplication.</td><td>Drop unrelated cleanup from the branch.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="section" aria-labelledby="scope-title">
+        <div class="section-head"><h2 id="scope-title">Scope stays narrow even when the audit finds more.</h2><p>The plan allows direct cleanup in changed surfaces. It defers all general abstractions and repository-wide removal work.</p></div>
+        <div class="comparison"><article class="compare-side target"><h3>Allowed cleanup</h3><ul><li>Delete the replaced motion adapter and imports.</li><li>Consolidate the two related throttle tests.</li><li>Reuse existing alerts, cards, buttons, status, typography, and formatters.</li><li>Remove exact duplicate copy or style in changed surfaces.</li></ul></article><article class="compare-side"><h3>Deferred candidates</h3><ul><li>General page-header and detail-row extraction.</li><li>Money, date, pagination, query-string, audit, and invoice-rule consolidation.</li><li>Maintenance-script dependency-injection redesign.</li><li>Removal of <code>packages/config</code> or <code>infra</code>.</li></ul></article></div>
+      </section>
+
+      <section class="section" aria-labelledby="source-title">
+        <div class="section-head"><h2 id="source-title">Authority remains with Lumina.</h2><p>External sources support interaction judgment only. They do not authorize brand copying, new claims, or a changed product contract.</p></div>
+        <div class="source-list"><div class="source-item"><b>Delivery brief</b><span>Scope, verified defects, acceptance, and risk.</span></div><div class="source-item"><b>Lumina product and design files</b><span>Brand, financial boundaries, type, color, layout, and motion.</span></div><div class="source-item"><b>Current source and tests</b><span>Runtime contracts, state, permissions, and failure modes.</span></div><div class="source-item"><b>Mobbin examples</b><span>Invoice coherence, attention, state grouping, and action proximity only.</span></div><div class="source-item"><b>Vercel design guidance</b><span>Untrusted hierarchy, evidence, reflow, restraint, and access guidance only. No Vercel identity.</span></div><div class="source-item"><b>Ponytail audit</b><span>Candidates only. No permission for a general refactor.</span></div></div>
+      </section>
+
+      <section class="section" aria-labelledby="assume-title">
+        <div class="section-head"><h2 id="assume-title">No blocking question remains.</h2><p>The plan assumes Node.js 22, PostgreSQL 17 on isolated port 55432, development-only seed users, sufficient dashboard response data, and local Playwright browser installation. Stop and report before changing a financial rule, permission, public token, or provider behavior.</p></div>
+      </section>
+      <section class="section" aria-labelledby="recover-title">
+        <div class="section-head"><h2 id="recover-title">Planning checkpoint and recoverability</h2><p>Commit the accepted Markdown and Lavish artifacts before implementation. The checkpoint contains no product code. If review changes the plan, update both artifacts, record the revision summary, and create a new checkpoint commit. Keep the editable Lavish file for review; export a read-only archive only when the delivery workflow requests it.</p></div>
+      </section>
+    </main>
+    <footer><span>Lumina platform experience hardening</span><span>Editable Lavish review artifact · implementation not started</span></footer>
+  </div>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({startOnLoad:true,theme:"dark",securityLevel:"strict",themeVariables:{primaryColor:"#182019",primaryTextColor:"#f5f7ef",primaryBorderColor:"#91d63f",lineColor:"#aeb8a7",secondaryColor:"#121813",tertiaryColor:"#0d110e",fontFamily:"Hanken Grotesk"}});
+  </script>
+  <script type="module">
+    import { FileDiff } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+    const options={theme:{light:"github-light",dark:"github-dark"},themeType:"dark",overflow:"wrap",diffStyle:"unified"};
+    new FileDiff(options).render({containerWrapper:document.querySelector("#seed-diff"),oldFile:{name:"apps/api/package.json",contents:'"db:seed": "tsx src/database/seed.ts"\n'},newFile:{name:"apps/api/package.json",contents:'"db:seed": "tsx src/database/seed.ts && tsx src/scripts/backfill-receipts.ts"\n'}});
+    new FileDiff(options).render({containerWrapper:document.querySelector("#jest-diff"),oldFile:{name:"apps/api/jest.config.cjs",contents:'module.exports = {\n  testEnvironment: "node"\n};\n'},newFile:{name:"apps/api/jest.config.cjs",contents:'module.exports = {\n  testEnvironment: "node",\n  maxWorkers: "50%"\n};\n'}});
+  </script>
+</body>
+</html>

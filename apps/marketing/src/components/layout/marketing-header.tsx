@@ -1,19 +1,14 @@
 "use client";
 
-import { AnimatePresence, LazyMotion, useReducedMotion } from "motion/react";
-import * as m from "motion/react-m";
-import { ArrowUpRight, ChevronDown, LogIn, Menu, X } from "lucide-react";
+import { ChevronDown, LogIn, Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FocusEvent, useEffect, useRef, useState } from "react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { NairaText } from "@/components/ui/naira-text";
 import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { navigation } from "@/content/site-copy";
 import { cn } from "@/lib/cn";
 import { getAppLoginUrl, getMarketingAnchorHref } from "@/lib/urls";
-
-const loadMotionFeatures = () => import("@/lib/motion-features").then((module) => module.default);
 
 export function MarketingHeader() {
   const pathname = usePathname();
@@ -22,15 +17,7 @@ export function MarketingHeader() {
   const [isOpen, setIsOpen] = useState(false);
   const [isProductOpen, setIsProductOpen] = useState(false);
   const [isMobileProductOpen, setIsMobileProductOpen] = useState(false);
-  const [activeProductId, setActiveProductId] = useState(navigation.productItems[0]!.id);
-  const reduceMotion = useReducedMotion();
   const loginUrl = getAppLoginUrl();
-  const activeProduct = useMemo(
-    () =>
-      navigation.productItems.find((item) => item.id === activeProductId) ??
-      navigation.productItems[0]!,
-    [activeProductId]
-  );
 
   const resolveHref = (href: `#${string}`) => getMarketingAnchorHref(pathname, href);
 
@@ -108,75 +95,21 @@ export function MarketingHeader() {
               <ChevronDown aria-hidden="true" className={cn(isProductOpen && "rotate-180")} />
             </button>
 
-            <LazyMotion features={loadMotionFeatures} strict>
-              <AnimatePresence>
-                {isProductOpen ? (
-                  <m.div
-                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                    className="product-menu"
-                    exit={
-                      reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8, filter: "blur(6px)" }
-                    }
-                    id="product-menu"
-                    initial={reduceMotion ? false : { opacity: 0, y: -8, filter: "blur(6px)" }}
-                    transition={
-                      reduceMotion
-                        ? { duration: 0.01 }
-                        : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
-                    }
+            {isProductOpen ? (
+              <div className="product-menu" id="product-menu">
+                {navigation.productItems.map((item) => (
+                  <a
+                    className="product-menu-link"
+                    href={resolveHref(item.href)}
+                    key={item.id}
+                    onClick={() => setIsProductOpen(false)}
                   >
-                    <div className="product-menu-list">
-                      {navigation.productItems.map((item) => (
-                        <a
-                          className={cn(
-                            "product-menu-link",
-                            item.id === activeProductId && "is-active"
-                          )}
-                          href={resolveHref(item.href)}
-                          key={item.id}
-                          onClick={() => setIsProductOpen(false)}
-                          onFocus={() => setActiveProductId(item.id)}
-                          onMouseEnter={() => setActiveProductId(item.id)}
-                        >
-                          <span>{item.label}</span>
-                          <small>{item.detail}</small>
-                        </a>
-                      ))}
-                    </div>
-                    <div className="product-menu-preview" aria-live="polite">
-                      <AnimatePresence initial={false} mode="wait">
-                        <m.div
-                          animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-                          exit={
-                            reduceMotion
-                              ? { opacity: 1 }
-                              : { opacity: 0, x: -16, filter: "blur(8px)" }
-                          }
-                          initial={
-                            reduceMotion ? false : { opacity: 0, x: 16, filter: "blur(8px)" }
-                          }
-                          key={activeProduct.id}
-                          transition={
-                            reduceMotion
-                              ? { duration: 0.01 }
-                              : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
-                          }
-                        >
-                          <span className="data-label">{activeProduct.label.toUpperCase()}</span>
-                          <strong>{activeProduct.title}</strong>
-                          <p>
-                            <NairaText value={activeProduct.preview} />
-                          </p>
-                          <span className="preview-action">
-                            Explore section <ArrowUpRight aria-hidden="true" />
-                          </span>
-                        </m.div>
-                      </AnimatePresence>
-                    </div>
-                  </m.div>
-                ) : null}
-              </AnimatePresence>
-            </LazyMotion>
+                    <span>{item.label}</span>
+                    <small>{item.detail}</small>
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {navigation.links.map((link) => (
