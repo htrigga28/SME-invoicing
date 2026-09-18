@@ -56,6 +56,8 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement | null>(null);
+  const jumpPanelRef = useRef<HTMLDivElement | null>(null);
+  const jumpTriggerRef = useRef<HTMLButtonElement | null>(null);
   const businessName = me.businessProfile.businessName ?? me.activeOrganisation.name;
   const sections = getNavigationSections(me.membership.role);
   const activeItem = sections
@@ -63,13 +65,24 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
     .find((item) => activePath === item.href || activePath.startsWith(`${item.href}/`));
 
   useEffect(() => {
-    if (!accountOpen && !jumpOpen) return;
     function onPointer(e: PointerEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
         setAccountOpen(false);
       }
+      if (
+        !jumpTriggerRef.current?.contains(e.target as Node) &&
+        !jumpPanelRef.current?.contains(e.target as Node)
+      ) {
+        setJumpOpen(false);
+      }
     }
     function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setAccountOpen(false);
+        setJumpOpen((current) => !current);
+        return;
+      }
       if (e.key === "Escape") {
         setAccountOpen(false);
         setJumpOpen(false);
@@ -81,7 +94,7 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [accountOpen, jumpOpen]);
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
@@ -128,14 +141,24 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
 
         <div className="ml-auto flex items-center gap-2">
           <button
-            onClick={() => setJumpOpen((v) => !v)}
+            ref={jumpTriggerRef}
+            onClick={() => {
+              setAccountOpen(false);
+              setJumpOpen((v) => !v);
+            }}
             type="button"
             aria-expanded={jumpOpen}
+            aria-label="Jump to a page"
             className="hidden min-h-10 min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text-muted)] transition duration-150 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] sm:inline-flex lg:w-72"
           >
             <Search aria-hidden="true" className="h-4 w-4 shrink-0" />
-            <span className="truncate">Search or jump to…</span>
-            <kbd className="ml-auto hidden rounded border border-[var(--border-default)] bg-[var(--surface-raised)] px-1.5 text-[11px] lg:inline">⌘K</kbd>
+            <span className="truncate">Jump to a page…</span>
+            <kbd
+              aria-label="Control or Command K"
+              className="ml-auto hidden rounded border border-[var(--border-default)] bg-[var(--surface-raised)] px-1.5 text-[11px] lg:inline"
+            >
+              ⌘/Ctrl K
+            </kbd>
           </button>
 
           <div className="relative" ref={accountRef}>
@@ -179,7 +202,10 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
       </div>
 
       {jumpOpen ? (
-        <div className="border-t border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3">
+        <div
+          ref={jumpPanelRef}
+          className="border-t border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3"
+        >
           <div className="mx-auto grid w-full max-w-[1600px] gap-1 sm:grid-cols-2 lg:grid-cols-4">
             {sections.flatMap((s) => s.items).map((item) => (
               <Link

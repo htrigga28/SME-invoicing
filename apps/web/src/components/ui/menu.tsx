@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
@@ -147,7 +148,7 @@ export function DropdownMenu({
                   item.destructive ? "text-[var(--danger)]" : "text-[var(--text-primary)]"
                 );
                 return item.href && !item.disabled ? (
-                  <a
+                  <Link
                     key={item.label}
                     role="menuitem"
                     className={className}
@@ -155,7 +156,7 @@ export function DropdownMenu({
                     onClick={close}
                   >
                     {item.label}
-                  </a>
+                  </Link>
                 ) : (
                   <button
                     key={item.label}

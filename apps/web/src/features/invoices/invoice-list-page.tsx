@@ -38,6 +38,7 @@ import { canManageInvoices } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
 type StatusTab = "" | "draft" | "overdue" | "paid" | "sent";
+type DisplayStatusTab = StatusTab | "__none";
 
 const STATUS_TABS: Array<{ label: string; value: StatusTab }> = [
   { label: "All", value: "" },
@@ -86,10 +87,12 @@ export function InvoiceListContent({
     [customerId, search, status]
   );
 
-  const activeTab: StatusTab =
+  const activeTab: DisplayStatusTab =
     status === "draft" || status === "overdue" || status === "paid" || status === "sent"
       ? status
-      : "";
+      : status === ""
+        ? ""
+        : "__none";
 
   useEffect(() => {
     void loadInvoices(1);
@@ -143,7 +146,7 @@ export function InvoiceListContent({
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
 
-      <StatusTabs<StatusTab>
+      <StatusTabs<DisplayStatusTab>
         label="Invoice status"
         value={activeTab}
         onChange={(v) => setStatus(v as InvoiceStatus | "")}

@@ -60,6 +60,19 @@ describe("app shell navigation components", () => {
     expect(screen.getByRole("menuitem", { name: "Logout" })).toBeInTheDocument();
   });
 
+  it("opens the page launcher from the keyboard and closes it on outside click", () => {
+    render(<Topbar activePath="/dashboard" me={me} onLogout={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Jump to a page" })).toHaveTextContent(
+      "Jump to a page…"
+    );
+    fireEvent.keyDown(document, { ctrlKey: true, key: "k" });
+    expect(screen.getByRole("link", { name: "Invoices" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("link", { name: "Invoices" })).not.toBeInTheDocument();
+  });
+
   it("shows Settings / Team to owners with an active sidebar state", () => {
     render(<Sidebar activePath="/settings/team" role="owner" />);
 
