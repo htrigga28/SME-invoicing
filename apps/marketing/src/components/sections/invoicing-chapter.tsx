@@ -5,7 +5,7 @@ import { Check, Plus } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { invoicingChapter, marketingDemo } from "@/content/site-copy";
-import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function InvoicingChapter() {
   const ref = useRef<HTMLElement>(null);
@@ -17,11 +17,7 @@ export function InvoicingChapter() {
       el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
       return;
     }
-    let disposed = false;
-    let revert = () => {};
-    void loadGsap().then(({ gsap }) => {
-        if (disposed || !el) return;
-        const mm = gsap.matchMedia();
+    return runEditorialMotion((gsap, mm) => {
         mm.add("(min-width: 1024px)", () => {
           // Editor enters from the left edge, preview from the right edge with
           // opposing rotation; both hold readable, then peel outward as the
@@ -62,12 +58,7 @@ export function InvoicingChapter() {
           nodes.forEach((n) => io.observe(n));
           return () => io.disconnect();
         });
-        revert = () => mm.revert();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      revert();
-    };
+    });
   }, []);
 
   return (

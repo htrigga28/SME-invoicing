@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { closingCta } from "@/content/site-copy";
 import { getAppLoginUrl } from "@/lib/urls";
-import { loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
+import { prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function ClosingCta() {
   const ref = useRef<HTMLElement>(null);
@@ -14,11 +14,7 @@ export function ClosingCta() {
     const el = ref.current;
     if (!el) return;
     if (prefersReducedMotion()) return;
-    let disposed = false;
-    let revert = () => {};
-    void loadGsap().then(({ gsap }) => {
-        if (disposed || !el) return;
-        const mm = gsap.matchMedia();
+    return runEditorialMotion((gsap, mm) => {
         mm.add("(min-width: 1024px)", () => {
           // Color-field chapter wipe: the deep-green field rises from below
           // while the FAQ rows clear, and the workspace card docks from the
@@ -40,12 +36,7 @@ export function ClosingCta() {
             tl.kill();
           };
         });
-        revert = () => mm.revert();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      revert();
-    };
+    });
   }, []);
 
   return (

@@ -5,7 +5,7 @@ import { CheckCircle2 } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { customerPaymentSection, marketingDemo } from "@/content/site-copy";
-import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function CustomerPaymentChapter() {
   const ref = useRef<HTMLElement>(null);
@@ -17,11 +17,7 @@ export function CustomerPaymentChapter() {
       el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
       return;
     }
-    let disposed = false;
-    let revert = () => {};
-    void loadGsap().then(({ gsap }) => {
-        if (disposed || !el) return;
-        const mm = gsap.matchMedia();
+    return runEditorialMotion((gsap, mm) => {
         mm.add("(min-width: 1024px)", () => {
           // Public invoice paper slides from the left with a paper tilt while
           // the payment panel docks from the right; confirmation tag crosses
@@ -62,12 +58,7 @@ export function CustomerPaymentChapter() {
           el.querySelectorAll(".reveal").forEach((n) => io.observe(n));
           return () => io.disconnect();
         });
-        revert = () => mm.revert();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      revert();
-    };
+    });
   }, []);
 
   return (

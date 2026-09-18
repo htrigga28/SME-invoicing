@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 import { NairaText } from "@/components/ui/naira-text";
 import { marketingDemo, storyIntro, storySteps } from "@/content/site-copy";
 import type { EnterVector } from "@/lib/editorial-motion";
-import { enterVars, exitVars, loadGsap } from "@/lib/editorial-motion";
+import { enterVars, exitVars, runEditorialMotion } from "@/lib/editorial-motion";
 
 const STATE_VECTORS: Record<string, { enter: EnterVector; exit: EnterVector; rotation: number }> = {
   create: { enter: "left", exit: "left", rotation: -3 },
@@ -113,11 +113,7 @@ export function InvoiceToCashStory() {
     if (!section) return;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) return;
-    let disposed = false;
-    let revert = () => {};
-    void loadGsap().then(({ gsap }) => {
-        if (disposed || !section) return;
-        const mm = gsap.matchMedia();
+    return runEditorialMotion((gsap, mm) => {
         mm.add("(min-width: 1024px)", () => {
           const states = gsap.utils.toArray<HTMLElement>("[data-story-state]", section);
           const steps = gsap.utils.toArray<HTMLElement>("[data-story-step]", section);
@@ -189,12 +185,7 @@ export function InvoiceToCashStory() {
             tl.kill();
           };
         });
-        revert = () => mm.revert();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      revert();
-    };
+    });
   }, []);
 
   return (

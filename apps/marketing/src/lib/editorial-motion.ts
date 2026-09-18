@@ -10,6 +10,25 @@ export async function loadGsap() {
   return { gsap, ScrollTrigger };
 }
 
+type Gsap = Awaited<ReturnType<typeof loadGsap>>["gsap"];
+type GsapMatchMedia = ReturnType<Gsap["matchMedia"]>;
+
+export function runEditorialMotion(setup: (gsap: Gsap, media: GsapMatchMedia) => void) {
+  let disposed = false;
+  let media: GsapMatchMedia | undefined;
+
+  void loadGsap().then(({ gsap }) => {
+    if (disposed) return;
+    media = gsap.matchMedia();
+    setup(gsap, media);
+  }).catch(() => undefined);
+
+  return () => {
+    disposed = true;
+    media?.revert();
+  };
+}
+
 export type EnterVector = "left" | "right" | "bottom" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export function enterVars(vector: EnterVector, distance = 115) {

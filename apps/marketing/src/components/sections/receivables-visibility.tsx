@@ -5,7 +5,7 @@ import { Check } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { visibilitySection } from "@/content/site-copy";
-import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function ReceivablesVisibility() {
   const ref = useRef<HTMLElement>(null);
@@ -20,11 +20,7 @@ export function ReceivablesVisibility() {
       el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
       return;
     }
-    let disposed = false;
-    let revert = () => {};
-    void loadGsap().then(({ gsap }) => {
-        if (disposed || !el) return;
-        const mm = gsap.matchMedia();
+    return runEditorialMotion((gsap, mm) => {
         mm.add("(min-width: 1024px)", () => {
           // Cropped workspace fragments compose from opposing sides: chart
           // panel from the left, activity card from the right with tilt, while
@@ -73,12 +69,7 @@ export function ReceivablesVisibility() {
           el.querySelectorAll(".reveal").forEach((n) => rio.observe(n));
           return () => rio.disconnect();
         });
-        revert = () => mm.revert();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      revert();
-    };
+    });
   }, []);
 
   return (

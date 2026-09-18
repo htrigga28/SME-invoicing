@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { hero, marketingDemo } from "@/content/site-copy";
-import { enterVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, prefersReducedMotion, runEditorialMotion } from "@/lib/editorial-motion";
 
 export function InvoiceHeroScene() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -14,11 +14,7 @@ export function InvoiceHeroScene() {
     const root = rootRef.current;
     if (!root) return;
     if (prefersReducedMotion()) return;
-    let disposed = false;
-    let revert = () => {};
-    void loadGsap().then(({ gsap }) => {
-        if (disposed || !root) return;
-        const mm = gsap.matchMedia();
+    return runEditorialMotion((gsap, mm) => {
         // Desktop / large tablet: full Acctual-style collage choreography.
         mm.add("(min-width: 768px)", () => {
           const heroCopy = root.closest(".hero-grid")?.querySelector(".hero-copy");
@@ -69,12 +65,7 @@ export function InvoiceHeroScene() {
             intro.kill();
           };
         });
-        revert = () => mm.revert();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      revert();
-    };
+    });
   }, []);
 
   return (
