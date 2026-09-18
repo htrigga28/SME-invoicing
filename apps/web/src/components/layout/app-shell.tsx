@@ -5,7 +5,7 @@ import { FilePlus2 } from "lucide-react";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 import { LinkButton } from "@/components/ui/button";
-import { Alert } from "@/components/ui/feedback";
+import { Alert, ErrorState } from "@/components/ui/feedback";
 import { getMe, logout } from "@/features/auth/auth-api";
 import { getOnboardingPath } from "@/features/auth/onboarding";
 import { clearStoredSession, getStoredSession } from "@/features/auth/session";
@@ -78,6 +78,7 @@ function WorkspaceShell({
   const [context, setContext] = useState<AppShellContext | null>(null);
   const [state, setState] = useState<ShellState>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
@@ -138,7 +139,7 @@ function WorkspaceShell({
 
       setState("ready");
     }
-  }, [pathname, requiredRoles, router]);
+  }, [pathname, requiredRoles, retryCount, router]);
 
   async function handleLogout() {
     const session = getStoredSession();
@@ -159,7 +160,16 @@ function WorkspaceShell({
   if (!context) {
     return (
       <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
-        <StatusPanel message={error ?? "Could not load workspace."} tone="error" />
+        <ErrorState
+          className="mx-auto mt-16 max-w-2xl"
+          message={error ?? "Try again in a moment."}
+          onRetry={() => {
+            setError(null);
+            setState("loading");
+            setRetryCount((current) => current + 1);
+          }}
+          title="Workspace could not be loaded"
+        />
       </main>
     );
   }

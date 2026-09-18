@@ -70,9 +70,22 @@ describe("getApiBaseUrl", () => {
     } satisfies Partial<ApiRequestError>);
   });
 
+  it("replaces browser network errors with a recoverable message", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+    await expect(apiRequest("/customers")).rejects.toMatchObject({
+      message: "Lumina could not connect to the service. Try again in a moment.",
+      name: "ApiRequestError",
+      status: 0
+    } satisfies Partial<ApiRequestError>);
+  });
+
   it("falls back to friendly status messages when the backend payload is not useful", async () => {
     expect(extractApiErrorMessage(503, { error: "Service Unavailable" })).toBe(
-      "The payment provider is currently unavailable. Please try again later."
+      "This service is temporarily unavailable. Try again in a moment."
+    );
+    expect(extractApiErrorMessage(500, { message: "connection terminated unexpectedly" })).toBe(
+      "Something went wrong on our side. Please try again."
     );
     expect(extractApiErrorMessage(404)).toBe("The requested record could not be found.");
   });

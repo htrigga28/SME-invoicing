@@ -20,7 +20,7 @@ import {
   DataToolbarSearch,
   StatusTabs
 } from "@/components/ui/data-toolbar";
-import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
+import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/form";
 import { TableRowActionMenu } from "@/components/ui/menu";
 import { clearStoredSession } from "@/features/auth/session";
@@ -152,7 +152,7 @@ export function CustomerListContent({
         title="Customers"
       />
 
-      {error ? <StatusPanel message={error} tone="error" /> : null}
+      {error && state !== "error" ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
 
       <StatusTabs<CustomerListStatus>
@@ -197,14 +197,10 @@ export function CustomerListContent({
       {state === "loading" ? <CustomerListSkeleton /> : null}
 
       {state === "error" ? (
-        <StatusPanel
-          action={
-            <Button onClick={() => void loadCustomers()} size="sm" type="button">
-              Retry
-            </Button>
-          }
-          message="Customer list could not be loaded."
-          tone="error"
+        <ErrorState
+          message={error ?? "Try again in a moment."}
+          onRetry={() => void loadCustomers()}
+          title="Customers could not be loaded"
         />
       ) : null}
 

@@ -163,6 +163,28 @@ describe("CustomerListContent archive actions", () => {
     );
   });
 
+  it("offers one clear retry path when customers cannot be loaded", async () => {
+    vi.mocked(listCustomers)
+      .mockRejectedValueOnce(
+        new Error("Lumina could not connect to the service. Try again in a moment.")
+      )
+      .mockResolvedValueOnce({ customers: [demoCustomer], pagination });
+
+    render(<CustomerListContent accessToken="token" role="owner" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Customers could not be loaded" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Lumina could not connect to the service. Try again in a moment.")
+    ).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findAllByText("Lagos Bright Prints")).not.toHaveLength(0);
+    expect(listCustomers).toHaveBeenCalledTimes(2);
+  });
+
   it("does not use native browser prompts in customer archive flows", () => {
     const customerListSource = readFileSync(
       "src/features/customers/customer-list-page.tsx",
