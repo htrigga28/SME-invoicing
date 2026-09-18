@@ -5,6 +5,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { outcomes, reconciliationSection } from "@/content/site-copy";
+import { enterVars, exitVars, prefersReducedMotion } from "@/lib/editorial-motion";
 import { cn } from "@/lib/cn";
 
 const toneIcons = {
@@ -20,11 +21,50 @@ export function OutcomeExplorer() {
   const active = outcomes[activeIndex]!;
   const ActiveIcon = toneIcons[active.tone];
   const panelRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
+    if (window.matchMedia?.("(max-width: 1023px)").matches) return;
+    let disposed = false;
+    let revert = () => {};
+    void import("gsap").then(({ gsap }) => {
+      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+        if (disposed || !sectionRef.current) return;
+        gsap.registerPlugin(ScrollTrigger);
+        // Editorial handoff: copy settles calmly while the payment record
+        // crosses in from the right, then both drift out as visibility enters.
+        const tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 85%",
+            end: "bottom 35%",
+            scrub: 0.8,
+            invalidateOnRefresh: true
+          }
+        });
+        tl.fromTo(".outcome-copy", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 0)
+          .fromTo(".outcome-panel", enterVars("right", 60), { xPercent: 0, yPercent: 0, rotation: 1.5, opacity: 1, duration: 0.5, ease: "power2.out" }, 0.05)
+          .to(".outcome-panel", { ...exitVars("right", 55), duration: 0.8, ease: "power2.in" }, 2.9)
+          .to(".outcome-copy", { opacity: 0.15, yPercent: -10, duration: 0.8, ease: "power2.in" }, 2.95);
+        revert = () => {
+          tl.scrollTrigger?.kill();
+          tl.kill();
+        };
+      }).catch(() => undefined);
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      revert();
+    };
+  }, []);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    if (prefersReducedMotion()) return;
     let disposed = false;
     let revert = () => {};
     void import("gsap").then(({ gsap }) => {
@@ -60,7 +100,7 @@ export function OutcomeExplorer() {
   }
 
   return (
-    <section className="outcome-section" id="reconciliation" aria-labelledby="reconciliation-title">
+    <section className="outcome-section editorial-section" id="reconciliation" aria-labelledby="reconciliation-title" ref={sectionRef}>
       <div className="shell-container outcome-layout">
         <div className="outcome-copy">
           <p className="section-eyebrow">{reconciliationSection.eyebrow}</p>
@@ -94,6 +134,7 @@ export function OutcomeExplorer() {
           <article
             aria-labelledby={`outcome-tab-${active.id}`}
             className="outcome-panel"
+            data-enter="right"
             id={`outcome-panel-${active.id}`}
             ref={panelRef}
             role="tabpanel"

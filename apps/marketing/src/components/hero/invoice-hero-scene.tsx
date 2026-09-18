@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { hero, marketingDemo } from "@/content/site-copy";
+import { enterVars, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function InvoiceHeroScene() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -12,38 +13,64 @@ export function InvoiceHeroScene() {
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     let disposed = false;
     let revert = () => {};
     void import("gsap").then(({ gsap }) => {
-      if (disposed || !root) return;
-      const ctx = gsap.context(() => {
-        const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
-        tl.fromTo(
-          ".hero-invoice-paper",
-          { opacity: 0, y: 22 },
-          { opacity: 1, y: 0, duration: 0.6 }
-        )
-          .fromTo(
-            ".hero-layer-back",
-            { opacity: 0, y: 16 },
-            { opacity: 1, y: 0, duration: 0.5 },
-            "-=0.38"
-          )
-          .fromTo(
-            ".hero-layer-side",
-            { opacity: 0, y: 16 },
-            { opacity: 1, y: 0, duration: 0.5 },
-            "-=0.34"
-          )
-          .fromTo(
-            ".hero-copy > *",
-            { opacity: 0, y: 14 },
-            { opacity: 1, y: 0, duration: 0.5, stagger: 0.07 },
-            0
+      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+        if (disposed || !root) return;
+        gsap.registerPlugin(ScrollTrigger);
+        const mm = gsap.matchMedia();
+        // Desktop / large tablet: full Acctual-style collage choreography.
+        mm.add("(min-width: 768px)", () => {
+          const q = gsap.utils.selector(root);
+          const intro = gsap.timeline({ defaults: { ease: "power3.out" } });
+          intro
+            .fromTo(".hero-copy > *", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, stagger: 0.07 }, 0)
+            .fromTo(".hero-invoice-paper", enterVars("bottom", 90), { xPercent: 0, yPercent: 0, rotation: -1.5, opacity: 1, duration: 0.9 }, 0.1)
+            .fromTo(".hero-layer-back", enterVars("left"), { xPercent: 0, yPercent: 0, rotation: -4, opacity: 1, duration: 1 }, 0.18)
+            .fromTo(".hero-layer-side", enterVars("right"), { xPercent: 0, yPercent: 0, rotation: 3.5, opacity: 1, duration: 1 }, 0.26)
+            .fromTo(".hero-tag-ref", enterVars("top-right", 90), { xPercent: 0, yPercent: 0, rotation: 5, opacity: 1, duration: 0.9 }, 0.34)
+            .fromTo(".hero-tag-receipt", enterVars("bottom-left", 90), { xPercent: 0, yPercent: 0, rotation: -6, opacity: 1, duration: 0.9 }, 0.42);
+
+          // Scroll-linked exit: layers peel away at different speeds while the next
+          // section rises (handoff). Paper drifts slowest; peripheral tags fastest.
+          const exit = gsap.timeline({
+            scrollTrigger: {
+              trigger: root.closest(".hero-section"),
+              start: "top top",
+              end: "bottom top+=120",
+              scrub: 0.8,
+              invalidateOnRefresh: true
+            }
+          });
+          exit
+            .to(".hero-invoice-paper", { yPercent: -14, rotation: -3, ease: "none", duration: 1 }, 0)
+            .to(".hero-layer-back", { xPercent: -38, yPercent: -8, rotation: -7, opacity: 0.25, ease: "none", duration: 1 }, 0)
+            .to(".hero-layer-side", { xPercent: 42, yPercent: -10, rotation: 7, opacity: 0.25, ease: "none", duration: 1 }, 0)
+            .to(".hero-tag-ref", { xPercent: 70, yPercent: -55, rotation: 10, opacity: 0, ease: "none", duration: 1 }, 0)
+            .to(".hero-tag-receipt", { xPercent: -70, yPercent: 40, rotation: -10, opacity: 0, ease: "none", duration: 1 }, 0)
+            .to(q(".hero-copy"), { yPercent: -8, opacity: 0.35, ease: "none", duration: 1 }, 0);
+          return () => {
+            intro.kill();
+            exit.scrollTrigger?.kill();
+            exit.kill();
+          };
+        });
+        // Mobile: calm single rise, no off-canvas travel.
+        mm.add("(max-width: 767px)", () => {
+          const intro = gsap.timeline({ defaults: { ease: "power2.out" } });
+          intro.fromTo(
+            root.querySelectorAll(".hero-invoice-paper, .hero-layer-back, .hero-layer-side"),
+            { opacity: 0, y: 20 },
+            { opacity: 1, y: 0, duration: 0.55, stagger: 0.09 }
           );
-      }, root);
-      revert = () => ctx.revert();
+          return () => {
+            intro.kill();
+          };
+        });
+        revert = () => mm.revert();
+      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;
@@ -57,7 +84,7 @@ export function InvoiceHeroScene() {
       className="invoice-hero-scene"
       ref={rootRef}
     >
-      <div aria-hidden="true" className="hero-layer-back">
+      <div aria-hidden="true" className="hero-layer-back" data-enter="left">
         <div className="hero-mini-head">
           <strong>New invoice</strong>
           <span className="status-chip neutral">Draft</span>
@@ -69,7 +96,7 @@ export function InvoiceHeroScene() {
         </div>
       </div>
 
-      <article className="hero-invoice-paper" aria-label={`Invoice ${marketingDemo.invoiceNumber}`}>
+      <article className="hero-invoice-paper" aria-label={`Invoice ${marketingDemo.invoiceNumber}`} data-enter="bottom">
         <div className="hero-paper-head">
           <span className="data-label">{marketingDemo.business}</span>
           <strong>{marketingDemo.invoiceNumber}</strong>
@@ -88,7 +115,7 @@ export function InvoiceHeroScene() {
         </div>
       </article>
 
-      <div aria-hidden="true" className="hero-layer-side">
+      <div aria-hidden="true" className="hero-layer-side" data-enter="right">
         <div className="hero-mini-head">
           <strong>Payment confirmed</strong>
           <CheckCircle2 aria-hidden="true" color="#237A57" size={16} />
@@ -98,6 +125,16 @@ export function InvoiceHeroScene() {
           <div className="hero-mini-metric"><span>Receipt</span><strong className="mono" style={{ fontFamily: "var(--font-jetbrains)", fontSize: "0.7rem" }}>{marketingDemo.receiptNumber}</strong></div>
           <p style={{ margin: 0, fontSize: "0.6875rem", color: "var(--ink-muted)" }}>{hero.demoLabel}</p>
         </div>
+      </div>
+
+      <div aria-hidden="true" className="hero-tag hero-tag-ref" data-enter="top-right">
+        <span className="data-label">Paystack ref</span>
+        <strong className="mono">{marketingDemo.providerReference}</strong>
+      </div>
+
+      <div aria-hidden="true" className="hero-tag hero-tag-receipt" data-enter="bottom-left">
+        <span className="data-label">Receipt issued</span>
+        <strong className="mono">{marketingDemo.receiptNumber}</strong>
       </div>
     </div>
   );

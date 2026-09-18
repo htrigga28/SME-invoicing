@@ -5,6 +5,7 @@ import { Check } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { visibilitySection } from "@/content/site-copy";
+import { enterVars, exitVars, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function ReceivablesVisibility() {
   const ref = useRef<HTMLElement>(null);
@@ -13,46 +14,74 @@ export function ReceivablesVisibility() {
     const el = ref.current;
     if (!el) return;
     const bars = el.querySelectorAll(".visibility-bars span");
-    const reveal = () => {
-      el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
-      bars.forEach((b, i) => {
-        if (b instanceof HTMLElement) {
-          b.style.transition = "transform 700ms cubic-bezier(0.22,1,0.36,1)";
-          b.style.transitionDelay = `${i * 60}ms`;
-          b.style.transform = "scaleY(1)";
-        }
-      });
-    };
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      bars.forEach((b) => b instanceof HTMLElement && (b.style.transform = "scaleY(1)"));
+    const settleBars = () => bars.forEach((b) => b instanceof HTMLElement && (b.style.transform = "scaleY(1)"));
+    if (prefersReducedMotion()) {
+      settleBars();
       el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
       return;
     }
-    if (typeof IntersectionObserver === "undefined") {
-      bars.forEach((b) => b instanceof HTMLElement && (b.style.transform = "scaleY(1)"));
-      el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
-      return;
-    }
-    bars.forEach((b) => b instanceof HTMLElement && (b.style.transform = "scaleY(0.15)"));
-    (bars[0] as HTMLElement | undefined)?.style.setProperty("transform-origin", "bottom");
-    const io = new IntersectionObserver(
-      (entries) => entries.forEach((e) => e.isIntersecting && reveal()),
-      { threshold: 0.25 }
-    );
-    io.observe(el);
-    const rio = new IntersectionObserver(
-      (entries) => entries.forEach((e) => e.isIntersecting && e.target.classList.add("is-visible")),
-      { threshold: 0.2 }
-    );
-    el.querySelectorAll(".reveal").forEach((n) => rio.observe(n));
+    let disposed = false;
+    let revert = () => {};
+    void import("gsap").then(({ gsap }) => {
+      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+        if (disposed || !el) return;
+        gsap.registerPlugin(ScrollTrigger);
+        const mm = gsap.matchMedia();
+        mm.add("(min-width: 1024px)", () => {
+          // Cropped workspace fragments compose from opposing sides: chart
+          // panel from the left, activity card from the right with tilt, while
+          // metrics rise briefly. All drift out as customer payment enters.
+          const tl = gsap.timeline({
+            scrollTrigger: {
+              trigger: el,
+              start: "top 85%",
+              end: "bottom 35%",
+              scrub: 0.8,
+              invalidateOnRefresh: true,
+              onUpdate: (self) => {
+                bars.forEach((b, i) => {
+                  if (!(b instanceof HTMLElement)) return;
+                  const p = Math.min(1, Math.max(0, (self.progress - 0.05 - i * 0.015) * 3.2));
+                  b.style.transform = `scaleY(${0.15 + p * 0.85})`;
+                });
+              }
+            }
+          });
+          tl.fromTo(".visibility-intro", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 0)
+            .fromTo(".visibility-chart", enterVars("left", 60), { xPercent: 0, yPercent: 0, rotation: -1.5, opacity: 1, duration: 0.5, ease: "power2.out" }, 0.05)
+            .fromTo(".visibility-activity", enterVars("right", 60), { xPercent: 0, yPercent: 0, rotation: 2.5, opacity: 1, duration: 0.5, ease: "power2.out" }, 0.1)
+            .fromTo(".visibility-metric", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.4, stagger: 0.04, ease: "power2.out" }, 0.08)
+            .to(".visibility-chart", { ...exitVars("left", 55), duration: 0.8, ease: "power2.in" }, 2.9)
+            .to(".visibility-activity", { ...exitVars("right", 55), duration: 0.8, ease: "power2.in" }, 2.95);
+          return () => {
+            tl.scrollTrigger?.kill();
+            tl.kill();
+          };
+        });
+        mm.add("(max-width: 1023px)", () => {
+          settleBars();
+          if (typeof IntersectionObserver === "undefined") {
+            el.querySelectorAll(".reveal").forEach((n) => n.classList.add("is-visible"));
+            return;
+          }
+          const rio = new IntersectionObserver(
+            (entries) => entries.forEach((e) => e.isIntersecting && e.target.classList.add("is-visible")),
+            { threshold: 0.2 }
+          );
+          el.querySelectorAll(".reveal").forEach((n) => rio.observe(n));
+          return () => rio.disconnect();
+        });
+        revert = () => mm.revert();
+      }).catch(() => undefined);
+    }).catch(() => undefined);
     return () => {
-      io.disconnect();
-      rio.disconnect();
+      disposed = true;
+      revert();
     };
   }, []);
 
   return (
-    <section aria-labelledby="visibility-title" className="visibility-section" id="visibility" ref={ref}>
+    <section aria-labelledby="visibility-title" className="visibility-section editorial-section" id="visibility" ref={ref}>
       <div className="shell-container">
         <div className="visibility-intro reveal">
           <p className="section-eyebrow">{visibilitySection.eyebrow}</p>
@@ -60,7 +89,7 @@ export function ReceivablesVisibility() {
           <p>{visibilitySection.body}</p>
         </div>
 
-        <div className="visibility-panel reveal" aria-label="Receivables operating view">
+        <div className="visibility-panel" aria-label="Receivables operating view" data-enter="bottom">
           <div className="visibility-metrics">
             {visibilitySection.metrics.map((m) => (
               <div className="visibility-metric" key={m.id}>
@@ -70,18 +99,18 @@ export function ReceivablesVisibility() {
               </div>
             ))}
           </div>
-          <div className="visibility-body">
-            <div className="visibility-chart">
+          <div className="visibility-body editorial-stage">
+            <div className="visibility-chart" data-enter="left">
               <span className="data-label">Collections · last 8 weeks</span>
               <h3>Confirmed collections trend</h3>
               <div aria-hidden="true" className="visibility-bars" style={{ transformOrigin: "bottom" }}>
                 {[38, 52, 44, 66, 58, 78, 72, 92].map((h, i) => (
-                  <span className={i === 7 ? "is-primary" : ""} key={i} style={{ height: `${h}%`, transformOrigin: "bottom" }} />
+                  <span className={i === 7 ? "is-primary" : ""} key={i} style={{ height: `${h}%`, transform: "scaleY(0.15)", transformOrigin: "bottom" }} />
                 ))}
               </div>
               <p style={{ margin: "16px 0 0", fontSize: "0.75rem", color: "var(--ink-muted)" }}>Illustrative demo data · successful payments less processed refunds</p>
             </div>
-            <div className="visibility-activity">
+            <div className="visibility-activity" data-enter="right">
               <span className="data-label">{visibilitySection.recentActivity.label}</span>
               <div className="visibility-event" style={{ marginTop: 12 }}>
                 <span className="event-icon"><Check aria-hidden="true" /></span>
@@ -102,7 +131,7 @@ export function ReceivablesVisibility() {
           </div>
         </div>
 
-        <div className="visibility-callouts reveal">
+        <div className="visibility-callouts">
           {visibilitySection.callouts.map((c) => (
             <article key={c.title}>
               <strong>{c.title}</strong>

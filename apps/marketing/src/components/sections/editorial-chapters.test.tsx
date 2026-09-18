@@ -23,8 +23,9 @@ describe("Editorial receivables chapters", () => {
     ["CREATE", "SHARE", "PAY", "VERIFY", "MATCH", "KNOW"].forEach((label) => {
       expect(screen.getAllByText(label, { exact: false }).length).toBeGreaterThan(0);
     });
-    expect(container.querySelectorAll("[data-story-step]").length).toBe(6);
-    expect(container.querySelectorAll("[data-story-state]").length).toBe(6);
+    expect(container.querySelectorAll(".story-shell [data-story-step]").length).toBe(6);
+    expect(container.querySelectorAll(".story-shell [data-story-state]").length).toBe(6);
+    expect(container.querySelectorAll(".story-mobile-step").length).toBe(6);
     expect(screen.getAllByText(/INV-000184/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/T8129-4F3A-90LX/).length).toBeGreaterThanOrEqual(1);
   });
@@ -64,5 +65,30 @@ describe("Editorial receivables chapters", () => {
     render(<ClosingCta />);
     expect(screen.getByRole("heading", { name: /workflow you can control/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Create account" })).toBeInTheDocument();
+  });
+
+  it("uses Acctual-style off-canvas vectors instead of uniform fade-up", () => {
+    const { container } = render(<InvoiceToCashStory />);
+    const vectors = new Set(
+      Array.from(container.querySelectorAll("[data-enter]")).map((n) => n.getAttribute("data-enter"))
+    );
+    // Signature must use varied horizontal/diagonal vectors, not one direction.
+    expect(vectors.size).toBeGreaterThanOrEqual(4);
+    expect(vectors.has("left")).toBe(true);
+    expect(vectors.has("right")).toBe(true);
+  });
+
+  it("marks chapter compositions with directional entrances", () => {
+    const { container } = render(
+      <>
+        <InvoicingChapter />
+        <CustomerPaymentChapter />
+      </>
+    );
+    const vectors = Array.from(container.querySelectorAll("[data-enter]")).map((n) =>
+      n.getAttribute("data-enter")
+    );
+    expect(vectors).toContain("left");
+    expect(vectors).toContain("right");
   });
 });

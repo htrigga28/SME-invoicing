@@ -5,11 +5,23 @@ import { useEffect, useRef } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { marketingDemo, storyIntro, storySteps } from "@/content/site-copy";
+import type { EnterVector } from "@/lib/editorial-motion";
+import { enterVars, exitVars } from "@/lib/editorial-motion";
+
+const STATE_VECTORS: Record<string, { enter: EnterVector; exit: EnterVector; rotation: number }> = {
+  create: { enter: "left", exit: "left", rotation: -3 },
+  share: { enter: "bottom-right", exit: "top-left", rotation: 2.5 },
+  pay: { enter: "right", exit: "right", rotation: 3 },
+  verify: { enter: "top-right", exit: "bottom-left", rotation: 4 },
+  match: { enter: "bottom-left", exit: "top-right", rotation: -3.5 },
+  know: { enter: "bottom", exit: "bottom-right", rotation: -1.5 }
+};
 
 function StoryVisual({ step }: { step: string }) {
+  const vector = STATE_VECTORS[step]?.enter ?? "bottom";
   if (step === "create") {
     return (
-      <div className="story-state" data-story-state="create">
+      <div className="story-state" data-enter={vector} data-story-state="create">
         <div className="mock-editor" aria-label="Invoice editor">
           <div className="mock-editor-bar"><strong>New invoice</strong><span className="status-chip neutral">Draft</span></div>
           <div className="mock-field"><span>Customer</span><strong>{marketingDemo.customer}</strong><em>Northstar Projects Ltd · billing on file</em></div>
@@ -22,7 +34,7 @@ function StoryVisual({ step }: { step: string }) {
   }
   if (step === "share") {
     return (
-      <div className="story-state" data-story-state="share">
+      <div className="story-state" data-enter="bottom-right" data-story-state="share">
         <article className="mock-paper" aria-label={`Shared invoice ${marketingDemo.invoiceNumber}`}>
           <div className="mock-paper-head">
             <span className="data-label">{marketingDemo.business} · Shared</span>
@@ -41,7 +53,7 @@ function StoryVisual({ step }: { step: string }) {
   }
   if (step === "pay") {
     return (
-      <div className="story-state" data-story-state="pay">
+      <div className="story-state" data-enter="right" data-story-state="pay">
         <article className="mock-paper" aria-label="Customer payment view">
           <div className="mock-paper-head">
             <span className="data-label">Invoice from {marketingDemo.business}</span>
@@ -59,7 +71,7 @@ function StoryVisual({ step }: { step: string }) {
   }
   if (step === "verify") {
     return (
-      <div className="story-state" data-story-state="verify">
+      <div className="story-state" data-enter="top-right" data-story-state="verify">
         <div className="mock-editor">
           <div className="mock-editor-bar"><strong>Payment confirmation</strong><span className="status-chip info">Confirming</span></div>
           <div className="mock-field"><span>Provider reference</span><strong className="mock-ref">{marketingDemo.providerReference}</strong><em>Paystack · successful charge</em></div>
@@ -71,7 +83,7 @@ function StoryVisual({ step }: { step: string }) {
   }
   if (step === "match") {
     return (
-      <div className="story-state" data-story-state="match">
+      <div className="story-state" data-enter="bottom-left" data-story-state="match">
         <div className="mock-editor">
           <div className="mock-editor-bar"><strong>Reconciliation</strong><span className="status-chip success">Matched</span></div>
           <div className="mock-field"><span>Reference resolves to invoice</span><strong><Link2 aria-hidden="true" style={{ width: 14, height: 14, verticalAlign: -2 }} /> {marketingDemo.providerReference} → {marketingDemo.invoiceNumber}</strong><em>Customer {marketingDemo.customer}</em></div>
@@ -82,7 +94,7 @@ function StoryVisual({ step }: { step: string }) {
     );
   }
   return (
-    <div className="story-state" data-story-state="know">
+    <div className="story-state" data-enter="bottom" data-story-state="know">
       <div className="mock-editor">
         <div className="mock-editor-bar"><strong>Business position</strong><span className="status-chip success">Paid</span></div>
         <div className="mock-field"><span>{marketingDemo.invoiceNumber} · paid</span><strong><NairaText value={marketingDemo.total} /> collected</strong><em>Receipt {marketingDemo.receiptNumber} issued · immutable</em></div>
@@ -115,15 +127,16 @@ export function InvoiceToCashStory() {
           if (states.length === 0) return;
           const first = states[0];
           if (!first) return;
-          gsap.set(states, { autoAlpha: 0, y: 24 });
-          gsap.set(first, { autoAlpha: 1, y: 0 });
+          const firstCfg = STATE_VECTORS["create"]!;
+          gsap.set(states, { autoAlpha: 0 });
+          gsap.set(first, { autoAlpha: 1, xPercent: 0, yPercent: 0, rotation: firstCfg.rotation });
           steps.forEach((s, i) => s.classList.toggle("is-active", i === 0));
           const tl = gsap.timeline({
             scrollTrigger: {
               trigger: section.querySelector(".story-shell"),
               start: "top top+=96",
-              end: "+=320%",
-              scrub: 0.6,
+              end: "+=340%",
+              scrub: 0.7,
               pin: section.querySelector(".story-stage"),
               anticipatePin: 1,
               invalidateOnRefresh: true,
@@ -137,19 +150,35 @@ export function InvoiceToCashStory() {
               }
             }
           });
-          states.forEach((state, i) => {
+          const order = ["create", "share", "pay", "verify", "match", "know"];
+          order.forEach((id, i) => {
             if (i === 0) return;
+            const prevId = order[i - 1]!;
+            const prevCfg = STATE_VECTORS[prevId]!;
+            const nextCfg = STATE_VECTORS[id]!;
             const prev = states[i - 1];
-            if (!prev) return;
-            tl.to(prev, { autoAlpha: 0, y: -18, duration: 0.6 }, i * 1);
+            const next = states[i];
+            if (!prev || !next) return;
+            // Beat shape: quick physical exit, snappy directional entrance,
+            // then a readable hold before the next beat takes over.
+            const at = i * 1;
+            tl.to(prev, { ...exitVars(prevCfg.exit, 75), duration: 0.3, ease: "power2.in" }, at);
             tl.fromTo(
-              state,
-              { autoAlpha: 0, y: 28 },
-              { autoAlpha: 1, y: 0, duration: 0.6 },
-              i * 1 + 0.15
+              next,
+              { ...enterVars(nextCfg.enter, 70), rotation: nextCfg.rotation * 1.5 },
+              { autoAlpha: 1, xPercent: 0, yPercent: 0, rotation: nextCfg.rotation, duration: 0.35, ease: "power2.out" },
+              at + 0.28
             );
+            tl.to({}, { duration: 0.37 });
           });
-          tl.to({}, { duration: 0.4 });
+          // Release handoff: resolved composition peels diagonally as the pin ends
+          // so the invoicing chapter can begin entering underneath it.
+          const last = states[states.length - 1];
+          if (last) {
+            tl.to(last, { xPercent: 60, yPercent: -40, rotation: 5, autoAlpha: 0, duration: 0.5, ease: "power2.in" }, ">");
+          } else {
+            tl.to({}, { duration: 0.4 });
+          }
           return () => {
             tl.scrollTrigger?.kill();
             tl.kill();
@@ -204,6 +233,17 @@ export function InvoiceToCashStory() {
               <span /><span /><span /><span /><span />
             </div>
           </div>
+        </div>
+
+        <div className="story-mobile" aria-label="Invoice lifecycle, step by step">
+          {storySteps.map((step) => (
+            <article aria-label={`${step.index} ${step.label}`} className="story-mobile-step" data-story-step={step.id} key={step.id}>
+              <span className="story-step-index">{step.index} · {step.label}</span>
+              <h3>{step.title}</h3>
+              <p>{step.copy}</p>
+              <StoryVisual step={step.id} />
+            </article>
+          ))}
         </div>
       </div>
     </section>
