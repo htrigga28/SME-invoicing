@@ -81,6 +81,29 @@ Do not turn every container into a 24–32px rounded blob.
 
 ---
 
+# 2A. Acctual-motion fidelity gate
+
+These checks are mandatory because Acctual is the dominant motion/composition reference.
+
+- [ ] Major sections do more than fade upward.
+- [ ] At least several major product/document objects enter from horizontal or diagonal off-canvas positions.
+- [ ] Major visual objects physically leave the viewport again as the scroll continues.
+- [ ] At least two section transitions overlap outgoing and incoming visual states.
+- [ ] Stable headings/copy act as anchors while visual objects move around them.
+- [ ] Some secondary objects begin partially clipped at viewport edges.
+- [ ] Paper/document objects use subtle non-uniform rotation where appropriate.
+- [ ] Product UI remains readable despite collage/layering.
+- [ ] Not every object uses the same entrance direction, speed, or timing.
+- [ ] Full-section transitions feel like one continuous page rather than isolated animated blocks.
+- [ ] Cards do not collapse into a generic rounded bento grid.
+- [ ] Typography has strong black/ink contrast, compact leading, and generous surrounding whitespace.
+- [ ] Strong brand/color fields are occasional chapter changes rather than the default canvas.
+
+If the redesign is technically light but still behaves like:
+`fade-up → static section → fade-up → static section`
+
+then MKT-01 FAILS this gate.
+
 # 3. Header QA
 
 Desktop target:
