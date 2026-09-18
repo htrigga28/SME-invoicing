@@ -54,6 +54,41 @@ It must not feel like:
 
 ---
 
+# 1A. Dominant stylistic reference — Acctual
+
+The uploaded Acctual scroll recording is now the **dominant reference for marketing motion, composition, typography character, cards/paper objects, and section handoffs**.
+
+This changes the weighting of the earlier reference set.
+
+Use:
+
+- **Acctual** for how the page moves and composes itself;
+- **Lumina's merged app** for what the product actually looks like and what it can truthfully do;
+- **Tola / Column** for financial warmth and restraint;
+- **Stripe / Lasso** for product-story pacing and continuity;
+- **Mobbin** for high-quality invoice and financial UI details.
+
+The target is not "make Lumina look like Acctual."
+
+The target is:
+
+> **Take Acctual's editorial motion grammar — objects entering from the sides, composing around stable typography, then physically leaving as the next section is revealed — and rebuild that behavior with Lumina's invoice, receipt, payment, reconciliation, dashboard, colors, and product truth.**
+
+Important qualities from the recording:
+
+- objects start partially or fully outside the viewport;
+- major objects move in from left/right/corners/bottom, not only upward;
+- they settle long enough for the composition to be read;
+- they then move back out of the viewport as scrolling continues;
+- the next section begins entering before the previous section has completely cleared;
+- paper/document/UI layers overlap with subtle rotation and realistic shadow;
+- edge objects are deliberately clipped by the viewport;
+- typography remains comparatively calm while visual objects carry the motion;
+- strong color-field chapters interrupt the light canvas occasionally;
+- product UI is cropped to readable, meaningful areas rather than shrunk into miniature full screens.
+
+See the detailed video-derived motion grammar in `10_MARKETING_REFERENCE_LIBRARY.md`.
+
 # 2. Brand relationship
 
 The app and marketing site should clearly belong to the same company.
