@@ -102,7 +102,58 @@ Do not spend hours browsing unrelated sites.
 
 Do not widen the research set unless a specific problem remains unresolved.
 
-## 2.1 Mandatory Lapa references
+## 2.1 Dominant reference: Acctual
+
+Before the other references, inspect Acctual carefully:
+
+https://www.lapa.ninja/post/acctual-2/
+https://www.lapa.ninja/video/post/acctual-2/
+https://www.acctual.com/
+
+The user explicitly likes **the entire motion/composition language of this site**.
+
+Treat Acctual as the dominant reference for:
+
+- elements entering from left/right/corners/bottom;
+- elements leaving the viewport again as the user continues to scroll;
+- overlapping outgoing/incoming scenes;
+- section-to-section handoff;
+- typography scale/placement;
+- paper/card/UI collage;
+- objects partially clipped by viewport edges;
+- low-radius paper-like surfaces;
+- subtle object rotation;
+- realistic shadow;
+- occasional strong blue/green chapter fields;
+- large readable product visuals.
+
+The required behavior is:
+
+```text
+ENTER from off-canvas
+→ COMPOSE around a stable headline
+→ HOLD long enough to read
+→ EXIT physically toward an edge
+→ reveal/overlap the NEXT section
+```
+
+Do NOT reduce this to generic fade-up animation.
+
+Do NOT copy Acctual's colors, web3/crypto content, illustrations, or exact assets.
+
+Translate the motion/composition system into:
+- Lumina invoice documents;
+- invoice editor fragments;
+- payment confirmation;
+- reconciliation/match cards;
+- receipts;
+- dashboard/receivables panels;
+- status labels.
+
+Read the full video-derived specification in:
+`docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
+
+## 2.2 Other mandatory Lapa references
 
 Inspect:
 
@@ -155,7 +206,7 @@ Use only for:
 
 Do not borrow financing messaging.
 
-## 2.2 Mandatory Pinterest references
+## 2.3 Mandatory Pinterest references
 
 Inspect:
 
@@ -186,7 +237,7 @@ Use for:
 Pinterest is moodboard/composition only.
 It is not product truth.
 
-## 2.3 Mandatory Mobbin references
+## 2.4 Mandatory Mobbin references
 
 Use Mobbin MCP, not only browser previews.
 
@@ -216,12 +267,12 @@ Purpose:
 
 Do not clone them.
 
-## 2.4 Research checkpoint
+## 2.5 Research checkpoint
 
 Before coding, write a SHORT private implementation note with:
 
+- 6–10 concrete motion/composition observations from Acctual;
 - 3 things to take from Tola;
-- 3 things to take from Acctual;
 - 3 things to take from Stripe/Lasso motion;
 - 3 things to take from merged Lumina app;
 - 3 things to explicitly reject.
