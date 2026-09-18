@@ -16,18 +16,13 @@
 
 # FIRST BUILD CYCLE
 
-T020 has shipped in PR #21, and the light authenticated-app overhaul shipped in PR #22.
+T020 shipped in PR #21, the light authenticated-app overhaul shipped in PR #22, and **MKT-01 — Marketing Site Editorial Receivables Evolution shipped in PR #23**.
 
-Before T021, execute **MKT-01 — Marketing Site Editorial Receivables Evolution** using:
+The product sequence now resumes at **T021 — Invoice Delivery, View Tracking and Unified Activity**.
 
-- `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`
-- `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
-- `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
-- `docs/lumina-v2/12_MARKETING_REDESIGN_CODEX_PROMPT.md`
+Execution prompt: `docs/lumina-v2/14_T021_INVOICE_DELIVERY_ACTIVITY_CODEX_PROMPT.md`.
 
-MKT-01 is a deliberate insertion before product expansion; it does **not** renumber T021–T028.
-
-After MKT-01, resume this product sequence at T021.
+T021 should be implemented before T022 so the communications/event foundation can be reused by recurring billing and reminder automation without duplicating delivery history.
 
 ## T020 — Invoice Experience 2.0 — DONE
 
