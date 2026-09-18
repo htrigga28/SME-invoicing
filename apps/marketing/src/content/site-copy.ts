@@ -1,18 +1,28 @@
+export const marketingDemo = {
+  business: "Adebayo Studio",
+  customer: "Northstar Projects",
+  invoiceNumber: "INV-000184",
+  total: "₦78,400",
+  providerReference: "T8129-4F3A-90LX",
+  receiptNumber: "RCT-000241",
+  dueDate: "30 July 2026",
+  customerReference: "NORTH-2026-041"
+} as const;
+
 export type ProductMenuItem = {
-  id: "trail" | "outcomes" | "operations";
-  href: "#payment-trail" | "#outcomes" | "#operations";
+  id: "invoicing" | "reconciliation" | "trust";
+  href: "#invoicing" | "#reconciliation" | "#trust";
   label: string;
   title: string;
   detail: string;
-  preview: string;
 };
 
-export type TrailStage = {
-  id: "invoice" | "checkout" | "confirmation" | "match" | "receipt";
+export type StoryStep = {
+  id: "create" | "share" | "pay" | "verify" | "match" | "know";
+  index: string;
   label: string;
   title: string;
   copy: string;
-  meta: string;
 };
 
 export type OutcomeScenario = {
@@ -31,118 +41,153 @@ export type OutcomeScenario = {
   events: Array<{ label: string; value: string }>;
 };
 
-export type CapabilityGroup = {
-  id: "collect" | "understand" | "resolve" | "control";
-  label: string;
-  heading: string;
-  copy: string;
-  points: string[];
-};
-
-export type TrustNode = {
+export type TrustRow = {
   id: string;
-  label: string;
+  title: string;
   detail: string;
 };
 
 export const siteConfig = {
   brandName: "Lumina",
-  descriptor: "Invoice payment clarity for Nigerian SMEs",
+  descriptor: "Receivables for growing businesses",
   positioning:
-    "Lumina connects invoices, Paystack payments, payout routing, refunds, and receipts so Nigerian SMEs can see what is settled, what is due, and what needs attention.",
+    "Lumina helps growing businesses create professional invoices, collect Paystack payments, reconcile what arrived, and know exactly what needs attention.",
   contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "hello@lumina.example"
 };
 
 export const navigation: {
   productLabel: string;
   productItems: ProductMenuItem[];
-  links: Array<{ href: "#trust" | "#faq"; label: string }>;
+  links: Array<{ href: "#how-it-works" | "#trust" | "#faq"; label: string }>;
   signInLabel: string;
   signupLabel: string;
 } = {
   productLabel: "Product",
   productItems: [
     {
-      id: "trail",
-      href: "#payment-trail",
-      label: "Payment trail",
-      title: "Follow money from invoice to receipt",
-      detail: "See every provider-confirmed step in one connected operational record.",
-      preview: "INV-000184 → T8129-4F3A-90LX → RCT-000241"
+      id: "invoicing",
+      href: "#invoicing",
+      label: "Invoicing",
+      title: "Compose the invoice once",
+      detail: "Reusable catalogue, payment terms, and live customer preview."
     },
     {
-      id: "outcomes",
-      href: "#outcomes",
-      label: "Outcomes",
-      title: "Know what happened and what to do next",
-      detail: "Separate matched payments from genuine review and refund states.",
-      preview: "Matched · Needs review · Refund confirmed"
+      id: "reconciliation",
+      href: "#reconciliation",
+      label: "Payments & reconciliation",
+      title: "Know what happened after checkout",
+      detail: "Matched payments stay simple. Real exceptions stay visible."
     },
     {
-      id: "operations",
-      href: "#operations",
-      label: "Operations",
-      title: "Run the day from financial truth",
-      detail: "Collect, understand, resolve, and control invoice payment work.",
-      preview: "₦132,850 net collected · 2 items need review"
+      id: "trust",
+      href: "#trust",
+      label: "Receipts & control",
+      title: "Financial clarity without becoming your bank",
+      detail: "Provider-confirmed truth, masked payout context, audit history."
     }
   ],
   links: [
+    { href: "#how-it-works", label: "How it works" },
     { href: "#trust", label: "Trust" },
     { href: "#faq", label: "FAQ" }
   ],
-  signInLabel: "Sign In",
+  signInLabel: "Sign in",
   signupLabel: "Create account"
 };
 
 export const hero = {
-  eyebrow: "INVOICE PAYMENT CLARITY FOR NIGERIAN SMEs",
-  title: "Know what got paid—without the spreadsheet chase.",
-  copy: "Lumina connects every invoice, Paystack payment, payout route, refund, and receipt, so you always know what is settled, what is due, and what needs attention.",
+  eyebrow: "RECEIVABLES FOR GROWING BUSINESSES",
+  title: "Turn every invoice into predictable cash.",
+  copy: "Create professional invoices, collect payments, reconcile what arrived, and know exactly what needs attention.",
   primaryCta: "Create account",
-  secondaryCta: "See the payment trail",
-  trustNote: "Built for NGN invoices and Paystack payout flows.",
-  previewLabel: "Connected payment trail",
+  secondaryCta: "See how it works",
+  secondaryHref: "#how-it-works" as const,
+  trustNote: "Built for NGN invoicing and Paystack payment flows.",
   demoLabel: "Illustrative demo data"
 };
 
-export const paymentTrail: TrailStage[] = [
+export const audienceBridge = {
+  heading: "For the people who turn finished work into cash.",
+  groups: [
+    {
+      title: "Growing businesses",
+      copy: "Send one clear invoice and see exactly what is due, overdue, and paid."
+    },
+    {
+      title: "Agencies & professional services",
+      copy: "Bill project work with line items your customer can actually understand."
+    },
+    {
+      title: "Finance & receivables teams",
+      copy: "Keep invoice, payment, receipt, and review state in one operating view."
+    }
+  ]
+};
+
+export const storySteps: StoryStep[] = [
   {
-    id: "invoice",
-    label: "Invoice",
-    title: "Create and share",
-    copy: "Issue a customer invoice with server-calculated totals and one secure public link.",
-    meta: "INV-000184 · ₦78,400"
+    id: "create",
+    index: "01",
+    label: "CREATE",
+    title: "Create",
+    copy: "Build the invoice with the details your customer actually needs."
   },
   {
-    id: "checkout",
-    label: "Checkout",
-    title: "Customer pays",
-    copy: "The customer pays the outstanding balance through Paystack without opening an account.",
-    meta: "Paystack checkout"
+    id: "share",
+    index: "02",
+    label: "SHARE",
+    title: "Share",
+    copy: "Send one clear document instead of another email attachment chain."
   },
   {
-    id: "confirmation",
-    label: "Provider truth",
-    title: "Confirm the money",
-    copy: "Signed webhooks and server-side verification confirm what actually moved.",
-    meta: "T8129-4F3A-90LX"
+    id: "pay",
+    index: "03",
+    label: "PAY",
+    title: "Pay",
+    copy: "Your customer sees what is due and has one clear next step."
+  },
+  {
+    id: "verify",
+    index: "04",
+    label: "VERIFY",
+    title: "Verify",
+    copy: "Lumina waits for provider-confirmed payment truth."
   },
   {
     id: "match",
-    label: "Reconciliation",
-    title: "Match automatically",
-    copy: "Lumina connects the payment reference to the right invoice, customer, and payout route.",
-    meta: "Matched · verified"
+    index: "05",
+    label: "MATCH",
+    title: "Match",
+    copy: "The payment resolves against the invoice instead of becoming another mystery transfer."
   },
   {
-    id: "receipt",
-    label: "Receipt",
-    title: "Close the trail",
-    copy: "The confirmed payment updates the balance and receives its own permanent receipt.",
-    meta: "RCT-000241 · issued"
+    id: "know",
+    index: "06",
+    label: "KNOW",
+    title: "Know",
+    copy: "The invoice, payment, receipt, and business position stay connected."
   }
 ];
+
+export const storyIntro = {
+  eyebrow: "HOW IT WORKS",
+  heading: "One invoice, from creation to financial truth.",
+  copy: "Follow INV-000184 as it moves from an Adebayo Studio draft to a matched, receipted payment from Northstar Projects. No new object appears mid-story."
+};
+
+export const invoicingChapter = {
+  id: "invoicing",
+  eyebrow: "PROFESSIONAL INVOICING",
+  heading: "Compose the invoice once. Let the customer see exactly what you meant.",
+  body: "Build from reusable products and services or add an item on the fly. Set payment terms, add a customer reference, and preview the customer-facing invoice before it leaves your workspace."
+};
+
+export const reconciliationSection = {
+  id: "reconciliation",
+  eyebrow: "PAYMENTS & RECONCILIATION",
+  heading: "Know what happened after checkout.",
+  support: "Matched payments stay simple. Real exceptions stay visible until they are resolved."
+};
 
 export const outcomes: OutcomeScenario[] = [
   {
@@ -150,18 +195,18 @@ export const outcomes: OutcomeScenario[] = [
     label: "Matched",
     eyebrow: "PAYMENT UNDERSTOOD",
     heading: "The payment lands where it belongs.",
-    copy: "Lumina verifies the provider event, matches the reference, updates the invoice, and issues a receipt without a manual reference check.",
-    amount: "₦42,000",
+    copy: "Lumina confirms the Paystack event, matches the reference to INV-000184, updates the balance, and issues RCT-000241 without a manual reference check.",
+    amount: "₦78,400",
     amountLabel: "Confirmed payment",
     status: "Matched",
     tone: "success",
     reference: "T8129-4F3A-90LX",
     invoice: "INV-000184",
-    nextAction: "Receipt RCT-000241 issued",
+    nextAction: "Receipt RCT-000241 issued · Balance ₦0 due",
     events: [
-      { label: "Provider", value: "Verified" },
-      { label: "Invoice balance", value: "₦36,400 due" },
-      { label: "Payout route", value: "Active" }
+      { label: "Provider", value: "Confirmed" },
+      { label: "Invoice balance", value: "₦0 due" },
+      { label: "Receipt", value: "RCT-000241" }
     ]
   },
   {
@@ -169,14 +214,14 @@ export const outcomes: OutcomeScenario[] = [
     label: "Needs review",
     eyebrow: "REAL EXCEPTION",
     heading: "The noise clears. The exception stays.",
-    copy: "Retries remain in history, while a genuine excess payment is surfaced with the context an owner needs to resolve it.",
+    copy: "Retries and abandoned checkouts stay in history. A genuine excess payment is surfaced with the context needed to resolve it.",
     amount: "₦12,000",
     amountLabel: "Excess received",
     status: "Needs review",
     tone: "warning",
     reference: "T8129-7D6C-11QZ",
     invoice: "INV-000184",
-    nextAction: "Owner or admin can initiate refund",
+    nextAction: "Owner or admin can initiate excess refund",
     events: [
       { label: "Invoice balance", value: "₦0 due" },
       { label: "Payment history", value: "2 confirmed" },
@@ -204,80 +249,85 @@ export const outcomes: OutcomeScenario[] = [
   }
 ];
 
-export const capabilityGroups: CapabilityGroup[] = [
-  {
-    id: "collect",
-    label: "Collect",
-    heading: "Send an invoice that is ready to be paid.",
-    copy: "Create the invoice, activate the business payout route, and share one public payment link.",
-    points: ["Paystack account resolution", "Public invoice links", "Partial and full payments"]
-  },
-  {
-    id: "understand",
-    label: "Understand",
-    heading: "Read the business position, not a pile of attempts.",
-    copy: "Separate current financial truth from retries, abandoned checkout, and historical noise.",
-    points: ["Net collected", "Outstanding and overdue", "Latest meaningful state"]
-  },
-  {
-    id: "resolve",
-    label: "Resolve",
-    heading: "Keep real exceptions visible until they are finished.",
-    copy: "Investigate excess payments and follow refunds through provider-confirmed completion.",
-    points: ["Needs Review queue", "Excess refund initiation", "Resolution history"]
-  },
-  {
-    id: "control",
-    label: "Control",
-    heading: "Take the operational record with you.",
-    copy: "Issue payment-specific receipts, export safe CSV data, and retain role-scoped audit history.",
-    points: ["Immutable receipts", "Formula-safe CSV", "Owner/Admin audit logs"]
+export const visibilitySection = {
+  id: "visibility",
+  eyebrow: "RECEIVABLES VISIBILITY",
+  heading: "See what needs attention before it becomes a surprise.",
+  body: "Outstanding balances, overdue invoices, confirmed collections, and real reconciliation issues share one operating view.",
+  metrics: [
+    { id: "outstanding", label: "Outstanding", value: "₦86,400", note: "Across 12 invoices" },
+    { id: "overdue", label: "Overdue", value: "₦18,000", note: "3 invoices" },
+    { id: "collected", label: "Net collected", value: "₦132,850", note: "Successful less refunds" },
+    { id: "attention", label: "Needs attention", value: "2", note: "Real exceptions" }
+  ],
+  callouts: [
+    {
+      title: "Current position",
+      copy: "Net collected, outstanding, and overdue stay in one hierarchy."
+    },
+    {
+      title: "Real exceptions",
+      copy: "Only genuine review items surface. Retries and noise stay in history."
+    },
+    {
+      title: "Complete history",
+      copy: "Every matched payment keeps its reference, invoice, and receipt."
+    }
+  ],
+  recentActivity: {
+    label: "Latest matched payment",
+    title: "T8129-4F3A-90LX matched",
+    meta: "INV-000184 · Northstar Projects · ₦78,400",
+    time: "Now"
   }
-];
+};
 
-export const trustNodes: TrustNode[] = [
-  {
-    id: "custody",
-    label: "No wallet balances",
-    detail: "Invoice payments use the organisation's configured Paystack payout setup."
-  },
-  {
-    id: "keys",
-    label: "No merchant secret keys",
-    detail: "Businesses never paste their own Paystack secret keys into Lumina."
-  },
-  {
-    id: "server",
-    label: "Server-derived amounts",
-    detail: "The backend determines payment amounts and the organisation payout route."
-  },
-  {
-    id: "provider",
-    label: "Provider-confirmed status",
-    detail: "Signed webhooks lead; server-side verification supplies the fallback."
-  },
-  {
-    id: "masked",
-    label: "Masked payout details",
-    detail: "Operational views do not expose full bank account numbers."
-  },
-  {
-    id: "access",
-    label: "Tenant isolation and RBAC",
-    detail: "Organisation scope and role permissions are enforced server-side."
-  }
-];
+export const customerPaymentSection = {
+  id: "customer-payment",
+  eyebrow: "A BETTER WAY TO GET PAID",
+  heading: "Give the customer one clear invoice and one clear next step.",
+  body: "Customers can open a public invoice without a Lumina account and pay online when your business payment setup is active."
+};
+
+export const trustSection = {
+  id: "trust",
+  eyebrow: "TRUST & CONTROL",
+  heading: "Financial clarity without becoming your bank.",
+  body: "Lumina keeps invoice and payment operations connected while Paystack handles the payment flow and your team keeps role-scoped control.",
+  rows: [
+    {
+      id: "provider",
+      title: "Provider-confirmed payment status",
+      detail: "Payment state follows Paystack confirmation rather than optimistic UI state."
+    },
+    {
+      id: "keys",
+      title: "No business secret keys in the app",
+      detail: "Businesses do not paste Paystack secret keys into Lumina."
+    },
+    {
+      id: "masked",
+      title: "Masked payout context",
+      detail: "Operational views avoid exposing full payout account details."
+    },
+    {
+      id: "roles",
+      title: "Role-scoped access and audit history",
+      detail: "Team roles and audit logs keep sensitive actions accountable."
+    }
+  ] as TrustRow[]
+};
 
 export const faq = [
   {
-    question: "Does Lumina hold my business funds?",
+    question: "Does Lumina hold my funds?",
     answer:
-      "No. Lumina does not provide wallet balances or withdrawals. Invoice payments use the organisation's configured Paystack payout setup."
+      "No. Lumina does not hold funds or provide wallet balances. Invoice payments use your organisation's configured Paystack payout setup."
   },
   {
-    question: "Do I need to provide my Paystack secret key?",
+    question: "Do I provide my Paystack secret key?",
     answer:
-      "No. Lumina uses its own server-side Paystack integration and organisation-level subaccounts. Businesses do not paste merchant Paystack secret keys into the product."
+      "No. Lumina uses its own server-side Paystack integration and organisation-level subaccounts. Businesses do not paste Paystack secret keys into the product."
   },
   {
     question: "How does Lumina know an invoice was paid?",
@@ -290,9 +340,9 @@ export const faq = [
       "Confirmed payments determine the financial result. If successful payments exceed the invoice total, Lumina flags the excess for review. Owners and admins can initiate an excess refund, and the state changes after provider confirmation."
   },
   {
-    question: "Can a customer view and pay an invoice without an account?",
+    question: "Can customers pay without an account?",
     answer:
-      "Yes. Public invoice links can be opened without signing in. Online payment is available when the business has active Payment Setup."
+      "Yes. Public invoice links open without signing in. Online payment is available when the business has active Payment Setup."
   },
   {
     question: "Is Lumina accounting software?",
@@ -300,19 +350,23 @@ export const faq = [
       "No. Lumina focuses on customer invoices, online payment collection, reconciliation, refunds, receipts, and operational reporting. It is not full bookkeeping, payroll, inventory, or tax-filing software."
   },
   {
-    question: "Which countries and currencies are supported?",
+    question: "Which country/currency is currently supported?",
     answer:
       "The initial product is designed around Nigerian businesses, Nigerian bank accounts, NGN invoices, and Paystack."
   }
 ];
 
-export const signup = {
-  heading: "Make every invoice payment easier to understand.",
-  copy: "Create your Lumina workspace, add the business details customers should see, and connect the payout account that completes your payment trail."
+export const closingCta = {
+  heading: "Turn outstanding invoices into a workflow you can control.",
+  copy: "Create your Lumina workspace and send your first professional invoice.",
+  primary: "Create account",
+  secondary: "Sign in"
 };
 
+export const signup = closingCta;
+
 export const footer = {
-  heading: "From invoice sent to payment understood.",
-  descriptor: "Invoice payment clarity for Nigerian SMEs.",
+  heading: "Turn every invoice into predictable cash.",
+  descriptor: "Receivables for growing businesses. Invoicing, Paystack payments, and reconciliation in one place.",
   boundaryNote: "Lumina does not hold funds or provide wallet balances."
 };

@@ -1,16 +1,13 @@
-/**
- * THESIS: Lumina turns invoice-payment ambiguity into one connected trail and refuses the repeated feature-card landing page.
- * OWN-WORLD: Night graphite fields, ledger surfaces, signal lime, and product states joined by a precise route line.
- * STORY: An SME owner sees the outcome, follows how money becomes truth, explores exceptions, and creates a workspace.
- * FIRST VIEWPORT: A centered owner-facing promise sits above an invoice-to-receipt composition with the main action in immediate reach.
- * FORM: The user-pinned “Payment Trail” direction; no concept seed was required.
- */
 import { Hero } from "@/components/hero/hero";
-import { ConnectedPaymentTrail } from "@/components/sections/connected-payment-trail";
+import { AudienceBridge } from "@/components/sections/audience-bridge";
+import { ClosingCta } from "@/components/sections/closing-cta";
+import { CustomerPaymentChapter } from "@/components/sections/customer-payment-chapter";
 import { FaqSection } from "@/components/sections/faq-section";
-import { OperationsField, TrustArchitecture } from "@/components/sections/home-sections";
+import { InvoiceToCashStory } from "@/components/sections/invoice-to-cash-story";
+import { InvoicingChapter } from "@/components/sections/invoicing-chapter";
 import { OutcomeExplorer } from "@/components/sections/outcome-explorer";
-import { SignupSection } from "@/components/sections/signup-section";
+import { ReceivablesVisibility } from "@/components/sections/receivables-visibility";
+import { TrustControls } from "@/components/sections/trust-controls";
 import { getAllJsonLd } from "@/lib/seo";
 
 export default function HomePage() {
@@ -24,12 +21,15 @@ export default function HomePage() {
         />
       ))}
       <Hero />
-      <ConnectedPaymentTrail />
+      <AudienceBridge />
+      <InvoiceToCashStory />
+      <InvoicingChapter />
       <OutcomeExplorer />
-      <OperationsField />
-      <TrustArchitecture />
+      <ReceivablesVisibility />
+      <CustomerPaymentChapter />
+      <TrustControls />
       <FaqSection />
-      <SignupSection />
+      <ClosingCta />
     </main>
   );
 }

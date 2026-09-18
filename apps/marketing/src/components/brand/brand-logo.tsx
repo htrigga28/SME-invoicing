@@ -7,7 +7,7 @@ export function BrandMark({ className }: { className?: string }) {
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] bg-[var(--accent)] text-[var(--accent-foreground)]",
+        "inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--brand)] text-white",
         className
       )}
     >
@@ -20,7 +20,7 @@ export function BrandLogo({ className }: { className?: string }) {
   return (
     <span className={cn("brand-logo inline-flex items-center", className)}>
       <BrandMark />
-      <span className="text-base font-semibold tracking-[-0.02em] text-[var(--text-primary)]">Lumina</span>
+      <span className="text-base font-semibold tracking-[-0.02em] text-[var(--ink)]">Lumina</span>
     </span>
   );
 }

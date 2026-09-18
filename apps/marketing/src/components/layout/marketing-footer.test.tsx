@@ -9,13 +9,13 @@ describe("MarketingFooter", () => {
   it("keeps product anchors local on the homepage", () => {
     render(<MarketingFooter />);
 
-    expect(screen.getByRole("link", { name: "Payment trail" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Invoicing" })).toHaveAttribute(
       "href",
-      "#payment-trail"
+      "#invoicing"
     );
-    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute(
       "href",
-      "#get-started"
+      "/privacy"
     );
   });
 
@@ -23,10 +23,10 @@ describe("MarketingFooter", () => {
     window.history.pushState({}, "", "/terms");
     render(<MarketingFooter />);
 
-    expect(screen.getByRole("link", { name: "Outcomes" })).toHaveAttribute("href", "/#outcomes");
-    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Payments & reconciliation" })).toHaveAttribute("href", "/#reconciliation");
+    expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute(
       "href",
-      "/#get-started"
+      "/terms"
     );
   });
 });
