@@ -26,9 +26,16 @@ The deployment should prioritize reliable demo access over complex infrastructur
 | Backend API URL | `NEXT_PUBLIC_API_URL`, `BACKEND_API_URL` |
 | CORS origins | `CORS_ORIGINS` |
 | R2 credentials, later | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
-| Brevo credentials, later | `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` |
+| Brevo transactional email | `BREVO_API_KEY`, `BREVO_FROM_EMAIL` (verified sender), optional `BREVO_SENDER_EMAIL` (legacy), optional `BREVO_BASE_URL`, `BREVO_WEBHOOK_SECRET` |
 
 Secrets must not be committed. Production and preview environments should use separate Paystack and database configuration where practical.
+
+Brevo email notes (T021):
+
+- `BREVO_FROM_EMAIL` must be a verified Brevo sender; the display name is sent as `{businessName} via Lumina`.
+- Without `BREVO_API_KEY`, invoice issuance and public links keep working; email delivery returns a controlled not-configured result and delivery is never faked.
+- Configure a Brevo transactional webhook to `POST /webhooks/brevo/transactional` with a custom `x-brevo-webhook-secret` header matching `BREVO_WEBHOOK_SECRET`. Webhook secret validation happens before any payload processing.
+- Run migrations before deploying code that depends on the `communications`, `communication_events`, and `invoice_view_events` tables.
 
 Payment Setup and Paystack subaccount notes:
 
@@ -61,6 +68,7 @@ Payment Setup and Paystack subaccount notes:
 4. Run migrations.
 5. Configure Paystack test webhook URL.
 6. Verify Payment Setup bank resolution and subaccount creation flows in the deployed backend.
+7. Configure the Brevo transactional webhook URL and secret header.
 7. Deploy frontend with API URL and Paystack public key.
 8. Run seed data only in the intended demo environment.
 9. Smoke test login, dashboard, Payment Setup, public invoice, payment initialization, webhook processing, receipt, and export.

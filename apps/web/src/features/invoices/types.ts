@@ -44,6 +44,8 @@ export type Invoice = {
   publicAccessEnabled: boolean;
   sentAt: string | null;
   viewedAt?: string | null;
+  lastViewedAt?: string | null;
+  viewCount?: number;
   paidAt: string | null;
   cancelledAt: string | null;
   voidedAt: string | null;
@@ -51,11 +53,82 @@ export type Invoice = {
   updatedAt: string;
 };
 
+export type DeliveryState =
+  | "not_emailed"
+  | "sending"
+  | "accepted"
+  | "delivered"
+  | "delayed"
+  | "failed";
+
+export type DeliveryCommunication = {
+  id: string;
+  subject: string | null;
+  toRecipients: string[];
+  ccRecipients: string[];
+  status: "pending" | "accepted" | "delivered" | "deferred" | "failed";
+  acceptedAt: string | null;
+  deliveredAt: string | null;
+  deferredAt: string | null;
+  failedAt: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeliverySummary = {
+  state: DeliveryState;
+  message: string;
+  attempts: number;
+  lastCommunication: DeliveryCommunication | null;
+};
+
+export type ViewSummary = {
+  viewCount: number;
+  firstViewedAt: string | null;
+  lastViewedAt: string | null;
+} | null;
+
+export type InvoiceActivityItem = {
+  id: string;
+  type:
+    | "invoice_created"
+    | "invoice_edited"
+    | "invoice_sent"
+    | "email_accepted"
+    | "email_delivered"
+    | "email_deferred"
+    | "email_failed"
+    | "invoice_viewed"
+    | "payment_started"
+    | "payment_confirmed"
+    | "reconciliation_matched"
+    | "reconciliation_review"
+    | "refund_requested"
+    | "refund_processed"
+    | "receipt_issued"
+    | "invoice_cancelled"
+    | "invoice_voided";
+  occurredAt: string;
+  title: string;
+  detail?: string;
+  tone?: "neutral" | "success" | "warning" | "danger" | "info";
+  actor?: { name?: string } | null;
+  metadata?: Record<string, string | number | null>;
+};
+
+export type InvoiceActivityResponse = {
+  activity: InvoiceActivityItem[];
+  viewSummary: ViewSummary;
+};
+
 export type InvoiceDetailResponse = {
   invoice: Invoice;
   lineItems: InvoiceLineItem[];
   statusEvents: InvoiceStatusEvent[];
   financialSummary: FinancialSummary;
+  delivery: DeliverySummary;
+  viewSummary: ViewSummary;
   payments: {
     id: string;
     provider: string;

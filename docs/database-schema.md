@@ -216,7 +216,9 @@ Index: `catalogue_items_org_archived_at_idx` on `organisation_id + archived_at`.
 | balance_due_kobo | Derived from invoice total minus net received, floored at zero. |
 | paid_at | Nullable. Set when invoice first becomes fully paid. |
 | sent_at | Nullable. |
-| viewed_at | Nullable. |
+| viewed_at | Nullable. First public-invoice view timestamp, preserved for compatibility. |
+| last_viewed_at | Nullable. Most recent public-invoice view timestamp. |
+| view_count | Integer, defaults to 0. Denormalized count of `invoice_view_events` rows. |
 | cancelled_at | Nullable. |
 | voided_at | Nullable. |
 | created_at, updated_at | Timestamps. |
@@ -272,6 +274,68 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | actor_user_id | Nullable for system/public events. |
 | metadata_redacted | Optional JSON metadata that excludes sensitive raw provider payloads. |
 | created_at | Timestamp. |
+
+### communications
+
+One row per invoice email send attempt (initial send or manual resend). Resends create new rows; history is never overwritten.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| invoice_id | References invoices. Cascade on invoice deletion. |
+| customer_id | References customers. |
+| purpose | Currently `invoice_delivery`. Reserved for T022 reminder reuse. |
+| channel | Currently `email`. |
+| provider | Currently `brevo`. |
+| subject | Nullable email subject. |
+| to_recipients | JSONB array of normalized recipient emails. |
+| cc_recipients | JSONB array of normalized CC emails. |
+| provider_message_id | Nullable Brevo message ID. Unique where present. |
+| status | `pending`, `accepted`, `delivered`, `deferred`, `failed`. |
+| accepted_at | Nullable provider-acceptance timestamp. |
+| delivered_at | Nullable delivery timestamp. |
+| deferred_at | Nullable deferral timestamp. |
+| failed_at | Nullable failure timestamp. |
+| failure_reason | Nullable safe display reason. |
+| created_by_user_id | Nullable reference to the sending user. |
+| created_at, updated_at | Timestamps. |
+
+Indexes: `organisation_id + invoice_id`; partial unique on `provider_message_id` where not null.
+
+### communication_events
+
+Normalized provider webhook events. Raw payloads are never stored; only the event type, occurrence time, and safe metadata (recipient email) are persisted.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| communication_id | References communications. Cascade on deletion. |
+| invoice_id | References invoices. Cascade on deletion. |
+| provider | Currently `brevo`. |
+| provider_event_key | Stable idempotency key (`message-id::event::timestamp`). Unique. |
+| event_type | Normalized provider event name. |
+| occurred_at | Provider event timestamp. |
+| metadata_redacted | Optional safe metadata only. |
+| created_at | Timestamp. |
+
+Indexes: `organisation_id + communication_id`; `organisation_id + invoice_id`.
+
+### invoice_view_events
+
+One row per valid public-invoice page view. No IP address, device fingerprint, or user agent is collected.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| invoice_id | References invoices. Cascade on deletion. |
+| occurred_at | View timestamp. |
+| source | Currently `public_invoice_page`. |
+| created_at | Timestamp. |
+
+Index: `organisation_id + invoice_id`.
 
 ### payments
 
@@ -485,6 +549,9 @@ Audit logs are append-only and read-only through the T016 UI. API and CSV export
 - Invoice has many invoice_line_items.
 - Invoice has many payments.
 - Invoice has many invoice_status_events.
+- Invoice has many communications.
+- Invoice has many communication_events.
+- Invoice has many invoice_view_events.
 - Payment belongs to organisation, invoice, and customer.
 - Payment can have one receipt.
 - Receipt belongs to organisation, invoice, and payment.

@@ -53,10 +53,21 @@ Payment Setup gating rules:
 
 Public view tracking rules:
 
+- Every valid public invoice view inserts an `invoice_view_events` row, increments `viewCount`, and updates `lastViewedAt` without changing invoice status.
 - Public invoice view moves `sent` to `viewed` only.
 - Repeated public views do not create repeated viewed status events.
 - `overdue`, `partially_paid`, `paid`, `cancelled`, and `void` invoices must not move to `viewed`.
 - Public view events use `actor_user_id = null` and safe redacted metadata only.
+- No IP address, device fingerprint, or user agent is collected for view tracking.
+
+## Communication State Is Separate From Invoice State
+
+Email delivery (`communications.status`: `pending`, `accepted`, `delivered`, `deferred`, `failed`) is a communication lifecycle, not an invoice lifecycle:
+
+- An invoice may be `sent` while its email delivery failed.
+- A `delivered` email does not mean the customer opened the public invoice.
+- Email open/click events never mark the invoice `viewed`.
+- Invoice status is never used to represent email failure; there is no `email_failed` invoice status.
 
 ## Amount Recalculation
 
