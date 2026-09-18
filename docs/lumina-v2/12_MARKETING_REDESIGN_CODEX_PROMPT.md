@@ -54,11 +54,12 @@ Read these files completely before editing:
 1. `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`
 2. `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
 3. `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
-4. `apps/marketing/DESIGN.md`
-5. `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md`
-6. `docs/lumina-v2/07_MOBBIN_APP_REFERENCE_LIBRARY.md`
-7. `docs/status-rules.md`
-8. `docs/rbac-matrix.md` only as needed to avoid false product claims
+4. `docs/lumina-v2/13_MARKETING_VISUAL_QA_SCORECARD.md`
+5. `apps/marketing/DESIGN.md`
+6. `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md`
+7. `docs/lumina-v2/07_MOBBIN_APP_REFERENCE_LIBRARY.md`
+8. `docs/status-rules.md`
+9. `docs/rbac-matrix.md` only as needed to avoid false product claims
 
 Then inspect the current code:
 
@@ -1347,7 +1348,13 @@ Describe:
 
 ---
 
-# 33. Completion criteria
+# 33. Required visual scorecard
+
+Before opening the PR, execute every applicable check in `docs/lumina-v2/13_MARKETING_VISUAL_QA_SCORECARD.md`.
+
+Any failed global pass/fail gate blocks completion.
+
+# 34. Completion criteria
 
 Do not open the PR until all of these are true:
 
