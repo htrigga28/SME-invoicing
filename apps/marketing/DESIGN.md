@@ -46,6 +46,7 @@ Read these before changing the marketing site:
 2. `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
 3. `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
 4. `docs/lumina-v2/12_MARKETING_REDESIGN_CODEX_PROMPT.md`
+5. `docs/lumina-v2/13_MARKETING_VISUAL_QA_SCORECARD.md`
 
 If this file conflicts with those, `05_MARKETING_SITE_REDESIGN.md` wins for art direction and `12_MARKETING_REDESIGN_CODEX_PROMPT.md` wins for execution.
 
