@@ -162,13 +162,14 @@ function WorkspaceShell({
       <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
         <ErrorState
           className="mx-auto mt-16 max-w-2xl"
-          message={error ?? "Try again in a moment."}
+          detail="Your workspace data can’t be displayed until the connection returns. Try again now, or wait a moment before retrying."
+          message={error ?? "Lumina could not reach the service that loads your business data."}
           onRetry={() => {
             setError(null);
             setState("loading");
             setRetryCount((current) => current + 1);
           }}
-          title="Workspace could not be loaded"
+          title="We can’t load your workspace right now"
         />
       </main>
     );

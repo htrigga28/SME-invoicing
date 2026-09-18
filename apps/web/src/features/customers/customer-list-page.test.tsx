@@ -166,20 +166,24 @@ describe("CustomerListContent archive actions", () => {
   it("offers one clear retry path when customers cannot be loaded", async () => {
     vi.mocked(listCustomers)
       .mockRejectedValueOnce(
-        new Error("Lumina could not connect to the service. Try again in a moment.")
+        new Error(
+          "Lumina could not connect to the service. This part of the app is temporarily unavailable."
+        )
       )
       .mockResolvedValueOnce({ customers: [demoCustomer], pagination });
 
     render(<CustomerListContent accessToken="token" role="owner" />);
 
     expect(
-      await screen.findByRole("heading", { name: "Customers could not be loaded" })
+      await screen.findByRole("heading", { name: "We can’t load customers right now" })
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText("Lumina could not connect to the service. Try again in a moment.")
+      screen.getAllByText(
+        "Lumina could not connect to the service. This part of the app is temporarily unavailable."
+      )
     ).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findAllByText("Lagos Bright Prints")).not.toHaveLength(0);
     expect(listCustomers).toHaveBeenCalledTimes(2);

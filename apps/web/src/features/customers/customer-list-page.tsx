@@ -198,9 +198,10 @@ export function CustomerListContent({
 
       {state === "error" ? (
         <ErrorState
-          message={error ?? "Try again in a moment."}
+          detail="Your search and status filters are still here. Try again now, or wait a moment before retrying."
+          message={error ?? "Lumina could not reach the service that provides your customer records."}
           onRetry={() => void loadCustomers()}
-          title="Customers could not be loaded"
+          title="We can’t load customers right now"
         />
       ) : null}
 

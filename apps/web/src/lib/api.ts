@@ -1,5 +1,6 @@
 const DEFAULT_API_URL = "http://localhost:4000";
-const NETWORK_ERROR_MESSAGE = "Lumina could not connect to the service. Try again in a moment.";
+const NETWORK_ERROR_MESSAGE =
+  "Lumina could not connect to the service. This part of the app is temporarily unavailable.";
 
 type ApiErrorPayload = {
   error?: unknown;

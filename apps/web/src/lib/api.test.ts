@@ -74,7 +74,8 @@ describe("getApiBaseUrl", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
     await expect(apiRequest("/customers")).rejects.toMatchObject({
-      message: "Lumina could not connect to the service. Try again in a moment.",
+      message:
+        "Lumina could not connect to the service. This part of the app is temporarily unavailable.",
       name: "ApiRequestError",
       status: 0
     } satisfies Partial<ApiRequestError>);
