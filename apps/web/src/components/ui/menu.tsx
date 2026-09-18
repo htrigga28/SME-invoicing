@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useEffect, useId, useRef, useState } from "react";
-
+import React, { useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/cn";
-
-import { IconButton } from "./button";
 
 type MenuItem = {
   label: string;
@@ -21,96 +20,13 @@ export function TableRowActionMenu({
   label?: string;
   items: MenuItem[];
 }) {
-  const [open, setOpen] = useState(false);
-  const menuId = useId();
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function handlePointer(event: PointerEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", handlePointer);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointer);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open ]);
-
   return (
-    <div className="relative inline-flex justify-end" ref={containerRef}>
-      <IconButton
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-controls={menuId}
-        aria-label={label}
-        className="h-9 w-9 border border-transparent text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:bg-[var(--surface-raised)]"
-        onClick={() => setOpen((v) => !v)}
-        type="button"
-        variant="ghost"
-      >
-        <span aria-hidden="true" className="text-base leading-none tracking-widest">
-          •••
-        </span>
-      </IconButton>
-      {open ? (
-        <div
-          className="absolute right-0 top-10 z-30 min-w-44 overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface-overlay)] py-1 shadow-[var(--shadow-menu)]"
-          id={menuId}
-          role="menu"
-        >
-          {items.map((item) => (
-            <MenuRow
-              key={item.label}
-              item={item}
-              onDone={() => setOpen(false)}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MenuRow({ item, onDone }: { item: MenuItem; onDone: () => void }) {
-  const className = cn(
-    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition duration-150",
-    item.destructive
-      ? "text-[var(--danger)] hover:bg-[var(--danger-muted)]"
-      : "text-[var(--text-primary)] hover:bg-[var(--surface-raised)]",
-    item.disabled && "cursor-not-allowed opacity-50"
-  );
-
-  if (item.href && !item.disabled) {
-    return (
-      <a className={className} href={item.href} role="menuitem" onClick={onDone}>
-        {item.label}
-      </a>
-    );
-  }
-
-  return (
-    <button
-      className={className}
-      disabled={item.disabled}
-      onClick={() => {
-        onDone();
-        item.onSelect?.();
-      }}
-      role="menuitem"
-      type="button"
-    >
-      {item.label}
-    </button>
+    <DropdownMenu
+      label={label}
+      items={items}
+      trigger={<MoreHorizontal aria-hidden="true" className="h-5 w-5" />}
+      compact
+    />
   );
 }
 
@@ -118,59 +34,148 @@ export function DropdownMenu({
   trigger,
   items,
   align = "right",
-  label
+  label,
+  compact = false
 }: {
   trigger: React.ReactNode;
   items: MenuItem[];
   align?: "left" | "right";
   label: string;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const menuId = useId();
-  const ref = useRef<HTMLDivElement | null>(null);
+  const id = useId();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  function close() {
+    setOpen(false);
+    buttonRef.current?.focus();
+  }
+
+  useLayoutEffect(() => {
     if (!open) return;
-    function onPointer(e: PointerEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const menu = menuRef.current!;
+    const triggerRect = buttonRef.current!.getBoundingClientRect();
+    const left = align === "right" ? triggerRect.right - menu.offsetWidth : triggerRect.left;
+    menu.style.left = `${Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, triggerRect.bottom + menu.offsetHeight + 8 > window.innerHeight ? triggerRect.top - menu.offsetHeight - 4 : triggerRect.bottom + 4)}px`;
+    menu.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    function outside(event: PointerEvent) {
+      if (
+        !menu.contains(event.target as Node) &&
+        !buttonRef.current?.contains(event.target as Node)
+      )
+        setOpen(false);
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+    function reposition() {
+      setOpen(false);
     }
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", outside);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
     return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
     };
-  }, [open ]);
+  }, [open, align]);
 
   return (
-    <div className="relative inline-flex" ref={ref}>
+    <div
+      className="inline-flex"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
       <button
-        aria-expanded={open}
-        aria-controls={menuId}
-        aria-label={label}
-        onClick={() => setOpen((v) => !v)}
+        ref={buttonRef}
         type="button"
-        className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--text-primary)] transition duration-150 hover:border-[var(--border-strong)]"
+        aria-label={label}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className={cn(
+          "inline-flex min-h-11 items-center justify-center rounded-[var(--radius-control)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
+          compact ? "w-11" : "gap-2 border border-[var(--border-default)] bg-[var(--surface)] px-3"
+        )}
       >
         {trigger}
       </button>
-      {open ? (
-        <div
-          id={menuId}
-          role="menu"
-          className={cn(
-            "absolute top-11 z-30 min-w-48 overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface-overlay)] py-1 shadow-[var(--shadow-menu)]",
-            align === "right" ? "right-0" : "left-0"
-          )}
-        >
-          {items.map((item) => (
-            <MenuRow key={item.label} item={item} onDone={() => setOpen(false)} />
-          ))}
-        </div>
-      ) : null}
+      {open
+        ? createPortal(
+            <div
+              ref={menuRef}
+              id={id}
+              role="menu"
+              aria-label={label}
+              className="fixed z-[60] max-h-[calc(100dvh-16px)] min-w-48 max-w-[calc(100vw-16px)] overflow-y-auto rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface-overlay)] p-1 shadow-[var(--shadow-menu)]"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  close();
+                }
+                if (event.key === "Tab") close();
+                if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                  event.preventDefault();
+                  const entries = Array.from(
+                    menuRef.current!.querySelectorAll<HTMLElement>(
+                      '[role="menuitem"]:not(:disabled)'
+                    )
+                  );
+                  const index = entries.indexOf(document.activeElement as HTMLElement);
+                  const next =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? entries.length - 1
+                        : (index + (event.key === "ArrowDown" ? 1 : -1) + entries.length) %
+                          entries.length;
+                  entries[next]?.focus();
+                }
+              }}
+            >
+              {items.map((item) => {
+                const className = cn(
+                  "flex min-h-11 w-full items-center rounded px-3 py-2 text-left text-sm outline-none hover:bg-[var(--surface-raised)] focus:bg-[var(--surface-selected)] disabled:opacity-50",
+                  item.destructive ? "text-[var(--danger)]" : "text-[var(--text-primary)]"
+                );
+                return item.href && !item.disabled ? (
+                  <a
+                    key={item.label}
+                    role="menuitem"
+                    className={className}
+                    href={item.href}
+                    onClick={close}
+                  >
+                    {item.label}
+                  </a>
+                ) : (
+                  <button
+                    key={item.label}
+                    role="menuitem"
+                    type="button"
+                    className={className}
+                    disabled={item.disabled}
+                    onClick={() => {
+                      close();
+                      item.onSelect?.();
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

@@ -5,8 +5,18 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { Button } from "@/components/ui/button";
-import { FieldError, FieldHint, FieldLabel, FormField, Input, Textarea } from "@/components/ui/form";
+import { Eye, Plus, Trash2 } from "lucide-react";
+import { Drawer } from "@/components/ui/drawer";
+import { LoadingSkeleton } from "@/components/ui/feedback";
+import { Button, LinkButton, IconButton } from "@/components/ui/button";
+import {
+  FieldError,
+  FieldHint,
+  FieldLabel,
+  FormField,
+  Input,
+  Textarea
+} from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import { listCatalogueItems, createCatalogueItem } from "@/features/catalogue/catalogue-api";
@@ -17,9 +27,9 @@ import { isApiRequestError } from "@/lib/api";
 import type { InvoiceStatus } from "@sme-invoicing/shared";
 import { convertNairaToKobo } from "@sme-invoicing/shared";
 
-import { InvoiceDocument } from "./invoice-document";
+import { InvoiceDocument, type CustomerVisibleBusiness } from "./invoice-document";
 import { createInvoice, getInvoice, sendInvoice, updateInvoice } from "./invoices-api";
-import { formatMoney, InvoiceStatusBadge, PageHeader, StatusPanel } from "./invoice-ui";
+import { formatMoney, PageHeader, StatusPanel } from "./invoice-ui";
 import type { InvoiceFormState } from "./types";
 import { invoiceManagerRoles } from "./types";
 import {
@@ -77,17 +87,28 @@ export function InvoiceFormPage(props: InvoiceFormPageProps) {
       deniedMessage="Owner, Admin, or Accountant access is required to manage invoices."
       requiredRoles={invoiceManagerRoles}
     >
-      {({ accessToken }) => <InvoiceFormContent accessToken={accessToken} {...props} />}
+      {({ accessToken, me }) => (
+        <InvoiceFormContent
+          accessToken={accessToken}
+          business={{
+            ...me.businessProfile,
+            businessName: me.businessProfile.businessName ?? me.activeOrganisation.name
+          }}
+          {...props}
+        />
+      )}
     </AppShell>
   );
 }
 
-function InvoiceFormContent({
+export function InvoiceFormContent({
   accessToken,
+  business,
   invoiceId,
   mode
 }: {
   accessToken: string;
+  business?: CustomerVisibleBusiness;
   invoiceId?: string;
   mode: "create" | "edit";
 }) {
@@ -96,6 +117,7 @@ function InvoiceFormContent({
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "error">("loading");
   const [form, setForm] = useState<InvoiceFormState>(initialForm);
+  const [invoiceNumber, setInvoiceNumber] = useState("Draft");
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -104,15 +126,12 @@ function InvoiceFormContent({
   const [sendOutcome, setSendOutcome] = useState<SendOutcome | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveMode, setSaveMode] = useState<SaveMode | null>(null);
-  const [showPreviewTablet, setShowPreviewTablet] = useState(false);
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
   const [cataloguePickerId, setCataloguePickerId] = useState("");
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [quickCreate, setQuickCreate] = useState({ name: "", unitPriceNaira: "" });
   const [quickCreateError, setQuickCreateError] = useState<string | null>(null);
   const [isQuickCreating, setIsQuickCreating] = useState(false);
-  const mobilePreviewCloseRef = useRef<HTMLButtonElement | null>(null);
-  const mobilePreviewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const pendingSaveModeRef = useRef<SaveMode>("draft");
 
   useEffect(() => {
@@ -123,18 +142,17 @@ function InvoiceFormContent({
       try {
         const [customersResponse, catalogueResponse] = await Promise.all([
           listCustomers(accessToken, { status: "active", limit: 100 }),
-          listCatalogueItems(accessToken, { status: "active" }).catch(() => ({
-            catalogueItems: [] as CatalogueItem[]
-          }))
+          listCatalogueItems(accessToken, { status: "active" }).catch(() => null)
         ]);
 
         let nextCustomers = customersResponse.customers;
-        setCatalogue(catalogueResponse.catalogueItems);
-        setCatalogueState("ready");
+        setCatalogue(catalogueResponse?.catalogueItems ?? []);
+        setCatalogueState(catalogueResponse ? "ready" : "error");
 
         if (mode === "edit" && invoiceId) {
           const invoiceResponse = await getInvoice(accessToken, invoiceId);
           setInvoiceStatus(invoiceResponse.invoice.status);
+          setInvoiceNumber(invoiceResponse.invoice.invoiceNumber);
 
           if (
             invoiceResponse.invoice.customer.archivedAt &&
@@ -175,14 +193,6 @@ function InvoiceFormContent({
     void load();
   }, [accessToken, invoiceId, mode]);
 
-  useEffect(() => {
-    if (showPreviewMobile) {
-      mobilePreviewCloseRef.current?.focus();
-    } else {
-      mobilePreviewTriggerRef.current?.focus();
-    }
-  }, [showPreviewMobile]);
-
   const preview = useMemo(() => {
     try {
       return getInvoicePreview(form);
@@ -202,14 +212,14 @@ function InvoiceFormContent({
   const selectedCustomer = customers.find((item) => item.id === form.customerId) ?? null;
 
   const documentLineItems = form.lineItems
-    .filter((item) => item.description.trim())
     .map((item, index) => {
       let unitPriceKobo = 0;
       let lineTotalKobo = 0;
 
       try {
         unitPriceKobo = convertNairaToKobo(item.unitPriceNaira || "0");
-        lineTotalKobo = preview.lineTotalsKobo[index] ?? Math.round(Number(item.quantity || "0") * unitPriceKobo);
+        lineTotalKobo =
+          preview.lineTotalsKobo[index] ?? Math.round(Number(item.quantity || "0") * unitPriceKobo);
       } catch {
         unitPriceKobo = 0;
         lineTotalKobo = 0;
@@ -221,7 +231,8 @@ function InvoiceFormContent({
         unitPriceKobo,
         lineTotalKobo
       };
-    });
+    })
+    .filter((item) => item.description);
 
   function updateField(field: keyof InvoiceFormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -306,7 +317,9 @@ function InvoiceFormContent({
         description: null,
         defaultUnitPriceKobo: unitPriceKobo
       });
-      setCatalogue((current) => [...current, response.catalogueItem].sort((a, b) => a.name.localeCompare(b.name)));
+      setCatalogue((current) =>
+        [...current, response.catalogueItem].sort((a, b) => a.name.localeCompare(b.name))
+      );
       addCatalogueLine(response.catalogueItem);
       setQuickCreate({ name: "", unitPriceNaira: "" });
       setQuickCreateOpen(false);
@@ -420,7 +433,7 @@ function InvoiceFormContent({
   }
 
   if (state === "loading") {
-    return <StatusPanel message="Loading invoice form..." />;
+    return <LoadingSkeleton rows={6} />;
   }
 
   if (state === "error") {
@@ -431,7 +444,10 @@ function InvoiceFormContent({
     return (
       <StatusPanel
         action={
-          <Link className="font-semibold text-[var(--accent)] hover:underline" href={`/invoices/${invoiceId}`}>
+          <Link
+            className="font-semibold text-[var(--accent)] hover:underline"
+            href={`/invoices/${invoiceId}`}
+          >
             Back to invoice
           </Link>
         }
@@ -443,6 +459,7 @@ function InvoiceFormContent({
 
   const previewDocument = (
     <InvoiceDocument
+      business={business ?? null}
       balanceDueKobo={preview.balanceDueKobo}
       customer={{
         name: selectedCustomer?.name ?? "Select a customer",
@@ -454,7 +471,7 @@ function InvoiceFormContent({
       customerReference={form.customerReference.trim() || null}
       discountKobo={preview.discountKobo}
       dueDate={form.dueDate || todayDate()}
-      invoiceNumber={mode === "create" ? "Draft preview" : "Draft preview"}
+      invoiceNumber={invoiceNumber}
       issueDate={form.issueDate || todayDate()}
       lineItems={documentLineItems}
       status="draft"
@@ -473,6 +490,17 @@ function InvoiceFormContent({
             : "Edit this draft invoice before sending."
         }
         title={mode === "create" ? "New invoice" : "Edit invoice"}
+        actions={
+          <Button
+            className="xl:hidden"
+            variant="outline"
+            type="button"
+            onClick={() => setShowPreviewMobile(true)}
+          >
+            <Eye aria-hidden="true" className="h-4 w-4" />
+            Preview invoice
+          </Button>
+        }
       />
 
       {pageError ? <StatusPanel message={pageError} tone="error" /> : null}
@@ -481,7 +509,12 @@ function InvoiceFormContent({
         <StatusPanel
           action={
             <div className="flex flex-wrap gap-2">
-              <Button disabled={isSubmitting} onClick={() => void handleRetrySend()} size="sm" type="button">
+              <Button
+                disabled={isSubmitting}
+                onClick={() => void handleRetrySend()}
+                size="sm"
+                type="button"
+              >
                 Retry send
               </Button>
               <Link
@@ -511,20 +544,21 @@ function InvoiceFormContent({
         />
       ) : null}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,48%)_minmax(0,52%)]">
+      <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]">
         <form
           aria-label={mode === "create" ? "Create invoice" : "Edit invoice"}
-          className="space-y-6 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"
+          className="min-w-0 space-y-6 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-4 sm:p-5"
           onSubmit={(event) => void handleSubmit(event)}
         >
           <section className="space-y-4" aria-label="Customer and dates">
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer & schedule</h2>
-          <div className="grid gap-4 md:grid-cols-2">
+            <h2 className="text-base font-semibold">Bill to</h2>
             <FormField>
-              <FieldLabel htmlFor="invoice-customer">Customer</FieldLabel>
+              <FieldLabel>Customer</FieldLabel>
               <Select
+                aria-label="Customer"
                 disabled={isSubmitting}
                 id="invoice-customer"
+                aria-invalid={Boolean(errors.customerId)}
                 onChange={(event) => updateField("customerId", event.target.value)}
                 value={form.customerId}
                 wrapperClassName="mt-1"
@@ -539,408 +573,428 @@ function InvoiceFormContent({
               </Select>
               {errors.customerId ? <FieldError>{errors.customerId}</FieldError> : null}
             </FormField>
+            {selectedCustomer ? (
+              <p className="break-words text-sm text-[var(--text-secondary)]">
+                {selectedCustomer.email}
+                {selectedCustomer.billingAddress ? ` · ${selectedCustomer.billingAddress}` : ""}
+              </p>
+            ) : customers.length === 0 ? (
+              <p className="text-sm text-[var(--text-secondary)]">
+                Add a customer before creating an invoice.{" "}
+                <Link
+                  className="font-semibold text-[var(--accent)] underline"
+                  href="/customers/new"
+                >
+                  Create customer
+                </Link>
+              </p>
+            ) : null}
+          </section>
+          <section
+            className="space-y-4 border-t border-[var(--border-subtle)] pt-5"
+            aria-label="Invoice details"
+          >
+            <h2 className="text-base font-semibold">Invoice details</h2>
+            <div className="grid min-w-0 grid-cols-2 gap-3">
+              <FormField className="min-w-0">
+                <FieldLabel>Issue date</FieldLabel>
+                <Input
+                  className="mt-1 min-w-0"
+                  disabled={isSubmitting}
+                  type="date"
+                  value={form.issueDate}
+                  onChange={(event) => updateField("issueDate", event.target.value)}
+                />
+                {errors.issueDate ? <FieldError>{errors.issueDate}</FieldError> : null}
+              </FormField>
+              <FormField className="min-w-0">
+                <FieldLabel>Due date</FieldLabel>
+                <Input
+                  className="mt-1 min-w-0"
+                  disabled={isSubmitting}
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(event) => updateField("dueDate", event.target.value)}
+                />
+                {errors.dueDate ? <FieldError>{errors.dueDate}</FieldError> : null}
+              </FormField>
+            </div>
+            <div
+              className="flex flex-wrap items-center gap-1"
+              role="group"
+              aria-label="Due date presets"
+            >
+              <span className="mr-2 text-xs text-[var(--text-secondary)]">Payment terms</span>
+              {DUE_DATE_PRESETS.map((preset) => (
+                <Button
+                  key={preset.label}
+                  disabled={isSubmitting || !form.issueDate}
+                  onClick={() =>
+                    updateField("dueDate", applyDueDatePreset(form.issueDate, preset.days))
+                  }
+                  size="sm"
+                  type="button"
+                  variant={
+                    form.dueDate === applyDueDatePreset(form.issueDate, preset.days)
+                      ? "secondary"
+                      : "ghost"
+                  }
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
             <FormField>
-              <FieldLabel htmlFor="invoice-reference">Customer reference / PO (optional)</FieldLabel>
+              <FieldLabel>Customer reference / PO (optional)</FieldLabel>
               <Input
                 className="mt-1"
                 disabled={isSubmitting}
-                id="invoice-reference"
                 maxLength={120}
                 onChange={(event) => updateField("customerReference", event.target.value)}
                 placeholder="PO-2026-042"
                 value={form.customerReference}
               />
-              {errors.customerReference ? <FieldError>{errors.customerReference}</FieldError> : null}
+              {errors.customerReference ? (
+                <FieldError>{errors.customerReference}</FieldError>
+              ) : null}
             </FormField>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField>
-              <FieldLabel htmlFor="invoice-issue-date">Issue date</FieldLabel>
-              <Input
-                className="mt-1"
-                disabled={isSubmitting}
-                id="invoice-issue-date"
-                onChange={(event) => updateField("issueDate", event.target.value)}
-                type="date"
-                value={form.issueDate}
-              />
-              {errors.issueDate ? <FieldError>{errors.issueDate}</FieldError> : null}
-            </FormField>
-            <FormField>
-              <FieldLabel htmlFor="invoice-due-date">Due date</FieldLabel>
-              <Input
-                className="mt-1"
-                disabled={isSubmitting}
-                id="invoice-due-date"
-                onChange={(event) => updateField("dueDate", event.target.value)}
-                type="date"
-                value={form.dueDate}
-              />
-              <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Due date presets">
-                {DUE_DATE_PRESETS.map((preset) => (
-                  <Button
-                    disabled={isSubmitting || !form.issueDate}
-                    key={preset.label}
-                    onClick={() => updateField("dueDate", applyDueDatePreset(form.issueDate, preset.days))}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {preset.label}
-                  </Button>
-                ))}
-              </div>
-              {errors.dueDate ? <FieldError>{errors.dueDate}</FieldError> : null}
-            </FormField>
-          </div>
           </section>
 
-          <section className="space-y-3 border-t border-[var(--border-subtle)] pt-5" aria-label="Line items">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-[var(--text-primary)]">Line items</h2>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={isSubmitting} onClick={addLineItem} size="sm" type="button" variant="outline">
-                  Add ad-hoc line
-                </Button>
-                <Button
-                  disabled={isSubmitting}
-                  onClick={() => setQuickCreateOpen((current) => !current)}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  {quickCreateOpen ? "Close quick create" : "Create catalogue item"}
-                </Button>
-              </div>
+          <section
+            className="min-w-0 space-y-3 border-t border-[var(--border-subtle)] pt-5"
+            aria-label="Line items"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold">Items</h2>
+              <span className="text-xs text-[var(--text-secondary)]">Prices in NGN</span>
             </div>
-
-            {catalogueState === "error" ? (
-              <p className="text-sm text-[var(--text-secondary)]">Catalogue could not be loaded. Ad-hoc lines still work.</p>
-            ) : null}
-
-            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-              <FormField>
-                <FieldLabel htmlFor="catalogue-picker">Add from catalogue</FieldLabel>
-                <Select
-                  disabled={isSubmitting || catalogue.length === 0}
-                  id="catalogue-picker"
-                  onChange={(event) => setCataloguePickerId(event.target.value)}
-                  value={cataloguePickerId}
-                  wrapperClassName="mt-1"
-                >
-                  <option value="">
-                    {catalogue.length === 0 ? "No active catalogue items" : "Select an item"}
-                  </option>
-                  {catalogue.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} · {(item.defaultUnitPriceKobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })} NGN
-                    </option>
-                  ))}
-                </Select>
-                {cataloguePickerId ? (
-                  <FieldHint>
-                    {catalogue.find((item) => item.id === cataloguePickerId)?.description?.trim() ||
-                      "Values copy into an editable invoice line. The catalogue record is not changed."}
-                  </FieldHint>
-                ) : null}
-              </FormField>
-              <div className="flex items-end">
-                <Button
-                  disabled={isSubmitting || !cataloguePickerId}
-                  onClick={() => {
-                    const selected = catalogue.find((item) => item.id === cataloguePickerId);
-                    if (selected) {
-                      addCatalogueLine(selected);
-                      setCataloguePickerId("");
-                    }
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Add selected
-                </Button>
-              </div>
-            </div>
-
-            {quickCreateOpen ? (
-              <form
-                aria-label="Quick create catalogue item"
-                className="grid gap-3 rounded-[var(--radius-control)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-raised)] p-3 md:grid-cols-[1fr_160px_auto]"
-                onSubmit={(event) => void handleQuickCreate(event)}
-              >
-                <FormField>
-                  <FieldLabel htmlFor="quick-catalogue-name">New item name</FieldLabel>
-                  <Input
-                    className="mt-1"
-                    disabled={isQuickCreating}
-                    id="quick-catalogue-name"
-                    maxLength={200}
-                    onChange={(event) => setQuickCreate((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Monthly bookkeeping"
-                    value={quickCreate.name}
-                  />
-                </FormField>
-                <FormField>
-                  <FieldLabel htmlFor="quick-catalogue-price">Price (NGN)</FieldLabel>
-                  <Input
-                    className="mt-1"
-                    disabled={isQuickCreating}
-                    id="quick-catalogue-price"
-                    min="0"
-                    onChange={(event) =>
-                      setQuickCreate((current) => ({ ...current, unitPriceNaira: event.target.value }))
-                    }
-                    placeholder="1500.00"
-                    step="0.01"
-                    type="number"
-                    value={quickCreate.unitPriceNaira}
-                  />
-                </FormField>
-                <div className="flex items-end">
-                  <Button disabled={isQuickCreating} size="sm" type="submit">
-                    {isQuickCreating ? "Creating..." : "Create & add"}
-                  </Button>
+            <div className="divide-y divide-[var(--border-subtle)] border-y border-[var(--border-subtle)]">
+              {form.lineItems.map((item, index) => (
+                <div className="space-y-2 py-3" key={index}>
+                  <div className="flex items-start gap-2">
+                    <Textarea
+                      className="min-h-11 flex-1 resize-y"
+                      aria-label={`Line item ${index + 1} description`}
+                      disabled={isSubmitting}
+                      maxLength={500}
+                      rows={2}
+                      onChange={(event) => updateLineItem(index, "description", event.target.value)}
+                      placeholder="Describe the product or service"
+                      value={item.description}
+                    />
+                    <IconButton
+                      aria-label={`Remove line ${index + 1}`}
+                      disabled={isSubmitting || form.lineItems.length === 1}
+                      onClick={() => removeLineItem(index)}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
+                    </IconButton>
+                  </div>
+                  <div className="grid grid-cols-[minmax(0,.7fr)_minmax(0,1fr)_minmax(0,1.2fr)] items-end gap-2">
+                    <FormField className="min-w-0">
+                      <FieldLabel>Qty</FieldLabel>
+                      <Input
+                        className="mt-1 px-2 tabular-nums"
+                        aria-label={`Line item ${index + 1} quantity`}
+                        disabled={isSubmitting}
+                        min="0.01"
+                        step="0.01"
+                        type="number"
+                        onChange={(event) => updateLineItem(index, "quantity", event.target.value)}
+                        value={item.quantity}
+                      />
+                    </FormField>
+                    <FormField className="min-w-0">
+                      <FieldLabel>Rate (NGN)</FieldLabel>
+                      <Input
+                        className="mt-1 px-2 tabular-nums"
+                        aria-label={`Line item ${index + 1} unit price in NGN`}
+                        disabled={isSubmitting}
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        onChange={(event) =>
+                          updateLineItem(index, "unitPriceNaira", event.target.value)
+                        }
+                        placeholder="0.00"
+                        value={item.unitPriceNaira}
+                      />
+                    </FormField>
+                    <div className="min-w-0 text-right">
+                      <p className="text-xs text-[var(--text-secondary)]">Amount</p>
+                      <p
+                        className="flex min-h-11 items-center justify-end whitespace-nowrap text-sm font-semibold tabular-nums"
+                        aria-label={`Line item ${index + 1} amount`}
+                      >
+                        {formatMoney(preview.lineTotalsKobo[index] ?? 0)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                {quickCreateError ? (
-                  <p className="text-sm text-red-700 md:col-span-3">{quickCreateError}</p>
-                ) : null}
-              </form>
-            ) : null}
-
+              ))}
+            </div>
             {errors.lineItems ? (
               <p className="text-sm text-[var(--danger)]" role="alert">
                 {errors.lineItems}
               </p>
             ) : null}
-
-            <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-default)]">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[var(--surface-raised)]">
-                  <tr>
-                    <th className="px-3 py-2 text-xs font-medium text-[var(--text-secondary)]">Description</th>
-                    <th className="w-20 px-2 py-2 text-right text-xs font-medium text-[var(--text-secondary)]">Qty</th>
-                    <th className="w-32 px-2 py-2 text-right text-xs font-medium text-[var(--text-secondary)]">Unit (NGN)</th>
-                    <th className="w-10 px-2 py-2"><span className="sr-only">Remove</span></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border-subtle)]">
-              {form.lineItems.map((item, index) => (
-                <tr key={index}>
-                  <td className="px-3 py-2 align-top">
-                    <label className="sr-only" htmlFor={`line-item-${index}-description`}>
-                      Line {index + 1} description
-                    </label>
-                    <Input
-                      aria-label={`Line item ${index + 1} description`}
-                      disabled={isSubmitting}
-                      id={`line-item-${index}-description`}
-                      maxLength={500}
-                      onChange={(event) => updateLineItem(index, "description", event.target.value)}
-                      placeholder="Description"
-                      value={item.description}
-                    />
-                  </td>
-                  <td className="px-2 py-2 align-top">
-                    <label className="sr-only" htmlFor={`line-item-${index}-quantity`}>
-                      Quantity
-                    </label>
-                    <Input
-                      aria-label={`Line item ${index + 1} quantity`}
-                      disabled={isSubmitting}
-                      id={`line-item-${index}-quantity`}
-                      min="0.01"
-                      onChange={(event) => updateLineItem(index, "quantity", event.target.value)}
-                      step="0.01"
-                      type="number"
-                      value={item.quantity}
-                    />
-                  </td>
-                  <td className="px-2 py-2 align-top">
-                    <label className="sr-only" htmlFor={`line-item-${index}-unit-price`}>
-                      Unit price in NGN
-                    </label>
-                    <Input
-                      aria-label={`Line item ${index + 1} unit price in NGN`}
-                      disabled={isSubmitting}
-                      id={`line-item-${index}-unit-price`}
-                      min="0"
-                      onChange={(event) => updateLineItem(index, "unitPriceNaira", event.target.value)}
-                      placeholder="0.00"
-                      step="0.01"
-                      type="number"
-                      value={item.unitPriceNaira}
-                    />
-                  </td>
-                  <td className="px-2 py-2 align-top">
-                    <button
-                      aria-label={`Remove line ${index + 1}`}
-                      disabled={isSubmitting || form.lineItems.length === 1}
-                      onClick={() => removeLineItem(index)}
-                      type="button"
-                      className="flex h-10 w-9 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-muted)] transition duration-150 hover:bg-[var(--danger-muted)] hover:text-[var(--danger)] disabled:opacity-40"
-                    >
-                      <span aria-hidden="true" className="text-lg leading-none">×</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="space-y-4 border-t border-[var(--border-subtle)] pt-5" aria-label="Totals and memo">
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">Totals & memo</h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField>
-              <FieldLabel htmlFor="invoice-discount">Discount (NGN)</FieldLabel>
-              <Input
-                className="mt-1"
-                disabled={isSubmitting}
-                id="invoice-discount"
-                min="0"
-                onChange={(event) => updateField("discountNaira", event.target.value)}
-                step="0.01"
-                type="number"
-                value={form.discountNaira}
-              />
-              {errors.discountNaira ? <FieldError>{errors.discountNaira}</FieldError> : null}
-            </FormField>
-            <FormField>
-              <FieldLabel htmlFor="invoice-tax">Tax (NGN)</FieldLabel>
-              <Input
-                className="mt-1"
-                disabled={isSubmitting}
-                id="invoice-tax"
-                min="0"
-                onChange={(event) => updateField("taxNaira", event.target.value)}
-                step="0.01"
-                type="number"
-                value={form.taxNaira}
-              />
-              {errors.taxNaira ? <FieldError>{errors.taxNaira}</FieldError> : null}
-            </FormField>
-          </div>
-
-          <FormField>
-            <FieldLabel htmlFor="invoice-memo">Customer memo</FieldLabel>
-            <Textarea
-              disabled={isSubmitting}
-              id="invoice-memo"
-              onChange={(event) => updateField("notes", event.target.value)}
-              placeholder="Visible to the customer on the invoice."
-              value={form.notes}
-            />
-            <FieldHint>This memo appears on the customer-facing invoice and public page.</FieldHint>
-          </FormField>
-          </section>
-
-          <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-col-reverse gap-2 border-t border-[var(--border-subtle)] bg-[var(--surface)] px-5 py-3 sm:flex-row sm:items-center">
-            <Link
-              className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-4 py-2 text-center text-sm font-semibold text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-              href={mode === "edit" ? `/invoices/${invoiceId}` : "/invoices"}
-            >
-              Cancel
-            </Link>
-            <span className="flex-1" />
             <Button
               disabled={isSubmitting}
-              isLoading={isSubmitting && saveMode === "draft"}
-              loadingLabel="Saving..."
-              onClick={() => {
-                pendingSaveModeRef.current = "draft";
-              }}
-              type="submit"
-              variant="outline"
-            >
-              Save draft
-            </Button>
-            <Button
-              disabled={isSubmitting}
-              isLoading={isSubmitting && saveMode === "send"}
-              loadingLabel="Saving..."
-              onClick={() => {
-                pendingSaveModeRef.current = "send";
-              }}
-              type="submit"
-            >
-              Save and send
-            </Button>
-          </div>
-          <p className="text-xs text-[var(--text-muted)]">
-            Server totals are authoritative. Preview updates optimistically as you type.
-          </p>
-        </form>
-
-        <div className="space-y-3">
-          <div className="hidden xl:block">
-            <div className="sticky top-20 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-[var(--text-primary)]">Customer preview</h2>
-                {invoiceStatus ? <InvoiceStatusBadge status={invoiceStatus} /> : null}
-              </div>
-              <div className="shadow-[var(--shadow-document)]">{previewDocument}</div>
-              <p className="text-xs text-[var(--text-muted)]">
-                Same document model as the public invoice. Total:{" "}
-                {formatMoney(preview.totalKobo)}.
-              </p>
-            </div>
-          </div>
-
-          <div className="xl:hidden">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                className="lg:hidden"
-                onClick={() => setShowPreviewTablet((current) => !current)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                {showPreviewTablet ? "Hide preview" : "Toggle preview"}
-              </Button>
-              <Button
-                className="sm:hidden"
-                onClick={() => setShowPreviewMobile(true)}
-                ref={mobilePreviewTriggerRef}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Preview invoice
-              </Button>
-            </div>
-
-            {showPreviewTablet ? (
-              <div className="mt-3 hidden sm:block xl:hidden">{previewDocument}</div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {showPreviewMobile ? (
-        <div
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex flex-col bg-[var(--surface)] sm:hidden"
-          role="dialog"
-          aria-label="Invoice preview"
-        >
-          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] p-4">
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">Invoice preview</h2>
-            <Button
-              onClick={() => setShowPreviewMobile(false)}
-              ref={mobilePreviewCloseRef}
+              onClick={addLineItem}
               size="sm"
               type="button"
-              variant="outline"
+              variant="ghost"
             >
-              Close preview
+              <Plus aria-hidden="true" className="h-4 w-4" />
+              Add ad-hoc line
             </Button>
+            <div className="flex flex-col gap-2">
+              <FormField>
+                <FieldLabel>Add from catalogue</FieldLabel>
+                <div className="mt-1 flex gap-2">
+                  <Select
+                    aria-label="Add from catalogue"
+                    disabled={isSubmitting || catalogue.length === 0}
+                    onChange={(event) => setCataloguePickerId(event.target.value)}
+                    value={cataloguePickerId}
+                    wrapperClassName="min-w-0 flex-1"
+                  >
+                    <option value="">
+                      {catalogue.length === 0
+                        ? "No active catalogue items"
+                        : "Select a product or service"}
+                    </option>
+                    {catalogue.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {formatMoney(item.defaultUnitPriceKobo)}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    disabled={isSubmitting || !cataloguePickerId}
+                    onClick={() => {
+                      const selected = catalogue.find((item) => item.id === cataloguePickerId);
+                      if (selected) {
+                        addCatalogueLine(selected);
+                        setCataloguePickerId("");
+                      }
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Add selected
+                  </Button>
+                </div>
+              </FormField>
+              {catalogueState === "error" ? (
+                <p role="status" className="text-sm text-[var(--danger)]">
+                  Catalogue could not be loaded. Ad-hoc lines still work.
+                </p>
+              ) : null}
+              {cataloguePickerId ? (
+                <FieldHint>
+                  {catalogue.find((item) => item.id === cataloguePickerId)?.description ||
+                    "You can edit the copied description, quantity and price on this invoice."}
+                </FieldHint>
+              ) : null}
+              <Button
+                className="self-start"
+                disabled={isSubmitting}
+                onClick={() => setQuickCreateOpen(true)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Create catalogue item
+              </Button>
+            </div>
+          </section>
+
+          <section
+            className="space-y-4 border-t border-[var(--border-subtle)] pt-5"
+            aria-label="Totals and memo"
+          >
+            <details
+              open={
+                Boolean(errors.discountNaira || errors.taxNaira) ||
+                Number(form.discountNaira) !== 0 ||
+                Number(form.taxNaira) !== 0
+              }
+            >
+              <summary className="cursor-pointer py-2 text-sm font-semibold">
+                Discount & tax
+              </summary>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <FormField>
+                  <FieldLabel>Discount (NGN)</FieldLabel>
+                  <Input
+                    className="mt-1"
+                    disabled={isSubmitting}
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    onChange={(event) => updateField("discountNaira", event.target.value)}
+                    value={form.discountNaira}
+                  />
+                  {errors.discountNaira ? <FieldError>{errors.discountNaira}</FieldError> : null}
+                </FormField>
+                <FormField>
+                  <FieldLabel>Tax (NGN)</FieldLabel>
+                  <Input
+                    className="mt-1"
+                    disabled={isSubmitting}
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    onChange={(event) => updateField("taxNaira", event.target.value)}
+                    value={form.taxNaira}
+                  />
+                  {errors.taxNaira ? <FieldError>{errors.taxNaira}</FieldError> : null}
+                </FormField>
+              </div>
+            </details>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-[var(--border-subtle)] pt-4">
+              <span className="text-sm font-semibold">Invoice total</span>
+              <strong className="text-xl tabular-nums">{formatMoney(preview.totalKobo)}</strong>
+            </div>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Estimated as you edit. Final totals are confirmed when you save.
+            </p>
+            <FormField>
+              <FieldLabel>Customer memo</FieldLabel>
+              <Textarea
+                className="mt-1"
+                disabled={isSubmitting}
+                onChange={(event) => updateField("notes", event.target.value)}
+                placeholder="Payment terms or a note for your customer (optional)"
+                value={form.notes}
+              />
+              <FieldHint>Appears on the invoice your customer receives.</FieldHint>
+            </FormField>
+            <div className="border-t border-[var(--border-subtle)] pt-4">
+              <h2 className="text-sm font-semibold">Collection & sharing</h2>
+              <p className="mt-1 text-sm leading-6 text-[var(--text-secondary)]">
+                Send to enable the customer invoice link. Online payment follows your business
+                payment setup.
+              </p>
+            </div>
+          </section>
+          <div className="sticky bottom-0 z-10 -mx-4 -mb-4 space-y-2 border-t border-[var(--border-subtle)] bg-[var(--surface)] p-3 sm:-mx-5 sm:-mb-5">
+            <div className="flex flex-wrap justify-end gap-2">
+              <LinkButton
+                className="mr-auto"
+                href={mode === "edit" ? `/invoices/${invoiceId}` : "/invoices"}
+                variant="ghost"
+                size="sm"
+              >
+                Cancel
+              </LinkButton>
+              <Button
+                disabled={isSubmitting}
+                isLoading={isSubmitting && saveMode === "draft"}
+                loadingLabel="Saving..."
+                onClick={() => {
+                  pendingSaveModeRef.current = "draft";
+                }}
+                type="submit"
+                variant="outline"
+                size="sm"
+              >
+                Save draft
+              </Button>
+              <Button
+                disabled={isSubmitting}
+                isLoading={isSubmitting && saveMode === "send"}
+                loadingLabel="Saving..."
+                onClick={() => {
+                  pendingSaveModeRef.current = "send";
+                }}
+                type="submit"
+                size="sm"
+              >
+                Save and send
+              </Button>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4">{previewDocument}</div>
-        </div>
-      ) : null}
+        </form>
+        <aside
+          className="sticky top-20 hidden min-w-0 space-y-3 xl:block"
+          aria-label="Customer-facing preview"
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold">Customer preview</h2>
+            <span className="text-xs text-[var(--text-secondary)]">Updates as you edit</span>
+          </div>
+          {previewDocument}
+        </aside>
+      </div>
+      <Drawer
+        open={showPreviewMobile}
+        onClose={() => setShowPreviewMobile(false)}
+        title="Invoice preview"
+        description="Estimated totals. Final totals are confirmed when you save."
+        wide
+      >
+        {previewDocument}
+      </Drawer>
+      <Drawer
+        open={quickCreateOpen}
+        onClose={() => {
+          if (!isQuickCreating) setQuickCreateOpen(false);
+        }}
+        title="Create catalogue item"
+        description="Save a reusable item and add it to this invoice."
+      >
+        <form
+          aria-label="Quick create catalogue item"
+          className="space-y-4"
+          onSubmit={(event) => void handleQuickCreate(event)}
+        >
+          <FormField>
+            <FieldLabel>New item name</FieldLabel>
+            <Input
+              className="mt-1"
+              disabled={isQuickCreating}
+              maxLength={200}
+              onChange={(event) =>
+                setQuickCreate((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="Monthly bookkeeping"
+              value={quickCreate.name}
+            />
+          </FormField>
+          <FormField>
+            <FieldLabel>Price (NGN)</FieldLabel>
+            <Input
+              className="mt-1"
+              disabled={isQuickCreating}
+              min="0"
+              step="0.01"
+              type="number"
+              onChange={(event) =>
+                setQuickCreate((current) => ({ ...current, unitPriceNaira: event.target.value }))
+              }
+              value={quickCreate.unitPriceNaira}
+            />
+          </FormField>
+          {quickCreateError ? (
+            <p role="alert" className="text-sm text-[var(--danger)]">
+              {quickCreateError}
+            </p>
+          ) : null}
+          <Button
+            disabled={isQuickCreating}
+            isLoading={isQuickCreating}
+            loadingLabel="Creating..."
+            type="submit"
+          >
+            Create & add
+          </Button>
+        </form>
+      </Drawer>
     </section>
   );
 }

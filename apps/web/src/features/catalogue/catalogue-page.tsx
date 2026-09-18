@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/data-toolbar";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/feedback";
 import { FieldLabel, FormField, Input, Textarea } from "@/components/ui/form";
+import { TableRowActionMenu } from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { clearStoredSession } from "@/features/auth/session";
 import { formatDate, PageHeader, StatusPanel } from "@/features/invoices/invoice-ui";
@@ -281,7 +282,9 @@ export function CatalogueContent({
                     <TableHeaderCell>Status</TableHeaderCell>
                     <TableHeaderCell>Updated</TableHeaderCell>
                     {canManage ? (
-                      <TableHeaderCell className="text-right">Actions</TableHeaderCell>
+                      <TableHeaderCell className="w-12">
+                        <span className="sr-only">Actions</span>
+                      </TableHeaderCell>
                     ) : null}
                   </tr>
                 </thead>
@@ -304,26 +307,22 @@ export function CatalogueContent({
                         {formatDate(item.updatedAt.slice(0, 10))}
                       </td>
                       {canManage ? (
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button
-                              disabled={item.status === "archived"}
-                              onClick={() => startEdit(item)}
-                              size="sm"
-                              type="button"
-                              variant="outline"
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              onClick={() => setPendingArchive(item)}
-                              size="sm"
-                              type="button"
-                              variant="outline"
-                            >
-                              {item.status === "active" ? "Archive" : "Restore"}
-                            </Button>
-                          </div>
+                        <td className="px-2 py-3 text-right">
+                          <TableRowActionMenu
+                            label={`Actions for ${item.name}`}
+                            items={[
+                              {
+                                label: "Edit",
+                                disabled: item.status === "archived",
+                                onSelect: () => startEdit(item)
+                              },
+                              {
+                                label: item.status === "active" ? "Archive" : "Restore",
+                                destructive: item.status === "active",
+                                onSelect: () => setPendingArchive(item)
+                              }
+                            ]}
+                          />
                         </td>
                       ) : null}
                     </tr>
@@ -350,24 +349,22 @@ export function CatalogueContent({
                       </p>
                     ) : null}
                     {canManage ? (
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          disabled={item.status === "archived"}
-                          onClick={() => startEdit(item)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          onClick={() => setPendingArchive(item)}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          {item.status === "active" ? "Archive" : "Restore"}
-                        </Button>
+                      <div className="flex justify-end">
+                        <TableRowActionMenu
+                          label={`Actions for ${item.name}`}
+                          items={[
+                            {
+                              label: "Edit",
+                              disabled: item.status === "archived",
+                              onSelect: () => startEdit(item)
+                            },
+                            {
+                              label: item.status === "active" ? "Archive" : "Restore",
+                              destructive: item.status === "active",
+                              onSelect: () => setPendingArchive(item)
+                            }
+                          ]}
+                        />
                       </div>
                     ) : null}
                   </MobileDataCard>

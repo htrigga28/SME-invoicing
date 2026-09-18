@@ -39,18 +39,11 @@ export type InvoiceDocumentProps = {
   business?: CustomerVisibleBusiness | null;
   customer: CustomerVisibleParty;
   lineItems: CustomerVisibleLineItem[];
-  compact?: boolean;
 };
 
-/**
- * Customer-visible invoice document. This contract intentionally excludes
- * internal-only fields: organisation IDs, public tokens, audit metadata,
- * provider references, payment internals, and any internal notes.
- */
 export function InvoiceDocument({
   balanceDueKobo,
   business,
-  compact = false,
   customer,
   customerMemo,
   customerReference,
@@ -77,7 +70,9 @@ export function InvoiceDocument({
                 {business.businessName}
               </p>
             ) : null}
-            <h2 className="mt-1 break-words text-2xl font-semibold tracking-tight">{invoiceNumber}</h2>
+            <h2 className="mt-1 break-words text-2xl font-semibold tracking-tight">
+              {invoiceNumber}
+            </h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Issued {formatDate(issueDate)} · Due {formatDate(dueDate)}
             </p>
@@ -90,18 +85,19 @@ export function InvoiceDocument({
           <InvoiceStatusBadge status={status} />
         </div>
 
-        <div className={`mt-4 grid gap-3 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-2"}`}>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {business ? (
             <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface)] p-3 print:border-slate-300">
               <p className="text-xs font-medium text-[var(--text-muted)]">From</p>
               <p className="mt-1 text-sm font-semibold">{business.businessName}</p>
-              {[business.email, business.phone, business.address]
-                .filter(Boolean)
-                .map((line) => (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]" key={line}>
-                    {line}
-                  </p>
-                ))}
+              {[business.email, business.phone, business.address].filter(Boolean).map((line) => (
+                <p
+                  className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]"
+                  key={line}
+                >
+                  {line}
+                </p>
+              ))}
             </div>
           ) : null}
           <div className="rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface)] p-3 print:border-slate-300">
@@ -110,7 +106,10 @@ export function InvoiceDocument({
             {[customer.email, customer.phone, customer.billingAddress]
               .filter(Boolean)
               .map((line) => (
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]" key={line}>
+                <p
+                  className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]"
+                  key={line}
+                >
                   {line}
                 </p>
               ))}
@@ -134,11 +133,13 @@ export function InvoiceDocument({
                 <td className="max-w-[28rem] whitespace-pre-wrap break-words px-5 py-3 font-medium">
                   {item.description}
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums text-[var(--text-secondary)]">{item.quantity}</td>
-                <td className="hidden px-4 py-3 text-right tabular-nums text-[var(--text-secondary)] sm:table-cell">
+                <td className="px-4 py-3 text-right tabular-nums text-[var(--text-secondary)]">
+                  {item.quantity}
+                </td>
+                <td className="hidden whitespace-nowrap px-4 py-3 text-right tabular-nums text-[var(--text-secondary)] sm:table-cell">
                   {formatMoney(item.unitPriceKobo)}
                 </td>
-                <td className="px-5 py-3 text-right font-semibold tabular-nums">
+                <td className="whitespace-nowrap px-5 py-3 text-right font-semibold tabular-nums">
                   {formatMoney(item.lineTotalKobo)}
                 </td>
               </tr>
@@ -151,16 +152,12 @@ export function InvoiceDocument({
         <div className="min-w-0">
           {customerMemo ? (
             <div className="rounded-[var(--radius-control)] bg-[var(--surface-raised)] p-3 print:border print:border-slate-300 print:bg-white">
-              <p className="text-xs font-medium text-[var(--text-muted)]">
-                Customer memo
-              </p>
+              <p className="text-xs font-medium text-[var(--text-muted)]">Customer memo</p>
               <p className="mt-1 whitespace-pre-wrap break-words text-sm text-[var(--text-secondary)]">
                 {customerMemo}
               </p>
             </div>
-          ) : (
-            <p className="text-sm text-[var(--text-muted)]">No additional memo.</p>
-          )}
+          ) : null}
         </div>
         <dl className="space-y-2 text-sm">
           <div className="flex justify-between gap-4">

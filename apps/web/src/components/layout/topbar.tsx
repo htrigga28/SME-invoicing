@@ -98,7 +98,7 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--topbar-background)] backdrop-blur-xl print:hidden">
+    <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--topbar-background)] print:hidden">
       <div className="mx-auto flex min-h-16 w-full max-w-[1600px] items-center gap-3 px-4 lg:px-6">
         <button
           aria-expanded={mobileOpen}

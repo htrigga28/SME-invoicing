@@ -18,7 +18,13 @@ import {
 } from "@/features/payments/payment-ui";
 import { isApiRequestError } from "@/lib/api";
 
-import { cancelInvoice, duplicateInvoice, getInvoice, sendInvoice, voidInvoice } from "./invoices-api";
+import {
+  cancelInvoice,
+  duplicateInvoice,
+  getInvoice,
+  sendInvoice,
+  voidInvoice
+} from "./invoices-api";
 import { InvoiceDocument } from "./invoice-document";
 import { formatDate, formatMoney, InvoiceStatusBadge, StatusPanel } from "./invoice-ui";
 import type { InvoiceDetailResponse } from "./types";
@@ -199,19 +205,28 @@ export function InvoiceDetailContent({
   const overflowItems = [
     ...(canEdit ? [{ label: "Edit", href: `/invoices/${invoice.id}/edit` }] : []),
     ...(canDuplicate
-      ? [{
-          label: isDuplicating ? "Duplicating…" : "Duplicate",
-          onSelect: () => void handleDuplicate(),
-          disabled: isDuplicating || isSourceCustomerArchived
-        }]
+      ? [
+          {
+            label: isDuplicating ? "Duplicating…" : "Duplicate",
+            onSelect: () => void handleDuplicate(),
+            disabled: isDuplicating || isSourceCustomerArchived
+          }
+        ]
       : []),
-    ...(canCancel ? [{ label: "Cancel invoice", onSelect: () => setDialogAction("cancel"), destructive: true }] : []),
-    ...(canVoid ? [{ label: "Void invoice", onSelect: () => setDialogAction("void"), destructive: true }] : [])
+    ...(canCancel
+      ? [{ label: "Cancel invoice", onSelect: () => setDialogAction("cancel"), destructive: true }]
+      : []),
+    ...(canVoid
+      ? [{ label: "Void invoice", onSelect: () => setDialogAction("void"), destructive: true }]
+      : [])
   ];
 
   return (
     <section className="space-y-4">
-      <Link href="/invoices" className="inline-flex text-sm font-semibold text-[var(--text-secondary)] hover:text-[var(--accent)]">
+      <Link
+        href="/invoices"
+        className="inline-flex text-sm font-semibold text-[var(--text-secondary)] hover:text-[var(--accent)]"
+      >
         ← Invoices
       </Link>
 
@@ -220,7 +235,9 @@ export function InvoiceDetailContent({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-2xl font-semibold tracking-tight">{invoice.invoiceNumber}</h1>
+              <h1 className="truncate text-2xl font-semibold tracking-tight">
+                {invoice.invoiceNumber}
+              </h1>
               <InvoiceStatusBadge status={invoice.status} />
             </div>
             <p className="mt-1.5 truncate text-sm text-[var(--text-secondary)]">
@@ -235,7 +252,8 @@ export function InvoiceDetailContent({
               </div>
               <div className="pb-1 text-sm">
                 <p className="text-[var(--text-secondary)]">
-                  Total {formatMoney(invoice.totalKobo)} · Paid {formatMoney(financialSummary.netReceivedKobo)}
+                  Total {formatMoney(invoice.totalKobo)} · Paid{" "}
+                  {formatMoney(financialSummary.netReceivedKobo)}
                 </p>
                 <p className="mt-0.5 text-[var(--text-muted)]">
                   Due {formatDate(invoice.dueDate)}
@@ -264,15 +282,21 @@ export function InvoiceDetailContent({
               </Button>
             ) : null}
             {overflowItems.length ? (
-              <DropdownMenu label="More invoice actions" trigger={<span>•••</span>} items={overflowItems} />
+              <DropdownMenu
+                label="More invoice actions"
+                trigger={<span>•••</span>}
+                items={overflowItems}
+              />
             ) : null}
           </div>
         </div>
-        {copySuccess ? <p className="mt-3 text-sm text-[var(--text-secondary)]">{copySuccess}</p> : null}
+        {copySuccess ? (
+          <p className="mt-3 text-sm text-[var(--text-secondary)]">{copySuccess}</p>
+        ) : null}
         {canDuplicate && isSourceCustomerArchived ? (
           <p className="mt-3 rounded-[var(--radius-control)] border border-[var(--warning-border)] bg-[var(--warning-muted)] p-3 text-sm text-[var(--warning)]">
-            Archived customers cannot be used for duplicated invoices. Reactivate the customer
-            or choose an active customer.
+            Archived customers cannot be used for duplicated invoices. Reactivate the customer or
+            choose an active customer.
           </p>
         ) : null}
       </header>
@@ -400,7 +424,7 @@ export function InvoiceDetailContent({
                   </p>
                   <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                     {new Date(event.createdAt).toLocaleString("en-NG")}
-                    {event.reason ? ` · ${event.reason}` : ""}
+                    {event.reason ? ` · ${event.reason.replaceAll("_", " ")}` : ""}
                   </p>
                 </li>
               ))}
@@ -463,7 +487,9 @@ export function InvoiceDetailContent({
                     ) : null}
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm text-[var(--text-secondary)]">{response.paymentSummary.message}</p>
+                  <p className="mt-3 text-sm text-[var(--text-secondary)]">
+                    {response.paymentSummary.message}
+                  </p>
                 )}
               </>
             ) : (
