@@ -69,6 +69,357 @@ Do not inspect every Tier C source before beginning. Use them only when the sect
 
 ---
 
+
+# 2A. ACCTUAL IS THE DOMINANT MOTION / COMPOSITION REFERENCE
+
+The uploaded Acctual scroll recording is the closest reference to the desired **feel** of Lumina's marketing site.
+
+Treat Acctual as the dominant reference for:
+
+- scroll choreography;
+- typography scale and placement;
+- cards/paper objects;
+- visual density;
+- collage composition;
+- section entrances/exits;
+- edge-of-viewport objects;
+- transitions between light and saturated sections;
+- how product UI is integrated into editorial layouts.
+
+This does **not** mean copying Acctual's brand, illustrations, crypto/web3 messaging, colors, or content.
+
+The translation rule is:
+
+> **Use Acctual's motion grammar and editorial composition with Lumina's product truth, colors, invoice/payment objects, typography family, and financial data.**
+
+## Video-derived motion grammar
+
+The reference recording shows a consistent motion system that should be translated deliberately.
+
+### A. The viewport behaves like a stage
+
+Sections are not static blocks that simply fade in.
+
+Instead:
+- the main heading/copy creates a stable visual anchor;
+- product cards, documents, sticky notes, UI fragments, receipts, payment markers, and small decorative objects enter the viewport from outside its edges;
+- the objects settle into an authored composition around the text;
+- as the visitor continues scrolling, those same objects physically leave the viewport;
+- the next section begins appearing while the outgoing composition is still clearing.
+
+This creates a continuous **enter → compose → exit → reveal next chapter** rhythm.
+
+Lumina should use that rhythm repeatedly.
+
+### B. Elements should travel, not merely fade
+
+For major visual objects, avoid generic:
+`opacity: 0 → 1`
+
+Preferred entrances:
+- from left edge;
+- from right edge;
+- from lower-left / lower-right;
+- from top corners;
+- from below the viewport;
+- slight diagonal movement;
+- slight rotation on paper/document objects.
+
+Preferred exits:
+- continue outward toward an edge;
+- cross out in the opposite direction where composition benefits;
+- slide below/above while the next section rises;
+- peel away diagonally.
+
+Fade should support spatial motion, not replace it.
+
+### C. Section timeline shape
+
+For most editorial motion chapters, use the conceptual timing:
+
+```text
+0–25%   ENTER
+        objects travel from off-canvas into composition
+
+25–65%  COMPOSE / HOLD
+        section reads clearly
+        product state is stable enough to understand
+
+65–100% EXIT / HANDOFF
+        objects leave toward edges
+        next chapter begins entering
+```
+
+Do not make the page stop dead between sections.
+
+The outgoing and incoming scenes should overlap enough to feel continuous.
+
+### D. Side-entry and side-exit are a signature
+
+The reference repeatedly uses visual objects partially outside the viewport and lets them move across the page as scroll progresses.
+
+Lumina should intentionally use:
+- invoice sheets entering from left/right;
+- dashboard fragments arriving from one side;
+- payment confirmation cards sliding from the opposite side;
+- receipt/document layers peeling off toward an edge;
+- small tags/status markers crossing diagonally;
+- selected product UI fragments starting partially clipped by the viewport.
+
+Do not keep every object centered and fully contained inside a neat card.
+
+### E. Paper / collage behavior
+
+The reference uses a tactile editorial collage language:
+- paper sheets;
+- UI screenshots;
+- sticky-note-like objects;
+- small labels;
+- receipts/documents;
+- clipped objects at page edges;
+- subtle rotation;
+- believable shadow;
+- overlap.
+
+Translate this into Lumina using:
+- invoice documents;
+- receipt sheets;
+- payment references;
+- reconciliation cards;
+- catalogue/product rows;
+- compact dashboard panels;
+- status chips;
+- customer/public invoice fragments.
+
+Do NOT add unrelated money props, fake bank notes, crypto tokens, or decorative objects that do not belong to Lumina.
+
+### F. Rotation should be subtle
+
+For document/paper objects:
+- approximately 2–7 degrees is usually enough;
+- vary direction;
+- settle closer to 0–3 degrees if readability requires it.
+
+For product UI:
+- generally keep screens closer to level;
+- use rotation only on secondary fragments.
+
+Do not use 3D perspective spins.
+
+### G. Layered movement / parallax
+
+Objects should not all move at the same speed.
+
+Use small speed differences:
+- primary document = slow/stable;
+- secondary UI layer = slightly faster;
+- small peripheral labels/markers = fastest;
+- background texture = nearly static.
+
+The goal is depth, not a parallax demo.
+
+### H. Full-color chapter wipes
+
+The reference periodically breaks the long light page with strong dark-blue / green sections.
+
+The change does not feel like a normal rectangular card. It feels like a new visual chapter entering the viewport.
+
+Lumina translation:
+- most site remains warm/light;
+- one or two stronger brand-green/sage chapter transitions may enter from below or via a large field reveal;
+- the closing CTA can use deep brand green;
+- do not reintroduce the old black site.
+
+A colored field can begin rising while outgoing white-section objects are still leaving.
+
+### I. Product UI is large enough to read
+
+The reference does not treat product UI as tiny decoration.
+
+When Lumina shows:
+- invoice editor;
+- public invoice;
+- reconciliation state;
+- overview/dashboard;
+
+the important text, amount, status, and hierarchy must remain legible.
+
+Crop to the part of the interface that supports the story instead of shrinking an entire desktop app into a small card.
+
+### J. Text motion stays calmer than object motion
+
+Headings/copy are the anchor.
+
+Preferred text motion:
+- small vertical translate;
+- clip/mask reveal;
+- opacity;
+- occasional word/color emphasis.
+
+Avoid:
+- headings flying across the whole viewport;
+- spinning type;
+- heavy blur;
+- character-by-character novelty animation.
+
+The visual objects carry most of the kinetic energy.
+
+---
+
+# 2B. ACCTUAL TYPOGRAPHY TRANSLATION
+
+The desired quality is not the exact Acctual font. Lumina keeps Hanken Grotesk.
+
+Translate the typographic character:
+
+- bold black/ink headings;
+- compact leading;
+- strong contrast between very large heading and small explanatory copy;
+- short headline blocks;
+- generous whitespace around headings;
+- headings often centered when introducing a chapter, but product chapters may use asymmetrical alignment;
+- body copy remains relatively small and restrained;
+- pill CTAs/labels are compact.
+
+For Lumina:
+
+- H1/H2 should feel editorial and confident rather than enterprise-corporate;
+- use sentence case;
+- avoid excessive eyebrow labels;
+- keep most section copy to 1–3 short paragraphs;
+- let product/UI objects provide detail.
+
+The page should never become visually busy because both typography **and** imagery are shouting at once.
+
+---
+
+# 2C. ACCTUAL CARD / OBJECT TRANSLATION
+
+The reference's visual objects are not generic SaaS bento cards.
+
+Translate these characteristics:
+
+- mostly flat white/paper surfaces;
+- low to moderate radius;
+- thin borders;
+- restrained realistic shadows;
+- purposeful overlap;
+- varied size;
+- occasional slight rotation;
+- partial cropping at viewport edges;
+- realistic UI/document content;
+- not every surface receives the same card chrome.
+
+For Lumina:
+
+### Invoice
+Use a true paper/document proportion.
+
+### Payment / reconciliation
+Use smaller operational cards layered beside the invoice.
+
+### Dashboard
+Use cropped real workspace panels, not abstract stat tiles.
+
+### Receipt
+Treat it as another document/paper object.
+
+### Status markers
+Can behave like small labels/tags that enter from the side.
+
+Avoid:
+- repeating 16px-radius cards everywhere;
+- giant bento grids;
+- glossy glass cards;
+- decorative cards with no product meaning.
+
+---
+
+# 2D. ACCTUAL SECTION-HANDOFF PATTERN
+
+A key reason the reference feels polished is that sections **hand off** to one another.
+
+Implementation rule:
+
+When section A exits:
+- at least one of its major objects should still be moving out as section B's background, heading, or first object begins entering;
+- avoid large dead white gaps between animated sections;
+- avoid hard jump cuts unless a strong color chapter deliberately creates one.
+
+The next section should feel revealed by the previous one leaving.
+
+Examples for Lumina:
+
+### Hero → Audience
+Hero invoice settles, then peripheral payment/dashboard fragments slide away while the audience statement rises into clear space.
+
+### Audience → Invoice-to-Cash
+Audience copy moves normally; first invoice story object enters from the lower/right edge before the signature section is fully centered.
+
+### Invoice-to-Cash → Invoicing
+The resolved invoice/receipt composition peels away; the editor/preview pair enters from opposing sides.
+
+### Invoicing → Reconciliation
+Invoice preview moves out to one side; a payment/reference card crosses in from the other.
+
+### Reconciliation → Visibility
+Matched-payment card compresses/moves into the dashboard composition.
+
+### Customer Payment → Trust
+Public invoice exits upward/sideways while the trust copy/controls take over.
+
+### FAQ → Closing CTA
+Deep brand-green field rises from below as FAQ rows clear.
+
+These are composition principles, not a requirement to use identical directions every time.
+
+---
+
+# 2E. GSAP TRANSLATION
+
+Use GSAP/ScrollTrigger to reproduce the **behavior**, not the source site's code.
+
+Recommended per-section timeline shape:
+
+```ts
+timeline
+  .from(primaryObject, {
+    xPercent: direction === "left" ? -110 : 110,
+    yPercent: 10,
+    rotation: -4,
+    opacity: 0
+  })
+  .from(secondaryObject, {
+    xPercent: 125,
+    yPercent: -8,
+    rotation: 4,
+    opacity: 0
+  }, "<0.08")
+  // hold / small state changes
+  .to(primaryObject, {
+    xPercent: -120,
+    rotation: -3,
+    opacity: 0
+  }, "exit")
+  .to(secondaryObject, {
+    xPercent: 125,
+    yPercent: -15,
+    opacity: 0
+  }, "exit+=0.04");
+```
+
+This is illustrative, not copy-paste code.
+
+Rules:
+- major elements should begin or end outside viewport/stage bounds;
+- prefer `xPercent/yPercent` + transforms;
+- vary direction per object;
+- keep rotations small;
+- use `scrub` for true scroll-linked movement;
+- use short non-scrubbed entrances only where the reference behavior is not scroll-bound;
+- no frame-by-frame React state.
+
+
 # 2. Lapa Ninja — finance / fintech references
 
 Lapa's finance and fintech collections are useful because they show how current finance companies avoid the old dark/crypto default.
