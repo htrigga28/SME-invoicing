@@ -51,7 +51,7 @@ export function StatusTabs<T extends string>({
             onClick={() => onChange(opt.value)}
             type="button"
             className={cn(
-              "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
+              "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
               selected
                 ? "border-[var(--accent-border-strong)] bg-[var(--accent)] text-[var(--accent-foreground)]"
                 : "border-[var(--border-default)] bg-[var(--surface)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"

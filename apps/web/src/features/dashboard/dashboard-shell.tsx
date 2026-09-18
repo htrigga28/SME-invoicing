@@ -244,9 +244,6 @@ function DashboardContent({
 
       {state === "ready" && overview ? (
         <>
-          {overview.paymentSetup.status === "active" ? (
-            <PaymentSetupBanner overview={overview} role={role} />
-          ) : null}
           <AttentionRegion overview={overview} role={role} />
 
           {/* 4 primary metrics only — Outstanding / Overdue / Net collected / Needs attention */}
@@ -348,29 +345,36 @@ function AttentionRegion({ overview, role }: AttentionRegionProps) {
   return (
     <section aria-label="Attention" className="space-y-2">
       {showSetup ? <PaymentSetupBanner overview={overview} role={role} /> : null}
-      {showReview ? (
-        <AttentionRow
-          description={`${overview.currentPosition.unresolvedReviewCount.toLocaleString("en-NG")} payment issue${overview.currentPosition.unresolvedReviewCount === 1 ? "" : "s"} need review.`}
-          href="/payments"
-          title="Needs review"
-          tone="danger"
-        />
-      ) : null}
-      {showOverdue ? (
-        <AttentionRow
-          description={`${overview.currentPosition.overdueInvoiceCount.toLocaleString("en-NG")} overdue invoice${overview.currentPosition.overdueInvoiceCount === 1 ? "" : "s"} need attention.`}
-          href="/invoices"
-          title="Overdue"
-          tone="warning"
-        />
-      ) : null}
-      {showPending ? (
-        <AttentionRow
-          description={`${overview.currentPosition.activePendingPaymentCount.toLocaleString("en-NG")} payment${overview.currentPosition.activePendingPaymentCount === 1 ? "" : "s"} awaiting confirmation.`}
-          href="/payments"
-          title="Pending confirmations"
-          tone="info"
-        />
+      {showReview || showOverdue || showPending ? (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-[var(--border-subtle)] py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            Attention
+          </span>
+          {showReview ? (
+            <AttentionRow
+              description={`${overview.currentPosition.unresolvedReviewCount.toLocaleString("en-NG")} payment issue${overview.currentPosition.unresolvedReviewCount === 1 ? "" : "s"}`}
+              href="/payments"
+              title="Needs review"
+              tone="danger"
+            />
+          ) : null}
+          {showOverdue ? (
+            <AttentionRow
+              description={`${overview.currentPosition.overdueInvoiceCount.toLocaleString("en-NG")} overdue invoice${overview.currentPosition.overdueInvoiceCount === 1 ? "" : "s"}`}
+              href="/invoices"
+              title="Overdue"
+              tone="warning"
+            />
+          ) : null}
+          {showPending ? (
+            <AttentionRow
+              description={`${overview.currentPosition.activePendingPaymentCount.toLocaleString("en-NG")} awaiting confirmation`}
+              href="/payments"
+              title="Pending"
+              tone="info"
+            />
+          ) : null}
+        </div>
       ) : null}
     </section>
   );
@@ -387,24 +391,21 @@ function AttentionRow({
   title: string;
   tone: "danger" | "info" | "warning";
 }) {
-  const className = {
-    danger: "border-[var(--danger-border)] bg-[var(--danger-muted)]",
-    info: "border-[var(--border-subtle)] bg-[var(--surface)]",
-    warning: "border-[var(--warning-border)] bg-[var(--warning-muted)]"
+  const dotClassName = {
+    danger: "bg-[var(--danger)]",
+    info: "bg-[var(--info)]",
+    warning: "bg-[var(--warning)]"
   }[tone];
 
   return (
-    <div
-      className={`flex min-w-0 flex-col gap-3 rounded-[var(--radius-card)] border p-4 sm:flex-row sm:items-center sm:justify-between ${className}`}
+    <Link
+      className="group inline-flex min-h-8 items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+      href={href}
     >
-      <div className="min-w-0">
-        <h2 className="font-semibold text-[var(--text-primary)]">{title}</h2>
-        <p className="mt-1 text-sm text-[var(--text-secondary)]">{description}</p>
-      </div>
-      <LinkButton className="shrink-0" href={href} size="sm" variant="outline">
-        Review
-      </LinkButton>
-    </div>
+      <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dotClassName}`} />
+      <span className="font-semibold text-[var(--text-primary)] group-hover:underline">{title}</span>
+      <span>{description}</span>
+    </Link>
   );
 }
 
@@ -418,16 +419,7 @@ function PaymentSetupBanner({
   const setup = overview.paymentSetup;
   const canManage = canManagePaymentSetup(role);
 
-  if (setup.status === "active") {
-    return (
-      <Alert tone="success">
-        <p className="font-semibold">Online payments active</p>
-        <p className="mt-1">
-          {setup.bankName} payout account ending {setup.accountNumberLast4}.
-        </p>
-      </Alert>
-    );
-  }
+  if (setup.status === "active") return null;
 
   if (setup.status === "verification_delayed") {
     return (
