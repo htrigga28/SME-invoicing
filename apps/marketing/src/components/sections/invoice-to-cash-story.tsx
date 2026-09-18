@@ -139,17 +139,19 @@ export function InvoiceToCashStory() {
               anticipatePin: 1,
               invalidateOnRefresh: true,
               onUpdate: (self) => {
-                progressSegments.forEach((segment, index) => {
+                for (const [index, segment] of progressSegments.entries()) {
                   segment.style.setProperty(
                     "--story-progress",
                     String(getStorySegmentProgress(self.progress, index, states.length))
                   );
-                });
+                }
                 const activeIndex = Math.min(
                   states.length - 1,
                   Math.floor(self.progress * states.length)
                 );
-                steps.forEach((s, i) => s.classList.toggle("is-active", i === activeIndex));
+                for (const [index, step] of steps.entries()) {
+                  step.classList.toggle("is-active", index === activeIndex);
+                }
               }
             }
           });

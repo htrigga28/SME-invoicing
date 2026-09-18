@@ -52,7 +52,11 @@ export function CustomerPaymentChapter() {
             return;
           }
           const io = new IntersectionObserver(
-            (entries) => entries.forEach((e) => e.isIntersecting && e.target.classList.add("is-visible")),
+            (entries) => {
+              for (const entry of entries) {
+                if (entry.isIntersecting) entry.target.classList.add("is-visible");
+              }
+            },
             { threshold: 0.2 }
           );
           el.querySelectorAll(".reveal").forEach((n) => io.observe(n));

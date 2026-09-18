@@ -37,11 +37,11 @@ export function ReceivablesVisibility() {
               scrub: 0.8,
               invalidateOnRefresh: true,
               onUpdate: (self) => {
-                bars.forEach((b, i) => {
-                  if (!(b instanceof HTMLElement)) return;
-                  const p = Math.min(1, Math.max(0, (self.progress - 0.05 - i * 0.015) * 3.2));
-                  b.style.transform = `scaleY(${0.15 + p * 0.85})`;
-                });
+                for (const [index, bar] of bars.entries()) {
+                  if (!(bar instanceof HTMLElement)) continue;
+                  const p = Math.min(1, Math.max(0, (self.progress - 0.05 - index * 0.015) * 3.2));
+                  bar.style.transform = `scaleY(${0.15 + p * 0.85})`;
+                }
               }
             }
           });
@@ -63,7 +63,11 @@ export function ReceivablesVisibility() {
             return;
           }
           const rio = new IntersectionObserver(
-            (entries) => entries.forEach((e) => e.isIntersecting && e.target.classList.add("is-visible")),
+            (entries) => {
+              for (const entry of entries) {
+                if (entry.isIntersecting) entry.target.classList.add("is-visible");
+              }
+            },
             { threshold: 0.2 }
           );
           el.querySelectorAll(".reveal").forEach((n) => rio.observe(n));
