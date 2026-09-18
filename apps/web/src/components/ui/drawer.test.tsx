@@ -61,7 +61,7 @@ describe("Drawer", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Invoice preview" });
     fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
-    fireEvent.click(dialog);
+    fireEvent.pointerDown(dialog);
 
     expect(onClose).toHaveBeenCalledTimes(2);
   });

@@ -58,7 +58,7 @@ export function Drawer({
         event.preventDefault();
         onClose();
       }}
-      onClick={(event) => {
+      onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
       className={cn(
