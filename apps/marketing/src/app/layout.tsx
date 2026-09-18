@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import type React from "react";
 
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <MarketingHeader />
         {children}
         <MarketingFooter />
+        <Analytics />
       </body>
     </html>
   );
