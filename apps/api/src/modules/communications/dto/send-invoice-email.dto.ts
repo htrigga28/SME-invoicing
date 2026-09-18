@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -9,13 +9,14 @@ import {
 } from "class-validator";
 
 export class SendInvoiceEmailDto {
-  @ApiProperty({ example: ["accounts@northstar.example"] })
+  @ApiPropertyOptional({ example: ["accounts@northstar.example"] })
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(10)
   @IsString({ each: true })
   @MaxLength(320, { each: true })
-  to!: string[];
+  to?: string[];
 
   @ApiPropertyOptional({ example: ["finance@northstar.example"] })
   @IsOptional()

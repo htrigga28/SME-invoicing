@@ -14,8 +14,10 @@ const envSchema = z.object({
   MARKETING_SITE_URL: z.string().url().optional(),
   API_PUBLIC_URL: z.string().url().optional(),
   BREVO_API_KEY: z.string().optional(),
+  BREVO_BASE_URL: z.string().url().optional(),
   BREVO_FROM_EMAIL: z.string().email().optional(),
   BREVO_SENDER_EMAIL: z.string().email().optional(),
+  BREVO_WEBHOOK_SECRET: z.string().min(1).optional(),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
   TRUST_PROXY: z.string().min(1).default("loopback")
 });

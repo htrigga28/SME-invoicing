@@ -10,6 +10,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { AuditLogModule } from "./modules/audit-log/audit-log.module";
 import { BusinessProfileModule } from "./modules/business-profile/business-profile.module";
 import { CatalogueModule } from "./modules/catalogue/catalogue.module";
+import { CommunicationsModule } from "./modules/communications/communications.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ExportsModule } from "./modules/exports/exports.module";
@@ -37,6 +38,7 @@ import { TeamModule } from "./modules/team/team.module";
     AuditLogModule,
     BusinessProfileModule,
     CatalogueModule,
+    CommunicationsModule,
     CustomersModule,
     DashboardModule,
     ExportsModule,

@@ -1,6 +1,8 @@
 import {
+  BadGatewayException,
   BadRequestException,
   NotFoundException,
+  ServiceUnavailableException,
   UnprocessableEntityException
 } from "@nestjs/common";
 
@@ -39,6 +41,11 @@ type ServiceInternals = {
   requireInvoice: jest.Mock;
   requireActivePaymentAccount: jest.Mock;
   createInvoice: jest.Mock;
+  transitionInvoice: jest.Mock;
+  getInvoice: jest.Mock;
+  findStatusEvents: jest.Mock;
+  findInvoiceAuditRows: jest.Mock;
+  findPaymentsForInvoice: jest.Mock;
 };
 
 const activePaymentAccount = {
@@ -175,6 +182,12 @@ function setup(
     get: jest.fn((key: string) =>
       key === "FRONTEND_APP_URL" ? "http://localhost:3000" : undefined
     )
+  },
+  communicationsService: unknown = {
+    getDeliverySummary: jest.fn(),
+    recordInvoiceViewEvent: jest
+      .fn()
+      .mockResolvedValue({ occurredAt: now, viewCount: 1 })
   }
 ) {
   const service = new InvoicesService(
@@ -182,7 +195,8 @@ function setup(
     {} as never,
     configService as never,
     paystackService as never,
-    { getInvoiceFinancialSummary: jest.fn() } as never
+    { getInvoiceFinancialSummary: jest.fn() } as never,
+    communicationsService as never
   );
   return service as unknown as ServiceInternals;
 }
@@ -691,13 +705,22 @@ describe("InvoicesService public view tracking", () => {
 
   it("moves a sent invoice to viewed and writes one status event and audit log", async () => {
     const { db, insertValues } = createTransactionDb();
-    const service = setup({ db });
+    const recordInvoiceViewEvent = jest
+      .fn()
+      .mockResolvedValue({ occurredAt: now, viewCount: 1 });
+    const service = setup(
+      { db },
+      {},
+      undefined,
+      { getDeliverySummary: jest.fn(), recordInvoiceViewEvent }
+    );
     service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
 
     await expect(
       (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
-    ).resolves.toEqual({ success: true });
+    ).resolves.toEqual({ success: true, viewCount: 1, firstViewedAt: now, lastViewedAt: now });
 
+    expect(recordInvoiceViewEvent).toHaveBeenCalledWith("org-1", "invoice-1");
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -718,27 +741,304 @@ describe("InvoicesService public view tracking", () => {
 
   it("does not duplicate viewed transitions for repeated views", async () => {
     const { db } = createTransactionDb();
-    const service = setup({ db });
+    const recordInvoiceViewEvent = jest
+      .fn()
+      .mockResolvedValue({ occurredAt: now, viewCount: 4 });
+    const service = setup(
+      { db },
+      {},
+      undefined,
+      { getDeliverySummary: jest.fn(), recordInvoiceViewEvent }
+    );
     service.findPublicInvoice = jest
       .fn()
       .mockResolvedValue(
         createPublicInvoiceRow(createInvoice({ status: "viewed", viewedAt: now }))
       );
 
-    await (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token");
+    await expect(
+      (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
+    ).resolves.toEqual(expect.objectContaining({ success: true, viewCount: 4 }));
 
+    expect(recordInvoiceViewEvent).toHaveBeenCalledWith("org-1", "invoice-1");
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("does not move overdue invoices back to viewed", async () => {
     const { db } = createTransactionDb();
-    const service = setup({ db });
+    const recordInvoiceViewEvent = jest
+      .fn()
+      .mockResolvedValue({ occurredAt: now, viewCount: 2 });
+    const service = setup(
+      { db },
+      {},
+      undefined,
+      { getDeliverySummary: jest.fn(), recordInvoiceViewEvent }
+    );
     service.findPublicInvoice = jest
       .fn()
       .mockResolvedValue(createPublicInvoiceRow(createInvoice({ dueDate: "2026-01-01" })));
 
-    await (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token");
+    await expect(
+      (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
+    ).resolves.toEqual(expect.objectContaining({ success: true, viewCount: 2 }));
 
+    expect(recordInvoiceViewEvent).toHaveBeenCalledWith("org-1", "invoice-1");
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("InvoicesService T021 send and resend", () => {
+  const draftRow = () =>
+    createInvoice({
+      status: "draft",
+      publicAccessEnabled: false,
+      sentAt: null,
+      totalKobo: 7840000,
+      balanceDueKobo: 7840000
+    });
+
+  function setupSend(overrides: {
+    invoice?: ReturnType<typeof createInvoice>;
+    sendInvoiceEmail?: jest.Mock;
+    deliverySummary?: unknown;
+  } = {}) {
+    const service = setup();
+    const invoice = overrides.invoice ?? draftRow();
+    service.requireInvoice = jest.fn().mockResolvedValue({ invoice, customer: createCustomer() });
+    service.transitionInvoice = jest.fn().mockResolvedValue(undefined);
+    service.getInvoice = jest
+      .fn()
+      .mockResolvedValue({ invoice: { id: invoice.id }, publicUrl: null });
+    const sendInvoiceEmail =
+      overrides.sendInvoiceEmail ??
+      jest.fn().mockResolvedValue({ communication: { id: "comm-1" } });
+    const getDeliverySummary = jest
+      .fn()
+      .mockResolvedValue(
+        overrides.deliverySummary ?? {
+          state: "accepted",
+          attempts: 1,
+          lastCommunication: { id: "comm-1", status: "accepted" }
+        }
+      );
+    (service as unknown as { communicationsService: unknown }).communicationsService = {
+      sendInvoiceEmail,
+      getDeliverySummary
+    };
+    const context = {
+      activeOrganisation: { id: "org-1", name: "Adebayo Studio" },
+      user: { id: "user-1" },
+      businessProfile: { businessName: "Adebayo Studio", email: "billing@adebayo.example" }
+    } as never;
+    return { context, getDeliverySummary, sendInvoiceEmail, service };
+  }
+
+  it("issues a draft and sends the delivery email with normalized recipients", async () => {
+    const { context, sendInvoiceEmail, service } = setupSend();
+
+    const result = await (service as unknown as InvoicesService).sendInvoice(context, "invoice-1", {
+      to: [" Accounts@Northstar.Example "],
+      cc: ["finance@northstar.example", "accounts@northstar.example"]
+    });
+
+    expect(service.transitionInvoice).toHaveBeenCalledTimes(1);
+    expect(sendInvoiceEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          to: ["accounts@northstar.example"],
+          cc: ["finance@northstar.example"]
+        })
+      })
+    );
+    expect(result.delivery).toMatchObject({ state: "accepted", attempts: 1 });
+    expect(result.publicUrl).toContain("/invoice/");
+  });
+
+  it("keeps the invoice issued when the provider fails after issuance", async () => {
+    const sendInvoiceEmail = jest.fn().mockRejectedValue(new BadGatewayException("down"));
+    const { context, service } = setupSend({
+      sendInvoiceEmail,
+      deliverySummary: {
+        state: "failed",
+        attempts: 1,
+        lastCommunication: { id: "comm-1", status: "failed" }
+      }
+    });
+
+    const result = await (service as unknown as InvoicesService).sendInvoice(context, "invoice-1", {
+      to: ["accounts@northstar.example"]
+    });
+
+    expect(service.transitionInvoice).toHaveBeenCalledTimes(1);
+    expect(result.delivery.state).toBe("failed");
+    expect(result.delivery.message).toContain("Copy the public link");
+  });
+
+  it("still issues the invoice when email delivery is not configured", async () => {
+    const sendInvoiceEmail = jest
+      .fn()
+      .mockRejectedValue(new ServiceUnavailableException("not configured"));
+    const { context, service } = setupSend({
+      sendInvoiceEmail,
+      deliverySummary: { state: "not_emailed", attempts: 0, lastCommunication: null }
+    });
+
+    const result = await (service as unknown as InvoicesService).sendInvoice(context, "invoice-1");
+
+    expect(service.transitionInvoice).toHaveBeenCalledTimes(1);
+    expect(result.delivery.state).toBe("not_emailed");
+    expect(result.delivery.message).toContain("not configured");
+  });
+
+  it("rejects invalid recipients before issuing the invoice", async () => {
+    const { context, service } = setupSend();
+
+    await expect(
+      (service as unknown as InvoicesService).sendInvoice(context, "invoice-1", {
+        to: ["not-an-email"]
+      })
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(service.transitionInvoice).not.toHaveBeenCalled();
+  });
+
+  it("resends with a new attempt on an issued invoice", async () => {
+    const { context, sendInvoiceEmail, service } = setupSend({
+      invoice: createInvoice({ status: "sent", publicAccessEnabled: true, sentAt: now })
+    });
+
+    const result = await (service as unknown as InvoicesService).resendInvoiceEmail(
+      context,
+      "invoice-1",
+      { to: ["accounts@northstar.example"] }
+    );
+
+    expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
+    expect(result.delivery).toMatchObject({ state: "accepted" });
+  });
+
+  it.each([
+    ["draft", false],
+    ["cancelled", true],
+    ["void", true]
+  ])("rejects resend for %s invoices", async (status) => {
+    const { context, sendInvoiceEmail, service } = setupSend({
+      invoice: createInvoice({
+        status: status as "draft" | "cancelled" | "void",
+        publicAccessEnabled: status !== "draft"
+      })
+    });
+
+    await expect(
+      (service as unknown as InvoicesService).resendInvoiceEmail(context, "invoice-1", {
+        to: ["accounts@northstar.example"]
+      })
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(sendInvoiceEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("InvoicesService invoice activity", () => {
+  it("merges lifecycle sources in reverse chronological order without sensitive data", async () => {
+    const selectQuery: Record<string, jest.Mock> = {};
+    selectQuery.from = jest.fn(() => selectQuery);
+    selectQuery.where = jest.fn(() => selectQuery);
+    selectQuery.orderBy = jest.fn(async () => []);
+    const service = setup({ db: { select: jest.fn(() => selectQuery) } });
+    const invoice = createInvoice({
+      status: "paid",
+      sentAt: new Date("2026-09-18T09:14:00.000Z"),
+      viewedAt: new Date("2026-09-18T09:26:00.000Z"),
+      lastViewedAt: new Date("2026-09-19T08:44:00.000Z"),
+      viewCount: 4,
+      paidAt: new Date("2026-09-19T08:52:00.000Z")
+    });
+    service.requireInvoice = jest.fn().mockResolvedValue({ invoice, customer: createCustomer() });
+    service.findStatusEvents = jest.fn().mockResolvedValue([
+      {
+        id: "se-1",
+        fromStatus: null,
+        toStatus: "draft",
+        reason: "invoice_created",
+        createdAt: new Date("2026-09-18T09:14:00.000Z")
+      },
+      {
+        id: "se-2",
+        fromStatus: "draft",
+        toStatus: "sent",
+        reason: "invoice_sent",
+        createdAt: new Date("2026-09-18T09:18:00.000Z")
+      }
+    ]);
+    service.findInvoiceAuditRows = jest.fn().mockResolvedValue([
+      {
+        auditLog: {
+          id: "al-1",
+          action: "invoice_updated",
+          createdAt: new Date("2026-09-18T09:16:00.000Z")
+        },
+        actor: { name: "Ada Owner" }
+      }
+    ]);
+    service.findPaymentsForInvoice = jest.fn().mockResolvedValue([
+      {
+        id: "pay-1",
+        providerReference: "T8129-4F3A-90LX",
+        status: "successful",
+        reconciliationState: "matched",
+        amountKobo: 7840000,
+        paidAt: new Date("2026-09-19T08:52:00.000Z"),
+        createdAt: new Date("2026-09-19T08:51:00.000Z"),
+        initializedAt: new Date("2026-09-19T08:51:00.000Z"),
+        receipt: {
+          id: "rct-1",
+          receiptNumber: "RCT-000241",
+          issuedAt: new Date("2026-09-19T08:52:00.000Z")
+        }
+      }
+    ]);
+    (service as unknown as { communicationsService: unknown }).communicationsService = {
+      listCommunicationsForInvoice: jest.fn().mockResolvedValue({
+        communications: [
+          {
+            id: "comm-1",
+            toRecipients: ["accounts@northstar.example"],
+            acceptedAt: new Date("2026-09-18T09:18:00.000Z"),
+            deliveredAt: new Date("2026-09-18T09:19:00.000Z"),
+            deferredAt: null,
+            failedAt: null,
+            failureReason: null
+          }
+        ],
+        events: []
+      })
+    };
+    const context = { activeOrganisation: { id: "org-1" }, user: { id: "user-1" } } as never;
+
+    const result = await (service as unknown as InvoicesService).getInvoiceActivity(
+      context,
+      "invoice-1"
+    );
+
+    const types = result.activity.map((item) => item.type);
+    expect(types).toEqual([
+      "payment_confirmed",
+      "reconciliation_matched",
+      "receipt_issued",
+      "payment_started",
+      "invoice_viewed",
+      "email_delivered",
+      "invoice_sent",
+      "email_accepted",
+      "invoice_edited",
+      "invoice_created"
+    ]);
+    expect(result.viewSummary).toMatchObject({ viewCount: 4 });
+    const viewed = result.activity.find((item) => item.type === "invoice_viewed");
+    expect(viewed?.detail).toContain("Viewed 4 times");
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("organisationId");
+    expect(serialized).not.toContain("publicToken");
+    expect(serialized).not.toContain("providerSubaccountCode");
   });
 });

@@ -45,7 +45,6 @@ import {
   receipts,
   users,
   type BusinessProfile,
-  type Communication,
   type Customer,
   type Invoice,
   type InvoiceLineItem,
@@ -57,7 +56,6 @@ import {
 import { AuditLogService } from "../audit-log/audit-log.service";
 import {
   CommunicationsService,
-  toDeliveryState,
   type DeliveryState
 } from "../communications/communications.service";
 import { validateSendRecipients } from "../communications/email-provider";
@@ -155,6 +153,38 @@ function formatInvoiceNumber(sequenceNumber: number) {
   return `INV-${sequenceNumber.toString().padStart(6, "0")}`;
 }
 
+export type InvoiceActivityTone = "neutral" | "success" | "warning" | "danger" | "info";
+
+export type InvoiceActivityType =
+  | "invoice_created"
+  | "invoice_edited"
+  | "invoice_sent"
+  | "email_accepted"
+  | "email_delivered"
+  | "email_deferred"
+  | "email_failed"
+  | "invoice_viewed"
+  | "payment_started"
+  | "payment_confirmed"
+  | "reconciliation_matched"
+  | "reconciliation_review"
+  | "refund_requested"
+  | "refund_processed"
+  | "receipt_issued"
+  | "invoice_cancelled"
+  | "invoice_voided";
+
+export type InvoiceActivityItem = {
+  id: string;
+  type: InvoiceActivityType;
+  occurredAt: string;
+  title: string;
+  detail?: string;
+  tone?: InvoiceActivityTone;
+  actor?: { name?: string } | null;
+  metadata?: Record<string, string | number | null>;
+};
+
 @Injectable()
 export class InvoicesService {
   constructor(
@@ -165,6 +195,340 @@ export class InvoicesService {
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
     @Inject(CommunicationsService) private readonly communicationsService: CommunicationsService
   ) {}
+
+  async getInvoiceActivity(context: ActiveOrganisationContext, invoiceId: string) {
+    const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+    const organisationId = context.activeOrganisation.id;
+
+    const [statusEvents, auditRows, delivery, invoicePayments] = await Promise.all([
+      this.findStatusEvents(organisationId, invoiceId),
+      this.findInvoiceAuditRows(organisationId, invoiceId),
+      this.communicationsService.listCommunicationsForInvoice(organisationId, invoiceId),
+      this.findPaymentsForInvoice(organisationId, invoiceId)
+    ]);
+
+    const refunds =
+      invoicePayments.length === 0
+        ? []
+        : await this.databaseService.db
+            .select()
+            .from(paymentRefunds)
+            .where(inArray(paymentRefunds.paymentId, invoicePayments.map((item) => item.id)))
+            .orderBy(desc(paymentRefunds.createdAt));
+
+    const items: InvoiceActivityItem[] = [];
+    const push = (item: Omit<InvoiceActivityItem, "id"> & { id: string }) => {
+      items.push({ ...item, metadata: item.metadata ?? {} });
+    };
+
+    for (const event of statusEvents) {
+      if (event.toStatus === "draft" && event.reason === "invoice_created") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_created",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice created",
+          detail: `Draft ${invoiceWithCustomer.invoice.invoiceNumber} created.`,
+          tone: "info",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      } else if (event.toStatus === "sent" && event.reason === "invoice_sent") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_sent",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice sent",
+          detail: "Invoice issued and public access enabled.",
+          tone: "success",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      } else if (event.toStatus === "cancelled") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_cancelled",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice cancelled",
+          tone: "warning",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      } else if (event.toStatus === "void") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_voided",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice voided",
+          tone: "danger",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      }
+    }
+
+    for (const row of auditRows) {
+      if (row.auditLog.action !== "invoice_updated") {
+        continue;
+      }
+
+      push({
+        id: `audit-${row.auditLog.id}`,
+        type: "invoice_edited",
+        occurredAt: row.auditLog.createdAt.toISOString(),
+        title: "Invoice edited",
+        detail: "Draft details updated before sending.",
+        tone: "info",
+        actor: row.actor ? { name: row.actor.name } : null,
+        metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+      });
+    }
+
+    const orderedCommunications = [...delivery.communications].reverse();
+
+    orderedCommunications.forEach((communication, index) => {
+      const recipients = communication.toRecipients ?? [];
+      const recipientLabel =
+        recipients.length > 1
+          ? `${recipients[0]} +${recipients.length - 1} more`
+          : (recipients[0] ?? "customer");
+      const resent = index > 0;
+      const metadata = {
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        communicationId: communication.id
+      };
+
+      if (communication.acceptedAt) {
+        push({
+          id: `email-${communication.id}-accepted`,
+          type: "email_accepted",
+          occurredAt: new Date(communication.acceptedAt).toISOString(),
+          title: resent ? `Invoice email resent to ${recipientLabel}` : `Invoice emailed to ${recipientLabel}`,
+          detail: "Accepted by the email provider.",
+          tone: "info",
+          actor: null,
+          metadata
+        });
+      }
+
+      if (communication.deliveredAt) {
+        push({
+          id: `email-${communication.id}-delivered`,
+          type: "email_delivered",
+          occurredAt: new Date(communication.deliveredAt).toISOString(),
+          title: "Email delivered",
+          detail: `Delivered to ${recipientLabel}.`,
+          tone: "success",
+          actor: null,
+          metadata
+        });
+      }
+
+      if (communication.deferredAt) {
+        push({
+          id: `email-${communication.id}-deferred`,
+          type: "email_deferred",
+          occurredAt: new Date(communication.deferredAt).toISOString(),
+          title: "Email delivery delayed",
+          detail: "The provider deferred delivery. It may still arrive.",
+          tone: "warning",
+          actor: null,
+          metadata
+        });
+      }
+
+      if (communication.failedAt) {
+        push({
+          id: `email-${communication.id}-failed`,
+          type: "email_failed",
+          occurredAt: new Date(communication.failedAt).toISOString(),
+          title: "Email delivery failed",
+          detail: communication.failureReason ?? "The email could not be delivered.",
+          tone: "danger",
+          actor: null,
+          metadata
+        });
+      }
+    });
+
+    const viewSummary = this.toViewSummary(invoiceWithCustomer.invoice);
+
+    if (viewSummary && viewSummary.viewCount > 0) {
+      const lastViewed = viewSummary.lastViewedAt ?? viewSummary.firstViewedAt;
+      push({
+        id: "view-summary",
+        type: "invoice_viewed",
+        occurredAt: new Date(lastViewed ?? Date.now()).toISOString(),
+        title: "Invoice viewed",
+        detail: this.formatViewSummaryDetail(viewSummary.viewCount, viewSummary.firstViewedAt, viewSummary.lastViewedAt),
+        tone: "info",
+        actor: null,
+        metadata: {
+          invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+          viewCount: viewSummary.viewCount
+        }
+      });
+    }
+
+    for (const payment of invoicePayments) {
+      const amountLabel = this.formatKobo(payment.amountKobo);
+      const paymentMetadata = {
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        providerReference: payment.providerReference,
+        amountKobo: payment.amountKobo
+      };
+
+      push({
+        id: `payment-${payment.id}-started`,
+        type: "payment_started",
+        occurredAt: new Date(payment.initializedAt ?? payment.createdAt).toISOString(),
+        title: "Payment started",
+        detail: `${amountLabel} · Paystack checkout initialized.`,
+        tone: "info",
+        actor: null,
+        metadata: paymentMetadata
+      });
+
+      if (payment.paidAt) {
+        push({
+          id: `payment-${payment.id}-confirmed`,
+          type: "payment_confirmed",
+          occurredAt: new Date(payment.paidAt).toISOString(),
+          title: "Payment confirmed",
+          detail: `${payment.providerReference} · provider-confirmed.`,
+          tone: "success",
+          actor: null,
+          metadata: paymentMetadata
+        });
+      }
+
+      if (payment.reconciliationState === "matched" && payment.paidAt) {
+        push({
+          id: `payment-${payment.id}-matched`,
+          type: "reconciliation_matched",
+          occurredAt: new Date(payment.paidAt).toISOString(),
+          title: "Payment matched",
+          detail: `Reference resolved to ${invoiceWithCustomer.invoice.invoiceNumber}.`,
+          tone: "success",
+          actor: null,
+          metadata: paymentMetadata
+        });
+      } else if (payment.reconciliationState === "review_required") {
+        push({
+          id: `payment-${payment.id}-review`,
+          type: "reconciliation_review",
+          occurredAt: new Date(payment.paidAt ?? payment.createdAt).toISOString(),
+          title: "Payment needs review",
+          detail: "A reconciliation exception needs a manual decision.",
+          tone: "warning",
+          actor: null,
+          metadata: paymentMetadata
+        });
+      }
+
+      if (payment.receipt?.issuedAt) {
+        push({
+          id: `payment-${payment.id}-receipt`,
+          type: "receipt_issued",
+          occurredAt: new Date(payment.receipt.issuedAt).toISOString(),
+          title: `Receipt ${payment.receipt.receiptNumber} issued`,
+          detail: "Immutable receipt for the confirmed payment.",
+          tone: "success",
+          actor: null,
+          metadata: { ...paymentMetadata, receiptNumber: payment.receipt.receiptNumber }
+        });
+      }
+    }
+
+    for (const refund of refunds) {
+      const metadata = {
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        amountKobo: refund.amountKobo
+      };
+
+      if (refund.status === "processed") {
+        push({
+          id: `refund-${refund.id}-processed`,
+          type: "refund_processed",
+          occurredAt: new Date(refund.processedAt ?? refund.createdAt).toISOString(),
+          title: "Refund processed",
+          detail: `${this.formatKobo(refund.amountKobo)} returned via Paystack.`,
+          tone: "info",
+          actor: null,
+          metadata
+        });
+      } else {
+        push({
+          id: `refund-${refund.id}-requested`,
+          type: "refund_requested",
+          occurredAt: new Date(refund.createdAt).toISOString(),
+          title: "Refund requested",
+          detail:
+            refund.status === "pending" || refund.status === "processing"
+              ? `${this.formatKobo(refund.amountKobo)} refund in progress.`
+              : `${this.formatKobo(refund.amountKobo)} refund needs attention.`,
+          tone: refund.status === "pending" || refund.status === "processing" ? "warning" : "danger",
+          actor: null,
+          metadata
+        });
+      }
+    }
+
+    items.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : a.occurredAt > b.occurredAt ? -1 : 0));
+
+    return {
+      activity: items.slice(0, 200),
+      viewSummary
+    };
+  }
+
+  private async findInvoiceAuditRows(organisationId: string, invoiceId: string) {
+    return this.databaseService.db
+      .select({ auditLog: auditLogs, actor: { name: users.name } })
+      .from(auditLogs)
+      .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+      .where(
+        and(
+          eq(auditLogs.organisationId, organisationId),
+          eq(auditLogs.entityType, "invoice"),
+          eq(auditLogs.entityId, invoiceId)
+        )
+      )
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(100);
+  }
+
+  private formatViewSummaryDetail(
+    viewCount: number,
+    firstViewedAt: Date | string | null,
+    lastViewedAt: Date | string | null
+  ): string {
+    const formatDateTime = (value: Date | string) =>
+      new Date(value).toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    const times = viewCount === 1 ? "time" : "times";
+
+    if (firstViewedAt && lastViewedAt && viewCount > 1) {
+      return `Viewed ${viewCount} ${times} · first ${formatDateTime(firstViewedAt)} · last ${formatDateTime(lastViewedAt)}`;
+    }
+
+    if (firstViewedAt) {
+      return `Viewed ${viewCount} ${times} · first ${formatDateTime(firstViewedAt)}`;
+    }
+
+    return `Viewed ${viewCount} ${times}`;
+  }
+
+  private formatKobo(amountKobo: number): string {
+    return `₦${(amountKobo / 100).toLocaleString("en-NG", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  }
 
   async listInvoices(context: ActiveOrganisationContext, query: ListInvoicesQueryDto) {
     const pagination = this.getPagination(query);
@@ -732,25 +1096,21 @@ export class InvoicesService {
     const publicInvoice = await this.requirePublicInvoice(publicToken);
     const displayStatus = this.displayStatus(publicInvoice.invoice);
 
-    const { viewCount } = await this.communicationsService.recordInvoiceViewEvent(
+    const { occurredAt, viewCount } = await this.communicationsService.recordInvoiceViewEvent(
       publicInvoice.invoice.organisationId,
       publicInvoice.invoice.id
     );
 
     if (publicInvoice.invoice.status !== "sent" || displayStatus === "overdue") {
-      const refreshed = await this.findInvoiceWithCustomer(
-        publicInvoice.invoice.organisationId,
-        publicInvoice.invoice.id
-      );
       return {
         success: true,
         viewCount,
-        firstViewedAt: refreshed?.invoice.viewedAt ?? publicInvoice.invoice.viewedAt,
-        lastViewedAt: refreshed?.invoice.lastViewedAt ?? new Date()
+        firstViewedAt: publicInvoice.invoice.viewedAt,
+        lastViewedAt: occurredAt
       };
     }
 
-    const viewedAt = publicInvoice.invoice.viewedAt ?? new Date();
+    const viewedAt = publicInvoice.invoice.viewedAt ?? occurredAt;
 
     await this.databaseService.db.transaction(async (tx) => {
       const [updated] = await tx
