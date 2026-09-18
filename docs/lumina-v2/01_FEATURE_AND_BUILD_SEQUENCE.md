@@ -16,9 +16,20 @@
 
 # FIRST BUILD CYCLE
 
-These are the tasks to start next.
+T020 has shipped in PR #21, and the light authenticated-app overhaul shipped in PR #22.
 
-## T020 — Invoice Experience 2.0
+Before T021, execute **MKT-01 — Marketing Site Editorial Receivables Evolution** using:
+
+- `docs/lumina-v2/05_MARKETING_SITE_REDESIGN.md`
+- `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
+- `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
+- `docs/lumina-v2/12_MARKETING_REDESIGN_CODEX_PROMPT.md`
+
+MKT-01 is a deliberate insertion before product expansion; it does **not** renumber T021–T028.
+
+After MKT-01, resume this product sequence at T021.
+
+## T020 — Invoice Experience 2.0 — DONE
 
 ### Goal
 
