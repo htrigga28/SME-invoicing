@@ -1,11 +1,10 @@
 "use client";
 
-import { ArrowUpRight, ChevronDown, LogIn, Menu, X } from "lucide-react";
+import { ChevronDown, LogIn, Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { type FocusEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FocusEvent, useEffect, useRef, useState } from "react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { NairaText } from "@/components/ui/naira-text";
 import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { navigation } from "@/content/site-copy";
 import { cn } from "@/lib/cn";
@@ -18,17 +17,7 @@ export function MarketingHeader() {
   const [isOpen, setIsOpen] = useState(false);
   const [isProductOpen, setIsProductOpen] = useState(false);
   const [isMobileProductOpen, setIsMobileProductOpen] = useState(false);
-  const [activeProductId, setActiveProductId] = useState(navigation.productItems[0]!.id);
-  const reduceMotion = usePrefersReducedMotion();
-  const productMenuRef = useRef<HTMLDivElement>(null);
-  const productPreviewRef = useRef<HTMLDivElement>(null);
   const loginUrl = getAppLoginUrl();
-  const activeProduct = useMemo(
-    () =>
-      navigation.productItems.find((item) => item.id === activeProductId) ??
-      navigation.productItems[0]!,
-    [activeProductId]
-  );
 
   const resolveHref = (href: `#${string}`) => getMarketingAnchorHref(pathname, href);
 
@@ -38,40 +27,6 @@ export function MarketingHeader() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const menu = productMenuRef.current;
-    if (!menu || !isProductOpen) return;
-    let disposed = false;
-    let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      if (disposed) return;
-      const context = gsap.context(() => {
-        gsap.fromTo(menu, { opacity: 0, y: -8, filter: "blur(6px)" }, {
-          duration: 0.24, opacity: 1, y: 0, filter: "blur(0px)", ease: "power2.out"
-        });
-      }, menu);
-      revert = () => context.revert();
-    }).catch(() => undefined);
-    return () => { disposed = true; revert(); };
-  }, [isProductOpen, reduceMotion]);
-
-  useEffect(() => {
-    if (reduceMotion || !isProductOpen || !productPreviewRef.current) return;
-    let disposed = false;
-    let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      if (disposed || !productPreviewRef.current) return;
-      const context = gsap.context(() => {
-        gsap.fromTo(productPreviewRef.current, { opacity: 0, x: 12, filter: "blur(6px)" }, {
-          duration: 0.24, opacity: 1, x: 0, filter: "blur(0px)", ease: "power2.out"
-        });
-      }, productPreviewRef.current);
-      revert = () => context.revert();
-    }).catch(() => undefined);
-    return () => { disposed = true; revert(); };
-  }, [activeProductId, isProductOpen, reduceMotion]);
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "";
@@ -141,30 +96,18 @@ export function MarketingHeader() {
             </button>
 
             {isProductOpen ? (
-              <div className="product-menu" id="product-menu" ref={productMenuRef}>
-                <div className="product-menu-list">
-                  {navigation.productItems.map((item) => (
-                    <a
-                      className={cn("product-menu-link", item.id === activeProductId && "is-active")}
-                      href={resolveHref(item.href)}
-                      key={item.id}
-                      onClick={() => setIsProductOpen(false)}
-                      onFocus={() => setActiveProductId(item.id)}
-                      onMouseEnter={() => setActiveProductId(item.id)}
-                    >
-                      <span>{item.label}</span>
-                      <small>{item.detail}</small>
-                    </a>
-                  ))}
-                </div>
-                <div className="product-menu-preview" aria-live="polite" ref={productPreviewRef}>
-                  <span className="data-label">{activeProduct.label.toUpperCase()}</span>
-                  <strong>{activeProduct.title}</strong>
-                  <p><NairaText value={activeProduct.preview} /></p>
-                  <span className="preview-action">
-                    Explore section <ArrowUpRight aria-hidden="true" />
-                  </span>
-                </div>
+              <div className="product-menu" id="product-menu">
+                {navigation.productItems.map((item) => (
+                  <a
+                    className="product-menu-link"
+                    href={resolveHref(item.href)}
+                    key={item.id}
+                    onClick={() => setIsProductOpen(false)}
+                  >
+                    <span>{item.label}</span>
+                    <small>{item.detail}</small>
+                  </a>
+                ))}
               </div>
             ) : null}
           </div>
@@ -237,19 +180,4 @@ export function MarketingHeader() {
       ) : null}
     </header>
   );
-}
-
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (!media) return;
-    const update = () => setReduced(media.matches);
-    update();
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
-
-  return reduced;
 }

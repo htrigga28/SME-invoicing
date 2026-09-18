@@ -1,0 +1,211 @@
+"use client";
+
+import { CheckCircle2, Link2, ReceiptText, Send, ShieldCheck } from "lucide-react";
+import { useEffect, useRef } from "react";
+
+import { NairaText } from "@/components/ui/naira-text";
+import { marketingDemo, storyIntro, storySteps } from "@/content/site-copy";
+
+function StoryVisual({ step }: { step: string }) {
+  if (step === "create") {
+    return (
+      <div className="story-state" data-story-state="create">
+        <div className="mock-editor" aria-label="Invoice editor">
+          <div className="mock-editor-bar"><strong>New invoice</strong><span className="status-chip neutral">Draft</span></div>
+          <div className="mock-field"><span>Customer</span><strong>{marketingDemo.customer}</strong><em>Northstar Projects Ltd · billing on file</em></div>
+          <div className="mock-field"><span>Line items · catalogue</span><strong>Brand identity refresh — ₦48,400</strong><em>Monthly retainer · ₦30,000 · + Add item</em></div>
+          <div className="mock-field"><span>Total · live preview</span><strong><NairaText value={marketingDemo.total} /></strong><em>Net 14 · Ref {marketingDemo.customerReference}</em></div>
+        </div>
+        <div className="mock-note"><CheckCircle2 aria-hidden="true" /><span>Catalogue item reused. Totals update in the customer preview before sending.</span></div>
+      </div>
+    );
+  }
+  if (step === "share") {
+    return (
+      <div className="story-state" data-story-state="share">
+        <article className="mock-paper" aria-label={`Shared invoice ${marketingDemo.invoiceNumber}`}>
+          <div className="mock-paper-head">
+            <span className="data-label">{marketingDemo.business} · Shared</span>
+            <strong>{marketingDemo.invoiceNumber}</strong>
+            <p style={{ margin: "8px 0 0", fontSize: "0.8125rem", color: "var(--ink-secondary)" }}>Bill to {marketingDemo.customer} · Due {marketingDemo.dueDate}</p>
+          </div>
+          <div className="mock-paper-body">
+            <div className="mock-line"><span>Brand identity refresh</span><strong><NairaText value="₦48,400" /></strong></div>
+            <div className="mock-line"><span>Monthly retainer</span><strong><NairaText value="₦30,000" /></strong></div>
+            <div className="mock-total"><span>Total due</span><strong><NairaText value={marketingDemo.total} /></strong></div>
+          </div>
+        </article>
+        <div className="mock-note"><Send aria-hidden="true" /><span>Public link ready. No account needed to open the document.</span></div>
+      </div>
+    );
+  }
+  if (step === "pay") {
+    return (
+      <div className="story-state" data-story-state="pay">
+        <article className="mock-paper" aria-label="Customer payment view">
+          <div className="mock-paper-head">
+            <span className="data-label">Invoice from {marketingDemo.business}</span>
+            <strong><NairaText value={marketingDemo.total} /> due</strong>
+            <p style={{ margin: "8px 0 0", fontSize: "0.8125rem", color: "var(--ink-secondary)" }}>{marketingDemo.invoiceNumber} · Due {marketingDemo.dueDate}</p>
+          </div>
+          <div className="mock-paper-body">
+            <div className="mock-pay-cta"><span>Pay <NairaText value={marketingDemo.total} /> online</span></div>
+            <p style={{ margin: "10px 0 0", fontSize: "0.75rem", color: "var(--ink-muted)" }}>Redirected to Paystack to complete payment.</p>
+          </div>
+        </article>
+        <div className="mock-note"><ShieldCheck aria-hidden="true" /><span>One amount, one button. The payer never sees internal tooling.</span></div>
+      </div>
+    );
+  }
+  if (step === "verify") {
+    return (
+      <div className="story-state" data-story-state="verify">
+        <div className="mock-editor">
+          <div className="mock-editor-bar"><strong>Payment confirmation</strong><span className="status-chip info">Confirming</span></div>
+          <div className="mock-field"><span>Provider reference</span><strong className="mock-ref">{marketingDemo.providerReference}</strong><em>Paystack · successful charge</em></div>
+          <div className="mock-field"><span>Amount confirmed</span><strong><NairaText value={marketingDemo.total} /></strong><em>Server-side verification · no optimistic update</em></div>
+        </div>
+        <div className="mock-note"><ShieldCheck aria-hidden="true" /><span>Lumina waits for provider-confirmed truth before touching the balance.</span></div>
+      </div>
+    );
+  }
+  if (step === "match") {
+    return (
+      <div className="story-state" data-story-state="match">
+        <div className="mock-editor">
+          <div className="mock-editor-bar"><strong>Reconciliation</strong><span className="status-chip success">Matched</span></div>
+          <div className="mock-field"><span>Reference resolves to invoice</span><strong><Link2 aria-hidden="true" style={{ width: 14, height: 14, verticalAlign: -2 }} /> {marketingDemo.providerReference} → {marketingDemo.invoiceNumber}</strong><em>Customer {marketingDemo.customer}</em></div>
+          <div className="mock-field"><span>Balance</span><strong><NairaText value="₦0 due" /></strong><em>Was {marketingDemo.total} · now settled</em></div>
+        </div>
+        <div className="mock-note"><CheckCircle2 aria-hidden="true" /><span>No mystery transfer. The payment has a home.</span></div>
+      </div>
+    );
+  }
+  return (
+    <div className="story-state" data-story-state="know">
+      <div className="mock-editor">
+        <div className="mock-editor-bar"><strong>Business position</strong><span className="status-chip success">Paid</span></div>
+        <div className="mock-field"><span>{marketingDemo.invoiceNumber} · paid</span><strong><NairaText value={marketingDemo.total} /> collected</strong><em>Receipt {marketingDemo.receiptNumber} issued · immutable</em></div>
+        <div className="mock-field"><span>Overview updated</span><strong>Outstanding down · Collections up</strong><em>Latest activity: {marketingDemo.providerReference} matched</em></div>
+      </div>
+      <div className="mock-note"><ReceiptText aria-hidden="true" /><span>Invoice, payment, receipt, and dashboard stay connected.</span></div>
+    </div>
+  );
+}
+
+export function InvoiceToCashStory() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+    let disposed = false;
+    let revert = () => {};
+    void import("gsap").then(({ gsap }) => {
+      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+        if (disposed || !section) return;
+        gsap.registerPlugin(ScrollTrigger);
+        const mm = gsap.matchMedia();
+        mm.add("(min-width: 1024px)", () => {
+          const states = gsap.utils.toArray<HTMLElement>("[data-story-state]", section);
+          const steps = gsap.utils.toArray<HTMLElement>("[data-story-step]", section);
+          const progress = section.querySelector<HTMLElement>("[data-story-progress-fill]");
+          if (states.length === 0) return;
+          const first = states[0];
+          if (!first) return;
+          gsap.set(states, { autoAlpha: 0, y: 24 });
+          gsap.set(first, { autoAlpha: 1, y: 0 });
+          steps.forEach((s, i) => s.classList.toggle("is-active", i === 0));
+          const tl = gsap.timeline({
+            scrollTrigger: {
+              trigger: section.querySelector(".story-shell"),
+              start: "top top+=96",
+              end: "+=320%",
+              scrub: 0.6,
+              pin: section.querySelector(".story-stage"),
+              anticipatePin: 1,
+              invalidateOnRefresh: true,
+              onUpdate: (self) => {
+                if (progress) progress.style.transform = `scaleX(${self.progress})`;
+                const activeIndex = Math.min(
+                  states.length - 1,
+                  Math.floor(self.progress * states.length)
+                );
+                steps.forEach((s, i) => s.classList.toggle("is-active", i === activeIndex));
+              }
+            }
+          });
+          states.forEach((state, i) => {
+            if (i === 0) return;
+            const prev = states[i - 1];
+            if (!prev) return;
+            tl.to(prev, { autoAlpha: 0, y: -18, duration: 0.6 }, i * 1);
+            tl.fromTo(
+              state,
+              { autoAlpha: 0, y: 28 },
+              { autoAlpha: 1, y: 0, duration: 0.6 },
+              i * 1 + 0.15
+            );
+          });
+          tl.to({}, { duration: 0.4 });
+          return () => {
+            tl.scrollTrigger?.kill();
+            tl.kill();
+          };
+        });
+        revert = () => mm.revert();
+      }).catch(() => undefined);
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      revert();
+    };
+  }, []);
+
+  return (
+    <section aria-labelledby="how-it-works-title" className="story-section" id="how-it-works" ref={sectionRef}>
+      <div className="shell-container">
+        <div className="story-intro">
+          <div>
+            <p className="section-eyebrow">{storyIntro.eyebrow}</p>
+            <h2 id="how-it-works-title">{storyIntro.heading}</h2>
+          </div>
+          <p className="story-intro-copy">{storyIntro.copy}</p>
+        </div>
+
+        <div className="story-shell">
+          <div className="story-copy-rail">
+            {storySteps.map((step) => (
+              <article aria-label={`${step.index} ${step.label}`} className="story-step" data-story-step={step.id} key={step.id}>
+                <span className="story-step-index">{step.index} · {step.label}</span>
+                <h3>{step.title}</h3>
+                <p>{step.copy}</p>
+                <span className="story-step-meta">
+                  {marketingDemo.invoiceNumber} · <NairaText value={marketingDemo.total} />
+                  {step.id === "verify" || step.id === "match" || step.id === "know" ? ` · ${marketingDemo.providerReference}` : ""}
+                  {step.id === "know" ? ` · ${marketingDemo.receiptNumber}` : ""}
+                </span>
+              </article>
+            ))}
+          </div>
+          <div className="story-stage" aria-label="Invoice lifecycle product stage">
+            <div className="story-stage-frame">
+              <StoryVisual step="create" />
+              <StoryVisual step="share" />
+              <StoryVisual step="pay" />
+              <StoryVisual step="verify" />
+              <StoryVisual step="match" />
+              <StoryVisual step="know" />
+            </div>
+            <div aria-hidden="true" className="story-progress">
+              <span data-story-progress-fill style={{ transform: "scaleX(0)", transformOrigin: "left center", background: "var(--brand)" }} />
+              <span /><span /><span /><span /><span />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

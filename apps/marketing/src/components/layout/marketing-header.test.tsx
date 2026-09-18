@@ -26,12 +26,12 @@ describe("MarketingHeader", () => {
     expect(productButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(productButton);
     expect(productButton).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: /Payment trail/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Invoicing/i })).toHaveAttribute(
       "href",
-      "#payment-trail"
+      "#invoicing"
     );
-    expect(screen.getByText("Follow money from invoice to receipt")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Sign In" })[0]).toHaveAttribute(
+    expect(screen.getByText("Reusable catalogue, payment terms, and live customer preview.")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute(
       "href",
       "https://app.lumina.test/login"
     );
@@ -45,9 +45,7 @@ describe("MarketingHeader", () => {
     render(<MarketingHeader />);
 
     fireEvent.click(screen.getByRole("button", { name: "Product" }));
-    fireEvent.focus(screen.getByRole("link", { name: /Operations/i }));
-
-    expect(screen.getByText("Run the day from financial truth")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Receipts & control/i })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("button", { name: "Product" })).toHaveAttribute(
       "aria-expanded",
@@ -64,7 +62,7 @@ describe("MarketingHeader", () => {
     expect(screen.getByRole("navigation", { name: "Mobile primary" })).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Product" }).at(-1)!);
-    expect(screen.getByRole("link", { name: /Outcomes/i })).toHaveAttribute("href", "#outcomes");
+    expect(screen.getByRole("link", { name: /Payments & reconciliation/i })).toHaveAttribute("href", "#reconciliation");
   });
 
   it("uses homepage routes for section links when rendered on a legal page", () => {
@@ -72,9 +70,9 @@ describe("MarketingHeader", () => {
     render(<MarketingHeader />);
 
     fireEvent.click(screen.getByRole("button", { name: "Product" }));
-    expect(screen.getByRole("link", { name: /Payment trail/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Invoicing/i })).toHaveAttribute(
       "href",
-      "/#payment-trail"
+      "/#invoicing"
     );
     expect(screen.getAllByRole("link", { name: /create account/i })[0]).toHaveAttribute(
       "href",

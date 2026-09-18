@@ -1,15 +1,14 @@
-import { AlertTriangle, ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 export function LegalPage({ children, title, eyebrow }: { children: ReactNode; title: string; eyebrow: string }) {
   return (
     <main className="legal-page">
-      <div aria-hidden="true" className="legal-trail"><span /><span /><span /></div>
       <article className="shell-container legal-layout">
         <aside className="legal-aside">
           <a href="/"><ArrowLeft aria-hidden="true" />Back to Lumina</a>
           <div>
-            <span className="data-label">DOCUMENT STATUS</span>
+            <span className="data-label">Document status</span>
             <strong>Product draft</strong>
             <p>Owner and legal review required before production use.</p>
           </div>
@@ -17,7 +16,7 @@ export function LegalPage({ children, title, eyebrow }: { children: ReactNode; t
 
         <div className="legal-document">
           <header>
-            <p className="section-signal">{eyebrow}</p>
+            <p className="section-eyebrow">{eyebrow}</p>
             <h1>{title}</h1>
             <div className="legal-warning">
               <AlertTriangle aria-hidden="true" />

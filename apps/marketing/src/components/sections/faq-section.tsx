@@ -4,11 +4,11 @@ import { faq } from "@/content/site-copy";
 
 export function FaqSection() {
   return (
-    <section className="faq-section" id="faq">
+    <section className="faq-section" id="faq" aria-labelledby="faq-title">
       <div className="shell-container faq-layout">
         <div className="faq-intro">
-          <p className="section-signal">Before you join</p>
-          <h2>Clear answers for careful operators.</h2>
+          <p className="section-eyebrow">Before you join</p>
+          <h2 id="faq-title">Clear answers for careful operators.</h2>
           <p>
             Lumina is deliberately specific about what it does, where payment truth comes from, and
             which financial responsibilities remain with Paystack and your business.
