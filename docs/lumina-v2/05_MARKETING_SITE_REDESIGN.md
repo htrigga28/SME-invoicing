@@ -10,6 +10,7 @@ Companion implementation context:
 1. `docs/lumina-v2/10_MARKETING_REFERENCE_LIBRARY.md`
 2. `docs/lumina-v2/11_CURRENT_MARKETING_UI_AUDIT.md`
 3. `docs/lumina-v2/12_MARKETING_REDESIGN_CODEX_PROMPT.md`
+4. `docs/lumina-v2/13_MARKETING_VISUAL_QA_SCORECARD.md`
 4. `docs/lumina-v2/06_APP_DESIGN_OVERHAUL.md` for brand relationship with the authenticated app
 5. `docs/lumina-v2/07_MOBBIN_APP_REFERENCE_LIBRARY.md` for actual product UI references
 
