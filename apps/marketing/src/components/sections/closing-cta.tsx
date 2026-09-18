@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { SignupAnchor } from "@/components/ui/signup-anchor";
 import { closingCta } from "@/content/site-copy";
 import { getAppLoginUrl } from "@/lib/urls";
-import { prefersReducedMotion } from "@/lib/editorial-motion";
+import { loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function ClosingCta() {
   const ref = useRef<HTMLElement>(null);
@@ -16,10 +16,8 @@ export function ClosingCta() {
     if (prefersReducedMotion()) return;
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !el) return;
-        gsap.registerPlugin(ScrollTrigger);
         const mm = gsap.matchMedia();
         mm.add("(min-width: 1024px)", () => {
           // Color-field chapter wipe: the deep-green field rises from below
@@ -43,7 +41,6 @@ export function ClosingCta() {
           };
         });
         revert = () => mm.revert();
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;

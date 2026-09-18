@@ -1,7 +1,6 @@
 import { EyeOff, KeyRound, ShieldCheck, UsersRound } from "lucide-react";
 
-import { trustSection } from "@/content/site-copy";
-import { marketingDemo } from "@/content/site-copy";
+import { marketingDemo, trustSection } from "@/content/site-copy";
 
 const icons: Record<string, typeof ShieldCheck> = {
   provider: ShieldCheck,

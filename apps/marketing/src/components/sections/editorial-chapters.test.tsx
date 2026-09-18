@@ -5,7 +5,7 @@ import { AudienceBridge } from "./audience-bridge";
 import { CustomerPaymentChapter } from "./customer-payment-chapter";
 import { ClosingCta } from "./closing-cta";
 import { InvoicingChapter } from "./invoicing-chapter";
-import { InvoiceToCashStory } from "./invoice-to-cash-story";
+import { getStorySegmentProgress, InvoiceToCashStory } from "./invoice-to-cash-story";
 import { ReceivablesVisibility } from "./receivables-visibility";
 import { TrustControls } from "./trust-controls";
 
@@ -23,11 +23,18 @@ describe("Editorial receivables chapters", () => {
     ["CREATE", "SHARE", "PAY", "VERIFY", "MATCH", "KNOW"].forEach((label) => {
       expect(screen.getAllByText(label, { exact: false }).length).toBeGreaterThan(0);
     });
-    expect(container.querySelectorAll(".story-shell [data-story-step]").length).toBe(6);
-    expect(container.querySelectorAll(".story-shell [data-story-state]").length).toBe(6);
-    expect(container.querySelectorAll(".story-mobile-step").length).toBe(6);
+    expect(container.querySelectorAll(".story-shell [data-story-step]")).toHaveLength(6);
+    expect(container.querySelectorAll(".story-shell [data-story-state]")).toHaveLength(6);
+    expect(container.querySelectorAll(".story-progress [data-story-progress-segment]")).toHaveLength(6);
+    expect(container.querySelectorAll(".story-mobile-step")).toHaveLength(6);
     expect(screen.getAllByText(/INV-000184/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/T8129-4F3A-90LX/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fills each story progress segment in sequence", () => {
+    expect(Array.from({ length: 6 }, (_, index) => getStorySegmentProgress(0.25, index, 6))).toEqual([
+      1, 0.5, 0, 0, 0, 0
+    ]);
   });
 
   it("presents the T020 invoicing chapter with editor and preview", () => {

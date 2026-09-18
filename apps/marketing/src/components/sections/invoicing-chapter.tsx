@@ -5,7 +5,7 @@ import { Check, Plus } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { invoicingChapter, marketingDemo } from "@/content/site-copy";
-import { enterVars, exitVars, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function InvoicingChapter() {
   const ref = useRef<HTMLElement>(null);
@@ -19,10 +19,8 @@ export function InvoicingChapter() {
     }
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !el) return;
-        gsap.registerPlugin(ScrollTrigger);
         const mm = gsap.matchMedia();
         mm.add("(min-width: 1024px)", () => {
           // Editor enters from the left edge, preview from the right edge with
@@ -61,7 +59,6 @@ export function InvoicingChapter() {
           return () => io.disconnect();
         });
         revert = () => mm.revert();
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;

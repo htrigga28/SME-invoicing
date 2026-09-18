@@ -11,7 +11,7 @@ const baseClassName =
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "bg-[var(--brand)] px-5 py-2.5 text-white hover:-translate-y-0.5 hover:bg-[var(--brand-hover)] active:translate-y-0",
+    "marketing-button-primary bg-[var(--brand)] px-5 py-2.5 text-white hover:-translate-y-0.5 hover:bg-[var(--brand-hover)] active:translate-y-0",
   secondary:
     "bg-[var(--brand-soft)] px-5 py-2.5 text-[var(--brand)] hover:-translate-y-0.5 hover:bg-[#ddebe2]",
   ghost:

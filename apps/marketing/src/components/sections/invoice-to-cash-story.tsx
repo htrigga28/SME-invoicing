@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 import { NairaText } from "@/components/ui/naira-text";
 import { marketingDemo, storyIntro, storySteps } from "@/content/site-copy";
 import type { EnterVector } from "@/lib/editorial-motion";
-import { enterVars, exitVars } from "@/lib/editorial-motion";
+import { enterVars, exitVars, loadGsap } from "@/lib/editorial-motion";
 
 const STATE_VECTORS: Record<string, { enter: EnterVector; exit: EnterVector; rotation: number }> = {
   create: { enter: "left", exit: "left", rotation: -3 },
@@ -17,7 +17,7 @@ const STATE_VECTORS: Record<string, { enter: EnterVector; exit: EnterVector; rot
   know: { enter: "bottom", exit: "bottom-right", rotation: -1.5 }
 };
 
-function StoryVisual({ step }: { step: string }) {
+function StoryVisual({ step }: Readonly<{ step: string }>) {
   const vector = STATE_VECTORS[step]?.enter ?? "bottom";
   if (step === "create") {
     return (
@@ -115,15 +115,13 @@ export function InvoiceToCashStory() {
     if (reduceMotion) return;
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !section) return;
-        gsap.registerPlugin(ScrollTrigger);
         const mm = gsap.matchMedia();
         mm.add("(min-width: 1024px)", () => {
           const states = gsap.utils.toArray<HTMLElement>("[data-story-state]", section);
           const steps = gsap.utils.toArray<HTMLElement>("[data-story-step]", section);
-          const progress = section.querySelector<HTMLElement>("[data-story-progress-fill]");
+          const progressSegments = gsap.utils.toArray<HTMLElement>("[data-story-progress-segment]", section);
           if (states.length === 0) return;
           const first = states[0];
           if (!first) return;
@@ -141,7 +139,12 @@ export function InvoiceToCashStory() {
               anticipatePin: 1,
               invalidateOnRefresh: true,
               onUpdate: (self) => {
-                if (progress) progress.style.transform = `scaleX(${self.progress})`;
+                progressSegments.forEach((segment, index) => {
+                  segment.style.setProperty(
+                    "--story-progress",
+                    String(getStorySegmentProgress(self.progress, index, states.length))
+                  );
+                });
                 const activeIndex = Math.min(
                   states.length - 1,
                   Math.floor(self.progress * states.length)
@@ -185,7 +188,6 @@ export function InvoiceToCashStory() {
           };
         });
         revert = () => mm.revert();
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;
@@ -229,8 +231,7 @@ export function InvoiceToCashStory() {
               <StoryVisual step="know" />
             </div>
             <div aria-hidden="true" className="story-progress">
-              <span data-story-progress-fill style={{ transform: "scaleX(0)", transformOrigin: "left center", background: "var(--brand)" }} />
-              <span /><span /><span /><span /><span />
+              {storySteps.map((step) => <span data-story-progress-segment key={step.id} />)}
             </div>
           </div>
         </div>
@@ -248,4 +249,8 @@ export function InvoiceToCashStory() {
       </div>
     </section>
   );
+}
+
+export function getStorySegmentProgress(progress: number, index: number, total: number) {
+  return Math.min(1, Math.max(0, progress * total - index));
 }

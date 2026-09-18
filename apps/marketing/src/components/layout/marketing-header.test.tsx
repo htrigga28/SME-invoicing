@@ -35,10 +35,9 @@ describe("MarketingHeader", () => {
       "href",
       "https://app.lumina.test/login"
     );
-    expect(screen.getAllByRole("link", { name: /create account/i })[0]).toHaveAttribute(
-      "href",
-      "https://app.lumina.test/register"
-    );
+    const signupLink = screen.getAllByRole("link", { name: /create account/i })[0]!;
+    expect(signupLink).toHaveAttribute("href", "https://app.lumina.test/register");
+    expect(signupLink).toHaveClass("marketing-button-primary");
   });
 
   it("shifts the Product preview and closes it with Escape", () => {

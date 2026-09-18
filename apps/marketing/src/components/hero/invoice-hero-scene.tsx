@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { hero, marketingDemo } from "@/content/site-copy";
-import { enterVars, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function InvoiceHeroScene() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -16,14 +16,12 @@ export function InvoiceHeroScene() {
     if (prefersReducedMotion()) return;
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !root) return;
-        gsap.registerPlugin(ScrollTrigger);
         const mm = gsap.matchMedia();
         // Desktop / large tablet: full Acctual-style collage choreography.
         mm.add("(min-width: 768px)", () => {
-          const q = gsap.utils.selector(root);
+          const heroCopy = root.closest(".hero-grid")?.querySelector(".hero-copy");
           const intro = gsap.timeline({ defaults: { ease: "power3.out" } });
           intro
             .fromTo(".hero-copy > *", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, stagger: 0.07 }, 0)
@@ -49,8 +47,10 @@ export function InvoiceHeroScene() {
             .to(".hero-layer-back", { xPercent: -38, yPercent: -8, rotation: -7, opacity: 0.25, ease: "none", duration: 1 }, 0)
             .to(".hero-layer-side", { xPercent: 42, yPercent: -10, rotation: 7, opacity: 0.25, ease: "none", duration: 1 }, 0)
             .to(".hero-tag-ref", { xPercent: 70, yPercent: -55, rotation: 10, opacity: 0, ease: "none", duration: 1 }, 0)
-            .to(".hero-tag-receipt", { xPercent: -70, yPercent: 40, rotation: -10, opacity: 0, ease: "none", duration: 1 }, 0)
-            .to(q(".hero-copy"), { yPercent: -8, opacity: 0.35, ease: "none", duration: 1 }, 0);
+            .to(".hero-tag-receipt", { xPercent: -70, yPercent: 40, rotation: -10, opacity: 0, ease: "none", duration: 1 }, 0);
+          if (heroCopy) {
+            exit.to(heroCopy, { yPercent: -8, opacity: 0.35, ease: "none", duration: 1 }, 0);
+          }
           return () => {
             intro.kill();
             exit.scrollTrigger?.kill();
@@ -70,7 +70,6 @@ export function InvoiceHeroScene() {
           };
         });
         revert = () => mm.revert();
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;

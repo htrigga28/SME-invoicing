@@ -5,7 +5,7 @@ import { CheckCircle2 } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { customerPaymentSection, marketingDemo } from "@/content/site-copy";
-import { enterVars, exitVars, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function CustomerPaymentChapter() {
   const ref = useRef<HTMLElement>(null);
@@ -19,10 +19,8 @@ export function CustomerPaymentChapter() {
     }
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !el) return;
-        gsap.registerPlugin(ScrollTrigger);
         const mm = gsap.matchMedia();
         mm.add("(min-width: 1024px)", () => {
           // Public invoice paper slides from the left with a paper tilt while
@@ -61,7 +59,6 @@ export function CustomerPaymentChapter() {
           return () => io.disconnect();
         });
         revert = () => mm.revert();
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;

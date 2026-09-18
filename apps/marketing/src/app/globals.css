@@ -89,6 +89,7 @@ a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; }
 button, a, input, select, textarea { outline-color: var(--brand); }
 button { color: inherit; }
+.marketing-button-primary { color: var(--text-inverse); }
 ::selection { background: var(--brand-soft); color: var(--brand); }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
 
@@ -208,6 +209,7 @@ button { color: inherit; }
   box-shadow: var(--shadow-menu);
   transform: translateX(-50%);
 }
+.product-menu::before { content: ""; position: absolute; inset: -10px 0 auto; height: 10px; }
 .product-menu-link { display: grid; gap: 3px; padding: 11px 12px; border-radius: 10px; transition: background 160ms var(--ease-out); }
 .product-menu-link span { color: var(--ink); font-size: 0.875rem; font-weight: 650; }
 .product-menu-link small { color: var(--ink-muted); font-size: 0.75rem; line-height: 1.45; }
@@ -421,8 +423,8 @@ button { color: inherit; }
 .mock-note svg { width: 16px; height: 16px; flex: none; color: var(--success); margin-top: 2px; }
 .mock-ref { font-family: var(--font-jetbrains), ui-monospace, monospace; font-size: 0.875rem; font-weight: 700; overflow-wrap: anywhere; }
 .story-progress { display: flex; gap: 6px; margin-top: 16px; }
-.story-progress span { height: 3px; flex: 1; border-radius: 999px; background: var(--border-default); }
-.story-progress span.is-active { background: var(--brand); }
+.story-progress span { --story-progress: 0; height: 3px; flex: 1; overflow: hidden; border-radius: 999px; background: var(--border-default); }
+.story-progress span::before { content: ""; display: block; width: 100%; height: 100%; background: var(--brand); transform: scaleX(var(--story-progress)); transform-origin: left center; }
 .story-mobile { display: none; }
 
 /* Invoicing chapter — sage */

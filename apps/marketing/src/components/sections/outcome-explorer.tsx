@@ -5,7 +5,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { outcomes, reconciliationSection } from "@/content/site-copy";
-import { enterVars, exitVars, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
 import { cn } from "@/lib/cn";
 
 const toneIcons = {
@@ -30,10 +30,8 @@ export function OutcomeExplorer() {
     if (window.matchMedia?.("(max-width: 1023px)").matches) return;
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !sectionRef.current) return;
-        gsap.registerPlugin(ScrollTrigger);
         // Editorial handoff: copy settles calmly while the payment record
         // crosses in from the right, then both drift out as visibility enters.
         const tl = gsap.timeline({
@@ -53,7 +51,6 @@ export function OutcomeExplorer() {
           tl.scrollTrigger?.kill();
           tl.kill();
         };
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;

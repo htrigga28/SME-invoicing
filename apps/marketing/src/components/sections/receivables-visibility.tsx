@@ -5,7 +5,7 @@ import { Check } from "lucide-react";
 
 import { NairaText } from "@/components/ui/naira-text";
 import { visibilitySection } from "@/content/site-copy";
-import { enterVars, exitVars, prefersReducedMotion } from "@/lib/editorial-motion";
+import { enterVars, exitVars, loadGsap, prefersReducedMotion } from "@/lib/editorial-motion";
 
 export function ReceivablesVisibility() {
   const ref = useRef<HTMLElement>(null);
@@ -22,10 +22,8 @@ export function ReceivablesVisibility() {
     }
     let disposed = false;
     let revert = () => {};
-    void import("gsap").then(({ gsap }) => {
-      void import("gsap/ScrollTrigger").then(({ ScrollTrigger }) => {
+    void loadGsap().then(({ gsap }) => {
         if (disposed || !el) return;
-        gsap.registerPlugin(ScrollTrigger);
         const mm = gsap.matchMedia();
         mm.add("(min-width: 1024px)", () => {
           // Cropped workspace fragments compose from opposing sides: chart
@@ -72,7 +70,6 @@ export function ReceivablesVisibility() {
           return () => rio.disconnect();
         });
         revert = () => mm.revert();
-      }).catch(() => undefined);
     }).catch(() => undefined);
     return () => {
       disposed = true;
