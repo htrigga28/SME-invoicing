@@ -53,7 +53,8 @@ Payment Setup gating rules:
 
 Public view tracking rules:
 
-- Every valid public invoice view inserts an `invoice_view_events` row, increments `viewCount`, and updates `lastViewedAt` without changing invoice status.
+- Every valid public invoice view inserts an `invoice_view_events` row, increments `viewCount`, and updates `lastViewedAt` without changing invoice status. The event insert and the summary update run in one transaction so the ledger and the counter cannot disagree.
+- The first valid public view also sets `viewedAt` (`COALESCE(viewedAt, occurredAt)`) regardless of invoice status; repeated views never modify it.
 - Public invoice view moves `sent` to `viewed` only.
 - Repeated public views do not create repeated viewed status events.
 - `overdue`, `partially_paid`, `paid`, `cancelled`, and `void` invoices must not move to `viewed`.
@@ -62,7 +63,13 @@ Public view tracking rules:
 
 ## Communication State Is Separate From Invoice State
 
-Email delivery (`communications.status`: `pending`, `accepted`, `delivered`, `deferred`, `failed`) is a communication lifecycle, not an invoice lifecycle:
+Email delivery is a communication lifecycle, not an invoice lifecycle. Per-recipient rows (`communication_recipients.status`) are authoritative; the parent `communications.status` is the derived aggregate:
+
+- `pending`, `accepted`, `delivered`, `deferred`, `failed` keep their plain meaning (single-recipient sends collapse to these);
+- `submission_uncertain` means the provider never confirmed receipt — it is not a failure and never overwrites an acceptance;
+- `in_progress` / `partially_failed` are multi-recipient aggregates (see `database-schema.md` for the exact rules).
+
+Rules:
 
 - An invoice may be `sent` while its email delivery failed.
 - A `delivered` email does not mean the customer opened the public invoice.

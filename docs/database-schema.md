@@ -292,7 +292,8 @@ One row per invoice email send attempt (initial send or manual resend). Resends 
 | to_recipients | JSONB array of normalized recipient emails. |
 | cc_recipients | JSONB array of normalized CC emails. |
 | provider_message_id | Nullable Brevo message ID. Unique where present. |
-| status | `pending`, `accepted`, `delivered`, `deferred`, `failed`. |
+| provider_idempotency_key | Per-attempt UUID sent to Brevo as `idempotencyKey`. Reused only when resending a `submission_uncertain` attempt. Indexed (non-unique, reuse is intentional). |
+| status | `pending`, `accepted`, `delivered`, `deferred`, `failed`, `submission_uncertain`, `in_progress`, `partially_failed`. The last three are derived/ambiguity states, documented below. |
 | accepted_at | Nullable provider-acceptance timestamp. |
 | delivered_at | Nullable delivery timestamp. |
 | deferred_at | Nullable deferral timestamp. |
@@ -301,7 +302,44 @@ One row per invoice email send attempt (initial send or manual resend). Resends 
 | created_by_user_id | Nullable reference to the sending user. |
 | created_at, updated_at | Timestamps. |
 
-Indexes: `organisation_id + invoice_id`; partial unique on `provider_message_id` where not null.
+Indexes: `organisation_id + invoice_id`; partial unique on `provider_message_id` where not null; index on `provider_idempotency_key`.
+
+Delivery state semantics:
+
+- `submission_uncertain` means the provider did not confirm receipt (timeout, network drop, 5xx, unreadable response). It is never recorded when the provider explicitly rejected the send, and it never overwrites an accepted send.
+- `in_progress` and `partially_failed` are aggregates derived from `communication_recipients` (see below). Recipient rows are authoritative; the parent status converges to the same aggregate regardless of webhook arrival order.
+
+### communication_recipients
+
+One row per recipient (To/CC) of a communication, holding recipient-level delivery state. Recipient transitions use atomic conditional updates so concurrent webhook events cannot regress each other.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| communication_id | References communications. Cascade on deletion. |
+| invoice_id | References invoices. Cascade on deletion. |
+| email | Normalized (lower-cased) recipient email. Unique per communication. |
+| recipient_type | `to` or `cc`. |
+| status | `pending`, `accepted`, `delivered`, `deferred`, `failed`. |
+| accepted_at | Nullable acceptance timestamp. |
+| delivered_at | Nullable delivery timestamp. |
+| deferred_at | Nullable deferral timestamp. |
+| failed_at | Nullable failure timestamp. |
+| failure_reason | Nullable safe display reason. |
+| created_at, updated_at | Timestamps. |
+
+Indexes: `organisation_id + communication_id`; `organisation_id + invoice_id`; unique on `communication_id + email`.
+
+Aggregate rules (parent `communications.status` derived from recipient rows; single-recipient sends collapse to the plain lifecycle):
+
+- no recipients → `pending`;
+- all `accepted` → `accepted`;
+- all `delivered` → `delivered`;
+- all `failed` → `failed`;
+- any `failed` → `partially_failed`;
+- any `deferred` → `deferred`;
+- otherwise → `in_progress`.
 
 ### communication_events
 
@@ -314,7 +352,7 @@ Normalized provider webhook events. Raw payloads are never stored; only the even
 | communication_id | References communications. Cascade on deletion. |
 | invoice_id | References invoices. Cascade on deletion. |
 | provider | Currently `brevo`. |
-| provider_event_key | Stable idempotency key (`message-id::event::timestamp`). Unique. |
+| provider_event_key | Stable idempotency key (`message-id::event::timestamp::recipient-email`). Unique. |
 | event_type | Normalized provider event name. |
 | occurred_at | Provider event timestamp. |
 | metadata_redacted | Optional safe metadata only. |

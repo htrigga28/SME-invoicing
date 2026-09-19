@@ -10,7 +10,10 @@ const DELIVERY_LABELS: Record<DeliveryState, string> = {
   accepted: "Accepted",
   delivered: "Delivered",
   delayed: "Delayed",
-  failed: "Failed"
+  failed: "Failed",
+  uncertain: "Uncertain",
+  in_progress: "In progress",
+  partially_failed: "Partially failed"
 };
 
 const DELIVERY_TONES: Record<DeliveryState, StatusTone> = {
@@ -19,7 +22,10 @@ const DELIVERY_TONES: Record<DeliveryState, StatusTone> = {
   accepted: "info",
   delivered: "success",
   delayed: "warning",
-  failed: "danger"
+  failed: "danger",
+  uncertain: "warning",
+  in_progress: "info",
+  partially_failed: "warning"
 };
 
 export function DeliveryBadge({ state }: { state: DeliveryState }) {

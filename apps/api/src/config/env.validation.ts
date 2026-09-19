@@ -18,6 +18,7 @@ const envSchema = z.object({
   BREVO_FROM_EMAIL: z.string().email().optional(),
   BREVO_SENDER_EMAIL: z.string().email().optional(),
   BREVO_WEBHOOK_SECRET: z.string().min(1).optional(),
+  BREVO_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
   TRUST_PROXY: z.string().min(1).default("loopback")
 });

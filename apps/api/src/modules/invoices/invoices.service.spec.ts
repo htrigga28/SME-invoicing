@@ -801,6 +801,7 @@ describe("InvoicesService T021 send and resend", () => {
   function setupSend(overrides: {
     invoice?: ReturnType<typeof createInvoice>;
     sendInvoiceEmail?: jest.Mock;
+    resendInvoiceEmail?: jest.Mock;
     deliverySummary?: unknown;
   } = {}) {
     const service = setup();
@@ -812,7 +813,10 @@ describe("InvoicesService T021 send and resend", () => {
       .mockResolvedValue({ invoice: { id: invoice.id }, publicUrl: null });
     const sendInvoiceEmail =
       overrides.sendInvoiceEmail ??
-      jest.fn().mockResolvedValue({ communication: { id: "comm-1" } });
+      jest.fn().mockResolvedValue({ communication: { id: "comm-1" }, outcome: "accepted" });
+    const resendInvoiceEmail =
+      overrides.resendInvoiceEmail ??
+      jest.fn().mockResolvedValue({ communication: { id: "comm-2" }, outcome: "accepted" });
     const getDeliverySummary = jest
       .fn()
       .mockResolvedValue(
@@ -824,6 +828,7 @@ describe("InvoicesService T021 send and resend", () => {
       );
     (service as unknown as { communicationsService: unknown }).communicationsService = {
       sendInvoiceEmail,
+      resendInvoiceEmail,
       getDeliverySummary
     };
     const context = {
@@ -891,6 +896,29 @@ describe("InvoicesService T021 send and resend", () => {
     expect(result.delivery.message).toContain("not configured");
   });
 
+  it("reports an uncertain delivery without failing when confirmation is ambiguous", async () => {
+    const sendInvoiceEmail = jest.fn().mockResolvedValue({
+      communication: { id: "comm-1" },
+      outcome: "uncertain"
+    });
+    const { context, service } = setupSend({
+      sendInvoiceEmail,
+      deliverySummary: {
+        state: "uncertain",
+        attempts: 1,
+        lastCommunication: { id: "comm-1", status: "submission_uncertain" }
+      }
+    });
+
+    const result = await (service as unknown as InvoicesService).sendInvoice(context, "invoice-1", {
+      to: ["accounts@northstar.example"]
+    });
+
+    expect(service.transitionInvoice).toHaveBeenCalledTimes(1);
+    expect(result.delivery.state).toBe("uncertain");
+    expect(result.delivery.message).toContain("may still have been sent");
+  });
+
   it("rejects invalid recipients before issuing the invoice", async () => {
     const { context, service } = setupSend();
 
@@ -903,9 +931,15 @@ describe("InvoicesService T021 send and resend", () => {
   });
 
   it("resends with a new attempt on an issued invoice", async () => {
-    const { context, sendInvoiceEmail, service } = setupSend({
+    const { context, service } = setupSend({
       invoice: createInvoice({ status: "sent", publicAccessEnabled: true, sentAt: now })
     });
+    const resendInvoiceEmail = jest.fn().mockResolvedValue({
+      communication: { id: "comm-2" },
+      outcome: "accepted"
+    });
+    (service as unknown as { communicationsService: Record<string, unknown> }).communicationsService
+      .resendInvoiceEmail = resendInvoiceEmail;
 
     const result = await (service as unknown as InvoicesService).resendInvoiceEmail(
       context,
@@ -913,7 +947,7 @@ describe("InvoicesService T021 send and resend", () => {
       { to: ["accounts@northstar.example"] }
     );
 
-    expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
+    expect(resendInvoiceEmail).toHaveBeenCalledTimes(1);
     expect(result.delivery).toMatchObject({ state: "accepted" });
   });
 
@@ -922,19 +956,22 @@ describe("InvoicesService T021 send and resend", () => {
     ["cancelled", true],
     ["void", true]
   ])("rejects resend for %s invoices", async (status) => {
-    const { context, sendInvoiceEmail, service } = setupSend({
+    const { context, service } = setupSend({
       invoice: createInvoice({
         status: status as "draft" | "cancelled" | "void",
         publicAccessEnabled: status !== "draft"
       })
     });
+    const resendInvoiceEmail = jest.fn();
+    (service as unknown as { communicationsService: Record<string, unknown> }).communicationsService
+      .resendInvoiceEmail = resendInvoiceEmail;
 
     await expect(
       (service as unknown as InvoicesService).resendInvoiceEmail(context, "invoice-1", {
         to: ["accounts@northstar.example"]
       })
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
-    expect(sendInvoiceEmail).not.toHaveBeenCalled();
+    expect(resendInvoiceEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -1003,6 +1040,7 @@ describe("InvoicesService invoice activity", () => {
           {
             id: "comm-1",
             toRecipients: ["accounts@northstar.example"],
+            status: "delivered",
             acceptedAt: new Date("2026-09-18T09:18:00.000Z"),
             deliveredAt: new Date("2026-09-18T09:19:00.000Z"),
             deferredAt: null,

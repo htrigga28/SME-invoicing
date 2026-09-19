@@ -59,19 +59,45 @@ export type DeliveryState =
   | "accepted"
   | "delivered"
   | "delayed"
-  | "failed";
+  | "failed"
+  | "uncertain"
+  | "in_progress"
+  | "partially_failed";
 
-export type DeliveryCommunication = {
+export type DeliveryRecipient = {
   id: string;
-  subject: string | null;
-  toRecipients: string[];
-  ccRecipients: string[];
+  email: string;
+  recipientType: string;
   status: "pending" | "accepted" | "delivered" | "deferred" | "failed";
   acceptedAt: string | null;
   deliveredAt: string | null;
   deferredAt: string | null;
   failedAt: string | null;
   failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeliveryCommunication = {
+  id: string;
+  subject: string | null;
+  toRecipients: string[];
+  ccRecipients: string[];
+  status:
+    | "pending"
+    | "accepted"
+    | "delivered"
+    | "deferred"
+    | "failed"
+    | "submission_uncertain"
+    | "in_progress"
+    | "partially_failed";
+  acceptedAt: string | null;
+  deliveredAt: string | null;
+  deferredAt: string | null;
+  failedAt: string | null;
+  failureReason: string | null;
+  recipients: DeliveryRecipient[];
   createdAt: string;
   updatedAt: string;
 };
@@ -99,6 +125,7 @@ export type InvoiceActivityItem = {
     | "email_delivered"
     | "email_deferred"
     | "email_failed"
+    | "email_uncertain"
     | "invoice_viewed"
     | "payment_started"
     | "payment_confirmed"

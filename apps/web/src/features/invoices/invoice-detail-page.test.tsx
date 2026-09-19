@@ -107,6 +107,7 @@ const invoiceResponse = {
       deferredAt: null,
       failedAt: null,
       failureReason: null,
+      recipients: [],
       createdAt: "2026-06-01T10:01:00.000Z",
       updatedAt: "2026-06-01T10:02:00.000Z"
     }
@@ -412,5 +413,43 @@ describe("InvoiceDetailContent delivery", () => {
     await screen.findByText("Delivered");
     expect(screen.queryByRole("button", { name: "Send invoice" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("More invoice actions")).not.toBeInTheDocument();
+  });
+
+  it("shows partial failure and recipient-specific activity without hiding the delivery", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      delivery: {
+        ...invoiceResponse.delivery,
+        state: "partially_failed",
+        message: "Email delivery partially failed. See the activity timeline for the affected addresses."
+      }
+    });
+    vi.mocked(getInvoiceActivity).mockResolvedValueOnce({
+      activity: [
+        {
+          id: "email-comm-1-recipient-bounce-failed",
+          type: "email_failed",
+          occurredAt: "2026-09-18T09:19:00.000Z",
+          title: "Email to bounce@example.com failed",
+          detail: "The email address bounced. Check the recipient and try again.",
+          tone: "danger"
+        },
+        {
+          id: "email-comm-1-accepted",
+          type: "email_accepted",
+          occurredAt: "2026-09-18T09:18:00.000Z",
+          title: "Invoice emailed to accounts@example.com +1 more",
+          detail: "Accepted by the email provider.",
+          tone: "info"
+        }
+      ],
+      viewSummary: null
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByText("Partially failed")).toBeInTheDocument();
+    expect(screen.getByText("Email to bounce@example.com failed")).toBeInTheDocument();
+    expect(screen.getByText("Invoice emailed to accounts@example.com +1 more")).toBeInTheDocument();
   });
 });

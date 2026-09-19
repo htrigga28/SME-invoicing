@@ -26,7 +26,7 @@ The deployment should prioritize reliable demo access over complex infrastructur
 | Backend API URL | `NEXT_PUBLIC_API_URL`, `BACKEND_API_URL` |
 | CORS origins | `CORS_ORIGINS` |
 | R2 credentials, later | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
-| Brevo transactional email | `BREVO_API_KEY`, `BREVO_FROM_EMAIL` (verified sender), optional `BREVO_SENDER_EMAIL` (legacy), optional `BREVO_BASE_URL`, `BREVO_WEBHOOK_SECRET` |
+| Brevo transactional email | `BREVO_API_KEY`, `BREVO_FROM_EMAIL` (verified sender), optional `BREVO_SENDER_EMAIL` (legacy), optional `BREVO_BASE_URL`, `BREVO_WEBHOOK_SECRET`, optional `BREVO_REQUEST_TIMEOUT_MS` (default 15000) |
 
 Secrets must not be committed. Production and preview environments should use separate Paystack and database configuration where practical.
 
@@ -35,7 +35,8 @@ Brevo email notes (T021):
 - `BREVO_FROM_EMAIL` must be a verified Brevo sender; the display name is sent as `{businessName} via Lumina`.
 - Without `BREVO_API_KEY`, invoice issuance and public links keep working; email delivery returns a controlled not-configured result and delivery is never faked.
 - Configure a Brevo transactional webhook to `POST /webhooks/brevo/transactional` with a custom `x-brevo-webhook-secret` header matching `BREVO_WEBHOOK_SECRET`. Webhook secret validation happens before any payload processing.
-- Run migrations before deploying code that depends on the `communications`, `communication_events`, and `invoice_view_events` tables.
+- Brevo sends carry a per-attempt `idempotencyKey`; resends of `submission_uncertain` attempts reuse the same key. Provider calls abort after `BREVO_REQUEST_TIMEOUT_MS`; timeouts are recorded as uncertain, never as definite failures.
+- Run migrations before deploying code that depends on the `communications`, `communication_events`, `communication_recipients`, and `invoice_view_events` tables.
 
 Payment Setup and Paystack subaccount notes:
 

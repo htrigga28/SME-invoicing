@@ -217,7 +217,10 @@ export function InvoiceDetailContent({
     setDeliveryNotice({
       message: delivery.message,
       showCopyLink: true,
-      showResend: delivery.state === "failed"
+      showResend:
+        delivery.state === "failed" ||
+        delivery.state === "uncertain" ||
+        delivery.state === "partially_failed"
     });
   }
 

@@ -75,6 +75,17 @@ export const communicationStatusEnum = pgEnum("communication_status", [
   "accepted",
   "delivered",
   "deferred",
+  "failed",
+  "submission_uncertain",
+  "in_progress",
+  "partially_failed"
+]);
+
+export const communicationRecipientStatusEnum = pgEnum("communication_recipient_status", [
+  "pending",
+  "accepted",
+  "delivered",
+  "deferred",
   "failed"
 ]);
 
@@ -832,6 +843,7 @@ export const communications = pgTable(
     toRecipients: jsonb("to_recipients").$type<string[]>().notNull(),
     ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull(),
     providerMessageId: varchar("provider_message_id", { length: 200 }),
+    providerIdempotencyKey: varchar("provider_idempotency_key", { length: 36 }).notNull(),
     status: communicationStatusEnum("status").notNull().default("pending"),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -850,7 +862,49 @@ export const communications = pgTable(
     ),
     providerMessageIdUnique: uniqueIndex("communications_provider_message_id_unique")
       .on(table.providerMessageId)
-      .where(sql`${table.providerMessageId} is not null`)
+      .where(sql`${table.providerMessageId} is not null`),
+    idempotencyKeyIndex: index("communications_provider_idempotency_key_idx").on(
+      table.providerIdempotencyKey
+    )
+  })
+);
+
+export const communicationRecipients = pgTable(
+  "communication_recipients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    communicationId: uuid("communication_id")
+      .notNull()
+      .references(() => communications.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    recipientType: varchar("recipient_type", { length: 10 }).notNull().default("to"),
+    status: communicationRecipientStatusEnum("status").notNull().default("pending"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deferredAt: timestamp("deferred_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    failureReason: varchar("failure_reason", { length: 300 }),
+    ...timestamps
+  },
+  (table) => ({
+    communicationIndex: index("communication_recipients_communication_idx").on(
+      table.organisationId,
+      table.communicationId
+    ),
+    invoiceIndex: index("communication_recipients_org_invoice_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    communicationEmailUnique: uniqueIndex("communication_recipients_communication_email_unique").on(
+      table.communicationId,
+      table.email
+    )
   })
 );
 
@@ -926,6 +980,21 @@ export const communicationsRelations = relations(communications, ({ many, one })
     references: [users.id]
   }),
   events: many(communicationEvents)
+}));
+
+export const communicationRecipientsRelations = relations(communicationRecipients, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [communicationRecipients.organisationId],
+    references: [organisations.id]
+  }),
+  communication: one(communications, {
+    fields: [communicationRecipients.communicationId],
+    references: [communications.id]
+  }),
+  invoice: one(invoices, {
+    fields: [communicationRecipients.invoiceId],
+    references: [invoices.id]
+  })
 }));
 
 export const communicationEventsRelations = relations(communicationEvents, ({ one }) => ({
@@ -1051,6 +1120,7 @@ export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
 export type Communication = typeof communications.$inferSelect;
 export type NewCommunication = typeof communications.$inferInsert;
 export type CommunicationEvent = typeof communicationEvents.$inferSelect;
+export type CommunicationRecipient = typeof communicationRecipients.$inferSelect;
 export type InvoiceViewEvent = typeof invoiceViewEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;

@@ -11,6 +11,7 @@ import {
   businessProfiles,
   catalogueItems,
   communicationEvents,
+  communicationRecipients,
   communications,
   customers,
   invoiceLineItems,
@@ -1219,39 +1220,56 @@ export async function seedDemo() {
         const scenarios: {
           invoiceNumber: string;
           providerMessageId: string;
+          idempotencyKey: string;
           toRecipients: string[];
+          ccRecipients: string[];
           subject: string;
-          status: "accepted" | "delivered" | "failed";
+          status: "accepted" | "delivered" | "failed" | "partially_failed";
           acceptedAt: Date;
           deliveredAt?: Date;
           failedAt?: Date;
           failureReason?: string;
-          events: { eventType: string; occurredAt: Date }[];
+          events: { eventType: string; email: string; occurredAt: Date }[];
           views: Date[];
         }[] = [
           {
             invoiceNumber: "INV-000007",
             providerMessageId: "<demo-t021-000007@relay.brevo.com>",
+            idempotencyKey: "demo-t021-000007-key",
             toRecipients: ["accounts@example.com"],
+            ccRecipients: [],
             subject: "Invoice INV-000007 from Akin & Co Creative Services",
             status: "accepted",
             acceptedAt: new Date(now.getTime() - 2 * dayMs),
-            events: [{ eventType: "request", occurredAt: new Date(now.getTime() - 2 * dayMs) }],
+            events: [
+              {
+                eventType: "request",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 2 * dayMs)
+              }
+            ],
             views: []
           },
           {
             invoiceNumber: "INV-000008",
             providerMessageId: "<demo-t021-000008@relay.brevo.com>",
+            idempotencyKey: "demo-t021-000008-key",
             toRecipients: ["bounce@example.com"],
+            ccRecipients: [],
             subject: "Invoice INV-000008 from Akin & Co Creative Services",
             status: "failed",
             acceptedAt: new Date(now.getTime() - 3 * dayMs),
             failedAt: new Date(now.getTime() - 3 * dayMs + 5 * 60 * 1000),
             failureReason: "The email address bounced. Check the recipient and try again.",
             events: [
-              { eventType: "request", occurredAt: new Date(now.getTime() - 3 * dayMs) },
+              {
+                eventType: "request",
+                email: "bounce@example.com",
+                occurredAt: new Date(now.getTime() - 3 * dayMs)
+              },
               {
                 eventType: "hard_bounce",
+                email: "bounce@example.com",
                 occurredAt: new Date(now.getTime() - 3 * dayMs + 5 * 60 * 1000)
               }
             ],
@@ -1260,15 +1278,22 @@ export async function seedDemo() {
           {
             invoiceNumber: "INV-000013",
             providerMessageId: "<demo-t021-000013@relay.brevo.com>",
+            idempotencyKey: "demo-t021-000013-key",
             toRecipients: ["accounts@example.com"],
+            ccRecipients: [],
             subject: "Invoice INV-000013 from Akin & Co Creative Services",
             status: "delivered",
             acceptedAt: new Date(now.getTime() - 4 * dayMs),
             deliveredAt: new Date(now.getTime() - 4 * dayMs + 2 * 60 * 1000),
             events: [
-              { eventType: "request", occurredAt: new Date(now.getTime() - 4 * dayMs) },
+              {
+                eventType: "request",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 4 * dayMs)
+              },
               {
                 eventType: "delivered",
+                email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 4 * dayMs + 2 * 60 * 1000)
               }
             ],
@@ -1282,15 +1307,22 @@ export async function seedDemo() {
           {
             invoiceNumber: "INV-000011",
             providerMessageId: "<demo-t021-000011@relay.brevo.com>",
+            idempotencyKey: "demo-t021-000011-key",
             toRecipients: ["accounts@example.com"],
+            ccRecipients: [],
             subject: "Invoice INV-000011 from Akin & Co Creative Services",
             status: "delivered",
             acceptedAt: new Date(now.getTime() - 18 * dayMs),
             deliveredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000),
             events: [
-              { eventType: "request", occurredAt: new Date(now.getTime() - 18 * dayMs) },
+              {
+                eventType: "request",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 18 * dayMs)
+              },
               {
                 eventType: "delivered",
+                email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000)
               }
             ],
@@ -1298,6 +1330,36 @@ export async function seedDemo() {
               new Date(now.getTime() - 17 * dayMs),
               new Date(now.getTime() - 16 * dayMs)
             ]
+          },
+          {
+            invoiceNumber: "INV-000025",
+            providerMessageId: "<demo-t021-000025@relay.brevo.com>",
+            idempotencyKey: "demo-t021-000025-key",
+            toRecipients: ["accounts@example.com"],
+            ccRecipients: ["bounce@example.com"],
+            subject: "Invoice INV-000025 from Akin & Co Creative Services",
+            status: "partially_failed",
+            acceptedAt: new Date(now.getTime() - 1 * dayMs),
+            failedAt: new Date(now.getTime() - 1 * dayMs + 10 * 60 * 1000),
+            failureReason: "1 of 2 recipients failed delivery. See the activity timeline for the affected addresses.",
+            events: [
+              {
+                eventType: "request",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 1 * dayMs)
+              },
+              {
+                eventType: "delivered",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 1 * dayMs + 2 * 60 * 1000)
+              },
+              {
+                eventType: "hard_bounce",
+                email: "bounce@example.com",
+                occurredAt: new Date(now.getTime() - 1 * dayMs + 10 * 60 * 1000)
+              }
+            ],
+            views: []
           }
         ];
 
@@ -1308,45 +1370,117 @@ export async function seedDemo() {
             continue;
           }
 
-          const [existingCommunication] = await db
+          // Rebuild demo delivery fixtures so reruns converge on the current
+          // recipient-aware shape instead of accumulating legacy rows.
+          const [seedExisting] = await db
             .select({ id: communications.id })
             .from(communications)
             .where(eq(communications.providerMessageId, scenario.providerMessageId))
             .limit(1);
 
-          let communicationId = existingCommunication?.id;
-
-          if (!communicationId) {
-            const [created] = await db
-              .insert(communications)
-              .values({
-                organisationId: organisation.id,
-                invoiceId: invoice.id,
-                customerId: invoice.customerId,
-                purpose: "invoice_delivery",
-                channel: "email",
-                provider: "brevo",
-                subject: scenario.subject,
-                toRecipients: scenario.toRecipients,
-                ccRecipients: [],
-                providerMessageId: scenario.providerMessageId,
-                status: scenario.status,
-                acceptedAt: scenario.acceptedAt,
-                deliveredAt: scenario.deliveredAt ?? null,
-                deferredAt: null,
-                failedAt: scenario.failedAt ?? null,
-                failureReason: scenario.failureReason ?? null,
-                createdByUserId: owner.id,
-                createdAt: scenario.acceptedAt,
-                updatedAt: now
-              })
-              .returning({ id: communications.id });
-
-            communicationId = created?.id;
+          if (seedExisting) {
+            await db
+              .delete(communicationEvents)
+              .where(eq(communicationEvents.communicationId, seedExisting.id));
+            await db
+              .delete(communicationRecipients)
+              .where(eq(communicationRecipients.communicationId, seedExisting.id));
+            await db.delete(communications).where(eq(communications.id, seedExisting.id));
           }
+
+          const [created] = await db
+            .insert(communications)
+            .values({
+              organisationId: organisation.id,
+              invoiceId: invoice.id,
+              customerId: invoice.customerId,
+              purpose: "invoice_delivery",
+              channel: "email",
+              provider: "brevo",
+              subject: scenario.subject,
+              toRecipients: scenario.toRecipients,
+              ccRecipients: scenario.ccRecipients,
+              providerMessageId: scenario.providerMessageId,
+              providerIdempotencyKey: scenario.idempotencyKey,
+              status: scenario.status,
+              acceptedAt: scenario.acceptedAt,
+              deliveredAt: scenario.deliveredAt ?? null,
+              deferredAt: null,
+              failedAt: scenario.failedAt ?? null,
+              failureReason: scenario.failureReason ?? null,
+              createdByUserId: owner.id,
+              createdAt: scenario.acceptedAt,
+              updatedAt: now
+            })
+            .returning({ id: communications.id });
+
+          const communicationId = created?.id;
 
           if (!communicationId) {
             continue;
+          }
+
+          const recipientOutcomes = new Map<string, { status: "accepted" | "delivered" | "failed"; at: Date; failureReason: string | null }>();
+
+          for (const event of scenario.events) {
+            if (event.eventType === "request") {
+              continue;
+            }
+
+            recipientOutcomes.set(event.email, {
+              status: event.eventType === "delivered" ? "delivered" : "failed",
+              at: event.occurredAt,
+              failureReason:
+                event.eventType === "delivered" ? null : (scenario.failureReason ?? null)
+            });
+          }
+
+          for (const email of scenario.toRecipients) {
+            const outcome = recipientOutcomes.get(email) ?? {
+              status: "accepted" as const,
+              at: scenario.acceptedAt,
+              failureReason: null
+            };
+
+            await db.insert(communicationRecipients).values({
+              organisationId: organisation.id,
+              communicationId,
+              invoiceId: invoice.id,
+              email,
+              recipientType: "to",
+              status: outcome.status,
+              acceptedAt: scenario.acceptedAt,
+              deliveredAt: outcome.status === "delivered" ? outcome.at : null,
+              deferredAt: null,
+              failedAt: outcome.status === "failed" ? outcome.at : null,
+              failureReason: outcome.failureReason,
+              createdAt: scenario.acceptedAt,
+              updatedAt: now
+            });
+          }
+
+          for (const email of scenario.ccRecipients) {
+            const outcome = recipientOutcomes.get(email) ?? {
+              status: "accepted" as const,
+              at: scenario.acceptedAt,
+              failureReason: null
+            };
+
+            await db.insert(communicationRecipients).values({
+              organisationId: organisation.id,
+              communicationId,
+              invoiceId: invoice.id,
+              email,
+              recipientType: "cc",
+              status: outcome.status,
+              acceptedAt: scenario.acceptedAt,
+              deliveredAt: outcome.status === "delivered" ? outcome.at : null,
+              deferredAt: null,
+              failedAt: outcome.status === "failed" ? outcome.at : null,
+              failureReason: outcome.failureReason,
+              createdAt: scenario.acceptedAt,
+              updatedAt: now
+            });
           }
 
           for (const event of scenario.events) {
@@ -1357,10 +1491,10 @@ export async function seedDemo() {
                 communicationId,
                 invoiceId: invoice.id,
                 provider: "brevo",
-                providerEventKey: `${scenario.providerMessageId}::${event.eventType}::${Math.floor(event.occurredAt.getTime() / 1000)}`,
+                providerEventKey: `${scenario.providerMessageId}::${event.eventType}::${Math.floor(event.occurredAt.getTime() / 1000)}::${event.email}`,
                 eventType: event.eventType,
                 occurredAt: event.occurredAt,
-                metadataRedacted: { seed: "demo_communication_event" },
+                metadataRedacted: { seed: "demo_communication_event", email: event.email },
                 createdAt: event.occurredAt
               })
               .onConflictDoNothing();

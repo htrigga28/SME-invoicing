@@ -163,6 +163,7 @@ export type InvoiceActivityType =
   | "email_delivered"
   | "email_deferred"
   | "email_failed"
+  | "email_uncertain"
   | "invoice_viewed"
   | "payment_started"
   | "payment_confirmed"
@@ -287,11 +288,17 @@ export class InvoicesService {
     const orderedCommunications = [...delivery.communications].reverse();
 
     orderedCommunications.forEach((communication, index) => {
-      const recipients = communication.toRecipients ?? [];
+      const recipients = communication.recipients ?? [];
+      const legacyRecipients = [
+        ...(communication.toRecipients ?? []),
+        ...(communication.ccRecipients ?? [])
+      ];
+      const recipientEmails =
+        recipients.length > 0 ? recipients.map((row) => row.email) : legacyRecipients;
       const recipientLabel =
-        recipients.length > 1
-          ? `${recipients[0]} +${recipients.length - 1} more`
-          : (recipients[0] ?? "customer");
+        recipientEmails.length > 1
+          ? `${recipientEmails[0]} +${recipientEmails.length - 1} more`
+          : (recipientEmails[0] ?? "customer");
       const resent = index > 0;
       const metadata = {
         invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
@@ -311,43 +318,89 @@ export class InvoicesService {
         });
       }
 
-      if (communication.deliveredAt) {
+      if (communication.status === "submission_uncertain") {
         push({
-          id: `email-${communication.id}-delivered`,
-          type: "email_delivered",
-          occurredAt: new Date(communication.deliveredAt).toISOString(),
-          title: "Email delivered",
-          detail: `Delivered to ${recipientLabel}.`,
-          tone: "success",
-          actor: null,
-          metadata
-        });
-      }
-
-      if (communication.deferredAt) {
-        push({
-          id: `email-${communication.id}-deferred`,
-          type: "email_deferred",
-          occurredAt: new Date(communication.deferredAt).toISOString(),
-          title: "Email delivery delayed",
-          detail: "The provider deferred delivery. It may still arrive.",
+          id: `email-${communication.id}-uncertain`,
+          type: "email_uncertain",
+          occurredAt: new Date(communication.updatedAt).toISOString(),
+          title: "Email send status uncertain",
+          detail:
+            communication.failureReason ??
+            "The provider did not confirm receipt. It may still have been sent.",
           tone: "warning",
           actor: null,
           metadata
         });
       }
 
-      if (communication.failedAt) {
+      if (communication.deliveredAt && communication.status === "delivered") {
         push({
-          id: `email-${communication.id}-failed`,
-          type: "email_failed",
-          occurredAt: new Date(communication.failedAt).toISOString(),
-          title: "Email delivery failed",
-          detail: communication.failureReason ?? "The email could not be delivered.",
-          tone: "danger",
+          id: `email-${communication.id}-delivered`,
+          type: "email_delivered",
+          occurredAt: new Date(communication.deliveredAt).toISOString(),
+          title: "Email delivered",
+          detail:
+            recipients.length > 1
+              ? `Delivered to all ${recipients.length} recipients.`
+              : `Delivered to ${recipientLabel}.`,
+          tone: "success",
           actor: null,
           metadata
         });
+      }
+
+      if (recipients.length > 1) {
+        for (const recipient of recipients) {
+          if (recipient.status === "failed" && recipient.failedAt) {
+            push({
+              id: `email-${communication.id}-recipient-${recipient.id}-failed`,
+              type: "email_failed",
+              occurredAt: new Date(recipient.failedAt).toISOString(),
+              title: `Email to ${recipient.email} failed`,
+              detail: recipient.failureReason ?? "The email could not be delivered.",
+              tone: "danger",
+              actor: null,
+              metadata
+            });
+          } else if (recipient.status === "deferred" && recipient.deferredAt) {
+            push({
+              id: `email-${communication.id}-recipient-${recipient.id}-deferred`,
+              type: "email_deferred",
+              occurredAt: new Date(recipient.deferredAt).toISOString(),
+              title: `Email to ${recipient.email} delayed`,
+              detail: "The provider deferred delivery. It may still arrive.",
+              tone: "warning",
+              actor: null,
+              metadata
+            });
+          }
+        }
+      } else {
+        if (communication.deferredAt && communication.status === "deferred") {
+          push({
+            id: `email-${communication.id}-deferred`,
+            type: "email_deferred",
+            occurredAt: new Date(communication.deferredAt).toISOString(),
+            title: "Email delivery delayed",
+            detail: "The provider deferred delivery. It may still arrive.",
+            tone: "warning",
+            actor: null,
+            metadata
+          });
+        }
+
+        if (communication.failedAt) {
+          push({
+            id: `email-${communication.id}-failed`,
+            type: "email_failed",
+            occurredAt: new Date(communication.failedAt).toISOString(),
+            title: "Email delivery failed",
+            detail: communication.failureReason ?? "The email could not be delivered.",
+            tone: "danger",
+            actor: null,
+            metadata
+          });
+        }
       }
     });
 
@@ -832,7 +885,8 @@ export class InvoicesService {
         updatedAt: sentAt
       },
       reason: "invoice_sent",
-      toStatus: "sent"
+      toStatus: "sent",
+      expectedFromStatus: "draft"
     });
 
     const publicUrl = this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken);
@@ -868,17 +922,46 @@ export class InvoicesService {
     }
 
     const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email, true);
+    const businessProfile = context.businessProfile;
 
-    const delivery = await this.deliverIssuedInvoiceEmail({
-      context,
-      invoice: invoiceWithCustomer.invoice,
-      customer: invoiceWithCustomer.customer,
-      publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken),
-      recipients,
-      subject: email?.subject
+    const { outcome } = await this.communicationsService.resendInvoiceEmail({
+      organisationId: context.activeOrganisation.id,
+      userId: context.user.id,
+      invoice: {
+        id: invoiceWithCustomer.invoice.id,
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber
+      },
+      customerId: invoiceWithCustomer.customer.id,
+      content: {
+        customerEmail: invoiceWithCustomer.customer.email,
+        customerName: invoiceWithCustomer.customer.name,
+        businessName: businessProfile?.businessName ?? context.activeOrganisation.name,
+        businessEmail: businessProfile?.email ?? null,
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        amountDueKobo: invoiceWithCustomer.invoice.balanceDueKobo,
+        dueDate: this.formatDueDate(invoiceWithCustomer.invoice.dueDate),
+        publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken),
+        to: recipients.to,
+        cc: recipients.cc,
+        subject: email?.subject
+      }
     });
 
-    return { delivery };
+    const delivery = await this.communicationsService.getDeliverySummary(
+      context.activeOrganisation.id,
+      invoiceWithCustomer.invoice.id
+    );
+
+    if (outcome === "uncertain") {
+      return {
+        delivery: this.toDeliveryResponse(
+          delivery,
+          "The email may have been sent, but confirmation was not received. Check the activity timeline before resending again."
+        )
+      };
+    }
+
+    return { delivery: this.toDeliveryResponse(delivery) };
   }
 
   private resolveSendRecipients(
@@ -909,7 +992,7 @@ export class InvoicesService {
     const businessProfile = input.context.businessProfile;
 
     try {
-      await this.communicationsService.sendInvoiceEmail({
+      const { outcome } = await this.communicationsService.sendInvoiceEmail({
         organisationId: input.context.activeOrganisation.id,
         userId: input.context.user.id,
         invoice: { id: input.invoice.id, invoiceNumber: input.invoice.invoiceNumber },
@@ -929,6 +1012,16 @@ export class InvoicesService {
           subject: input.subject
         }
       });
+
+      if (outcome === "uncertain") {
+        return this.toDeliveryResponse(
+          await this.communicationsService.getDeliverySummary(
+            input.context.activeOrganisation.id,
+            input.invoice.id
+          ),
+          "The invoice was issued, but email confirmation was not received. It may still have been sent — check the activity timeline before resending."
+        );
+      }
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
         return this.toDeliveryResponse(
@@ -975,7 +1068,11 @@ export class InvoicesService {
       accepted: "Email accepted by the email provider.",
       delivered: "Email delivered.",
       delayed: "Email delivery is delayed.",
-      failed: "Email delivery failed."
+      failed: "Email delivery failed.",
+      uncertain:
+        "Email send status is uncertain. It may still have been sent — check the activity timeline before resending.",
+      in_progress: "Email delivery is in progress.",
+      partially_failed: "Email delivery partially failed. See the activity timeline for the affected addresses."
     };
 
     return {
@@ -1105,7 +1202,7 @@ export class InvoicesService {
       return {
         success: true,
         viewCount,
-        firstViewedAt: publicInvoice.invoice.viewedAt,
+        firstViewedAt: publicInvoice.invoice.viewedAt ?? occurredAt,
         lastViewedAt: occurredAt
       };
     }
@@ -1269,23 +1366,39 @@ export class InvoicesService {
       patch: Partial<Invoice>;
       reason: string;
       toStatus: InvoiceStatusValue;
+      expectedFromStatus?: InvoiceStatusValue;
     }
   ) {
     await this.databaseService.db.transaction(async (tx) => {
+      const conditions = [
+        eq(invoices.id, invoice.id),
+        eq(invoices.organisationId, context.activeOrganisation.id)
+      ];
+
+      if (input.expectedFromStatus) {
+        conditions.push(eq(invoices.status, input.expectedFromStatus));
+      }
+
       const [updated] = await tx
         .update(invoices)
         .set(input.patch)
-        .where(eq(invoices.id, invoice.id))
+        .where(and(...conditions))
         .returning();
 
       if (!updated) {
+        if (input.expectedFromStatus) {
+          throw new ConflictException(
+            "The invoice changed before the request completed. Refresh and try again."
+          );
+        }
+
         throw new Error("Invoice transition failed.");
       }
 
       await tx.insert(invoiceStatusEvents).values({
         organisationId: context.activeOrganisation.id,
         invoiceId: invoice.id,
-        fromStatus: invoice.status,
+        fromStatus: input.expectedFromStatus ?? invoice.status,
         toStatus: input.toStatus,
         reason: input.reason,
         actorUserId: context.user.id,

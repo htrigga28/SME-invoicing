@@ -1,8 +1,9 @@
+import { HttpException, HttpStatus } from "@nestjs/common";
+
 export type EmailRecipient = {
   email: string;
   name?: string | null | undefined;
 };
-
 export type InvoiceEmailContent = {
   businessName: string;
   customerName: string;
@@ -23,7 +24,27 @@ export type SendEmailInput = {
   htmlContent: string;
   textContent: string;
   tags: string[];
+  /**
+   * Deterministic per-attempt idempotency key. Sent to Brevo as the documented
+   * batch `idempotencyKey` header value so provider-side retries of the same
+   * attempt cannot produce duplicate deliveries. Retries of an ambiguous
+   * attempt must reuse the same key rather than minting a new delivery.
+   */
+  idempotencyKey?: string | undefined;
 };
+
+/**
+ * The provider request failed in a way that cannot prove the email was not
+ * accepted: transport/timeout errors, 5xx responses, or unreadable success
+ * payloads. Callers must NOT record this as a definite provider failure.
+ */
+export class EmailUncertainError extends HttpException {
+  constructor(
+    message = "The email provider did not confirm receipt. The email may still have been sent."
+  ) {
+    super(message, HttpStatus.BAD_GATEWAY);
+  }
+}
 
 export type SendEmailResult = {
   providerMessageId: string;
