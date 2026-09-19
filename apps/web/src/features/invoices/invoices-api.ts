@@ -2,7 +2,12 @@ import type { InvoiceStatus } from "@sme-invoicing/shared";
 
 import { apiGet, apiRequest } from "@/lib/api";
 
-import type { InvoiceDetailResponse, InvoiceListResponse, InvoiceMutationPayload } from "./types";
+import type {
+  InvoiceActivityResponse,
+  InvoiceDetailResponse,
+  InvoiceListResponse,
+  InvoiceMutationPayload
+} from "./types";
 
 type ListInvoicesInput = {
   customerId?: string;
@@ -55,9 +60,37 @@ export function updateInvoice(
   });
 }
 
-export function sendInvoice(accessToken: string, invoiceId: string) {
+export type SendInvoiceEmailInput = {
+  to?: string[];
+  cc?: string[];
+  subject?: string;
+};
+
+export function sendInvoice(accessToken: string, invoiceId: string, input: SendInvoiceEmailInput = {}) {
   return apiRequest<InvoiceDetailResponse>(`/invoices/${encodeURIComponent(invoiceId)}/send`, {
     method: "POST",
+    accessToken,
+    body: input
+  });
+}
+
+export function resendInvoiceEmail(
+  accessToken: string,
+  invoiceId: string,
+  input: SendInvoiceEmailInput
+) {
+  return apiRequest<{ delivery: InvoiceDetailResponse["delivery"] }>(
+    `/invoices/${encodeURIComponent(invoiceId)}/resend`,
+    {
+      method: "POST",
+      accessToken,
+      body: input
+    }
+  );
+}
+
+export function getInvoiceActivity(accessToken: string, invoiceId: string) {
+  return apiGet<InvoiceActivityResponse>(`/invoices/${encodeURIComponent(invoiceId)}/activity`, {
     accessToken
   });
 }

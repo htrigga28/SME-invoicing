@@ -28,7 +28,7 @@ import type { InvoiceStatus } from "@sme-invoicing/shared";
 import { convertNairaToKobo } from "@sme-invoicing/shared";
 
 import { InvoiceDocument, type CustomerVisibleBusiness } from "./invoice-document";
-import { createInvoice, getInvoice, sendInvoice, updateInvoice } from "./invoices-api";
+import { createInvoice, getInvoice, updateInvoice } from "./invoices-api";
 import { formatMoney, PageHeader, StatusPanel } from "./invoice-ui";
 import type { InvoiceFormState } from "./types";
 import { invoiceManagerRoles } from "./types";
@@ -51,10 +51,6 @@ type InvoiceFormPageProps =
 
 type LoadState = "loading" | "ready" | "error";
 type SaveMode = "draft" | "send";
-type SendOutcome =
-  | { kind: "confirmed-failure"; invoiceId: string }
-  | { kind: "committed"; invoiceId: string }
-  | { kind: "ambiguous"; invoiceId: string };
 
 const blankLineItem = {
   description: "",
@@ -123,7 +119,6 @@ export function InvoiceFormContent({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pageError, setPageError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [sendOutcome, setSendOutcome] = useState<SendOutcome | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveMode, setSaveMode] = useState<SaveMode | null>(null);
   const [showPreviewMobile, setShowPreviewMobile] = useState(false);
@@ -237,7 +232,6 @@ export function InvoiceFormContent({
   function updateField(field: keyof InvoiceFormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: "" }));
-    setSendOutcome(null);
   }
 
   function updateLineItem(
@@ -252,7 +246,6 @@ export function InvoiceFormContent({
       )
     }));
     setErrors((current) => ({ ...current, lineItems: "" }));
-    setSendOutcome(null);
   }
 
   function addLineItem() {
@@ -338,7 +331,6 @@ export function InvoiceFormContent({
     const nextSaveMode = pendingSaveModeRef.current;
     setPageError(null);
     setSuccess(null);
-    setSendOutcome(null);
 
     const validationErrors = validateInvoiceForm(form);
     setErrors(validationErrors);
@@ -363,65 +355,13 @@ export function InvoiceFormContent({
         return;
       }
 
-      try {
-        const sent = await sendInvoice(accessToken, response.invoice.id);
-        setSuccess(`Invoice ${sent.invoice.invoiceNumber} sent.`);
-        router.push(`/invoices/${sent.invoice.id}`);
-      } catch (sendError) {
-        handleAuthError(sendError);
-
-        try {
-          const refreshed = await getInvoice(accessToken, response.invoice.id);
-
-          if (refreshed.invoice.status === "draft") {
-            setSendOutcome({ kind: "confirmed-failure", invoiceId: refreshed.invoice.id });
-            setPageError(
-              sendError instanceof Error
-                ? `Saved as draft, but sending failed: ${sendError.message}`
-                : "Saved as draft, but sending failed."
-            );
-          } else {
-            setSendOutcome({ kind: "committed", invoiceId: refreshed.invoice.id });
-            setSuccess(
-              `Invoice ${refreshed.invoice.invoiceNumber} was sent. The send response was not received, but the invoice status is ${refreshed.invoice.status}.`
-            );
-          }
-        } catch {
-          setSendOutcome({ kind: "ambiguous", invoiceId: response.invoice.id });
-          setPageError(
-            "Saved, but the send result is uncertain. Open the invoice to confirm its status before retrying. Do not retry blindly."
-          );
-        }
-      }
+      router.push(`/invoices/${response.invoice.id}?send=1`);
     } catch (saveError) {
       handleAuthError(saveError);
       setPageError(saveError instanceof Error ? saveError.message : "Could not save invoice.");
     } finally {
       setIsSubmitting(false);
       setSaveMode(null);
-    }
-  }
-
-  async function handleRetrySend() {
-    if (!sendOutcome || sendOutcome.kind !== "confirmed-failure") {
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const retried = await sendInvoice(accessToken, sendOutcome.invoiceId);
-      setSendOutcome(null);
-      setPageError(null);
-      setSuccess(`Invoice ${retried.invoice.invoiceNumber} sent.`);
-      router.push(`/invoices/${retried.invoice.id}`);
-    } catch (retryError) {
-      handleAuthError(retryError);
-      setPageError(
-        retryError instanceof Error ? retryError.message : "Sending failed again. Try again later."
-      );
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -505,44 +445,6 @@ export function InvoiceFormContent({
 
       {pageError ? <StatusPanel message={pageError} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
-      {sendOutcome?.kind === "confirmed-failure" ? (
-        <StatusPanel
-          action={
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={isSubmitting}
-                onClick={() => void handleRetrySend()}
-                size="sm"
-                type="button"
-              >
-                Retry send
-              </Button>
-              <Link
-                className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                href={`/invoices/${sendOutcome.invoiceId}`}
-              >
-                Open saved invoice
-              </Link>
-            </div>
-          }
-          message="The invoice was saved as a draft. Sending was confirmed to have failed, so retry is safe."
-          tone="warning"
-        />
-      ) : null}
-      {sendOutcome?.kind === "ambiguous" ? (
-        <StatusPanel
-          action={
-            <Link
-              className="rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-              href={`/invoices/${sendOutcome.invoiceId}`}
-            >
-              Open saved invoice
-            </Link>
-          }
-          message="Saved, but the send result could not be confirmed. Check the invoice status before retrying."
-          tone="warning"
-        />
-      ) : null}
 
       <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]">
         <form

@@ -219,9 +219,11 @@ Customer rules:
 | --- | --- | --- | --- | --- |
 | `GET /invoices` | Required | Owner/Admin/Accountant/Viewer | Query: `search?`, `status?`, `customerId?`, `fromDate?`, `toDate?`, `page?`, `limit?` | `{ invoices, pagination }` |
 | `POST /invoices` | Required | Owner/Admin/Accountant | `{ customerId, issueDate, dueDate, customerReference?, lineItems, discount?, tax?, notes? }` | `{ invoice }` |
-| `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary }` |
+| `GET /invoices/:id` | Required | Owner/Admin/Accountant/Viewer | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary, delivery, viewSummary }` |
+| `GET /invoices/:id/activity` | Required | Owner/Admin/Accountant/Viewer | None | `{ activity, viewSummary }` |
 | `PATCH /invoices/:id` | Required | Owner/Admin/Accountant | Draft-only editable invoice fields | `{ invoice }` |
-| `POST /invoices/:id/send` | Required | Owner/Admin/Accountant | None | `{ invoice, publicUrl }` |
+| `POST /invoices/:id/send` | Required | Owner/Admin/Accountant | `{ to?, cc?, subject? }` | `{ invoice, publicUrl, delivery }` |
+| `POST /invoices/:id/resend` | Required | Owner/Admin/Accountant | `{ to?, cc?, subject? }` | `{ delivery }` |
 | `POST /invoices/:id/duplicate` | Required | Owner/Admin/Accountant | None | `{ invoice, lineItems, statusEvents, publicUrl, paymentSummary }` in the authenticated detail shape for the new draft |
 | `POST /invoices/:id/cancel` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
 | `POST /invoices/:id/void` | Required | Owner/Admin | `{ reason }` | `{ invoice }` |
@@ -232,6 +234,15 @@ Rules:
 - Invoice numbers and public tokens are generated server-side.
 - Invoice numbers are organisation-scoped and use the format `INV-000001`.
 - Created invoices start as private drafts. Sending a draft enables public access and returns the generated public URL for T007.
+- `POST /invoices/:id/send` accepts optional `{ to?, cc?, subject? }`. When `to` is omitted it defaults to the customer email. Recipients are normalized (trimmed, lower-cased, deduped); To/CC overlap is removed; at most 10 recipients; invalid addresses return `400` before the invoice is issued.
+- Sending issues the invoice first (`draft → sent`, public access enabled) using a compare-and-set update (`WHERE status = 'draft'`), then attempts Brevo email delivery. Concurrent sends race safely: exactly one request transitions the draft, and only the winner sends email; losers receive `409`. The response always includes `delivery: { state, message, attempts, lastCommunication }` with state `accepted`, `delivered`, `delayed`, `failed`, `sending`, `not_emailed`, `uncertain`, `in_progress`, or `partially_failed`.
+- Provider submission and post-submission persistence are separate error boundaries. A definite provider rejection marks the attempt failed; an ambiguous outcome (network/timeout/5xx/unreadable response) records `submission_uncertain` and never rewrites an accepted send as failed. Audit-log failures never change delivery state.
+- Each send attempt carries a deterministic `provider_idempotency_key` (sent to Brevo as `idempotencyKey`). Resending while the latest attempt is `submission_uncertain` reuses that key so provider-side retries cannot duplicate mail; all other resends mint a fresh key. Brevo calls are bounded by `BREVO_REQUEST_TIMEOUT_MS` (default 15000ms); timeouts are treated as ambiguous, never as definite failures.
+- If email transmission fails after issuance, the invoice remains issued/public; the communication is marked failed and the response message reads `Invoice issued, but the email could not be sent. Copy the public link or try again.` Invoice status is never used to represent email failure.
+- If Brevo is not configured, issuance still succeeds and `delivery.state` is `not_emailed` with a configuration message. Delivery is never faked.
+- `POST /invoices/:id/resend` creates a NEW communication attempt for an issued invoice (`sent`, `viewed`, `overdue`, `partially_paid`, `paid` with public access enabled). Old attempts remain in history. Draft, cancelled, and void invoices return `422`.
+- `GET /invoices/:id/activity` aggregates status events, invoice edits, email delivery events (including per-recipient failures and `email_uncertain` items), view summary, payments, refunds, and receipts into reverse-chronological `{ id, type, occurredAt, title, detail?, tone?, actor?, metadata? }` items. Responses contain only safe display fields (no organisation IDs, tokens, subaccount codes, or raw provider payloads). Repeated public views collapse into one `invoice_viewed` item with count/first/last.
+- `GET /invoices/:id` also returns `delivery` (latest email delivery state) and `viewSummary` (`{ viewCount, firstViewedAt, lastViewedAt }`, null when never viewed). Detail invoices expose `lastViewedAt` and `viewCount`.
 - MVP uses invoice-level `discount_kobo` and `tax_kobo`; line items do not have per-line tax or discount.
 - Invoice `subtotal_kobo` is the sum of server-calculated line totals, and `total_kobo` is `subtotal_kobo - discount_kobo + tax_kobo`.
 - `customerReference` is an optional customer-facing reference/PO number (maximum 120 characters) returned in authenticated detail and the public response. `notes` is the customer-facing memo.
@@ -276,7 +287,7 @@ Rules:
 - Invalid, disabled, cancelled, void, or otherwise unavailable invoice links return the same safe not-found response.
 - Public response exposes only customer-facing invoice data: invoice display fields (including `customerReference` and the customer memo in `notes`), business contact fields, customer billing fields, line items, and a safe payment summary.
 - Public page must not expose internal organisation/member data.
-- Public view tracking moves `sent` to `viewed` only once and writes a safe status event and audit log.
+- Public view tracking records an `invoice_view_events` row on every valid view, increments `viewCount`, and updates `lastViewedAt` without changing invoice status, except that the first eligible view moves `sent` to `viewed` once and writes a safe status event and audit log. The view endpoint returns `{ success, viewCount, firstViewedAt, lastViewedAt }`.
 - Repeated public views must not create duplicate viewed transitions.
 - Overdue invoices must not move back to `viewed`.
 - Public invoice viewing remains available even when Payment Setup is incomplete.
@@ -362,6 +373,22 @@ Public invoice `paymentSummary` examples:
   "message": "This invoice has no outstanding balance."
 }
 ```
+
+## Brevo Transactional Email Webhook
+
+| Endpoint | Auth | Role | Request | Response |
+| --- | --- | --- | --- | --- |
+| `POST /webhooks/brevo/transactional` | Webhook secret header | Provider | Brevo event payload | `{ received: true }` |
+
+Rules:
+
+- No user JWT auth. The request must carry the configured secret in the `x-brevo-webhook-secret` header (configure Brevo to send this custom header). Missing secret configuration, missing header, or mismatch returns `401`. The secret is never logged.
+- Organisation scope is resolved from the stored communication matched by provider `message-id`. Organisation IDs from the payload are never trusted.
+- Unknown message IDs and malformed payloads return `{ received: true }` without `500` errors.
+- Each event is persisted once keyed by a stable provider event key (`message-id::event::timestamp::recipient-email`); replays return `{ received: true, duplicate: true }` without touching delivery state. Same-second events for different recipients produce distinct rows.
+- Event mapping: `request`/`sent` → accepted; `delivered` → delivered; `deferred`/`soft_bounce` → deferred; `hard_bounce`/`blocked`/`invalid`/`invalid_email`/`error` → failed. Open/click/spam/unsubscribe events are stored without changing delivery state.
+- Webhook events resolve the recipient from `communication + payload email` and advance that recipient with an atomic conditional update (`WHERE id AND status = <previously read>`); concurrent deliveries cannot regress each other. The parent communication exposes the derived aggregate: all delivered → `delivered`; all failed → `failed`; any failed → `partially_failed`; any deferred → `deferred`; all accepted → `accepted`; otherwise → `in_progress`. Audit entries are written only when a transition (or aggregate change to a terminal state) actually applies.
+- Email open events never mark the invoice `viewed`. Public invoice viewing is the only source of view state.
 
 ## Payments
 

@@ -94,6 +94,8 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     balanceDueKobo: 0,
     sentAt: now,
     viewedAt: null,
+    lastViewedAt: null,
+    viewCount: 0,
     paidAt: now,
     cancelledAt: null,
     voidedAt: null,

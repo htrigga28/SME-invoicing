@@ -7,6 +7,7 @@ import { DatabaseModule } from "../../database/database.module";
 import { AuditLogModule } from "../audit-log/audit-log.module";
 import { AuthRepository } from "../auth/auth.repository";
 import { TokenService } from "../auth/token.service";
+import { CommunicationsModule } from "../communications/communications.module";
 import { PaymentsModule } from "../payments/payments.module";
 import { PaystackModule } from "../paystack/paystack.module";
 import { TenantContextService } from "../tenant/tenant-context.service";
@@ -15,7 +16,14 @@ import { InvoicesService } from "./invoices.service";
 import { PublicInvoicesController } from "./public-invoices.controller";
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, AuditLogModule, PaystackModule, PaymentsModule],
+  imports: [
+    ConfigModule,
+    DatabaseModule,
+    AuditLogModule,
+    CommunicationsModule,
+    PaystackModule,
+    PaymentsModule
+  ],
   controllers: [InvoicesController, PublicInvoicesController],
   providers: [
     AuthRepository,

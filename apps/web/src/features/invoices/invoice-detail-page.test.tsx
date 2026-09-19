@@ -1,15 +1,17 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InvoiceDetailContent } from "./invoice-detail-page";
-import { getInvoice } from "./invoices-api";
-import type { InvoiceDetailResponse } from "./types";
+import { getInvoice, getInvoiceActivity, resendInvoiceEmail, sendInvoice } from "./invoices-api";
+import type { InvoiceActivityItem, InvoiceDetailResponse } from "./types";
 
 vi.mock("./invoices-api", () => ({
   cancelInvoice: vi.fn(),
   duplicateInvoice: vi.fn(),
   getInvoice: vi.fn(),
+  getInvoiceActivity: vi.fn(),
+  resendInvoiceEmail: vi.fn(),
   sendInvoice: vi.fn(),
   voidInvoice: vi.fn()
 }));
@@ -49,6 +51,8 @@ const invoiceResponse = {
     publicAccessEnabled: true,
     sentAt: "2026-06-01T10:00:00.000Z",
     viewedAt: null,
+    lastViewedAt: null,
+    viewCount: 0,
     paidAt: null,
     cancelledAt: null,
     voidedAt: null,
@@ -88,6 +92,27 @@ const invoiceResponse = {
     successfulPaymentCount: 0,
     hasOverpayment: false
   },
+  delivery: {
+    state: "delivered",
+    message: "Email delivered.",
+    attempts: 1,
+    lastCommunication: {
+      id: "comm-1",
+      subject: "Invoice INV-000007",
+      toRecipients: ["accounts@lagosbrightprints.test"],
+      ccRecipients: [],
+      status: "delivered",
+      acceptedAt: "2026-06-01T10:01:00.000Z",
+      deliveredAt: "2026-06-01T10:02:00.000Z",
+      deferredAt: null,
+      failedAt: null,
+      failureReason: null,
+      recipients: [],
+      createdAt: "2026-06-01T10:01:00.000Z",
+      updatedAt: "2026-06-01T10:02:00.000Z"
+    }
+  },
+  viewSummary: null,
   payments: [],
   publicUrl: "http://localhost:3000/invoice/public-token",
   paymentSummary: {
@@ -99,8 +124,27 @@ const invoiceResponse = {
   }
 } satisfies InvoiceDetailResponse;
 
+const sentActivity: InvoiceActivityItem[] = [
+  {
+    id: "status-event-1",
+    type: "invoice_sent",
+    occurredAt: "2026-06-01T10:00:00.000Z",
+    title: "Invoice sent",
+    detail: "Invoice issued and public access enabled.",
+    tone: "success"
+  },
+  {
+    id: "status-event-0",
+    type: "invoice_created",
+    occurredAt: "2026-06-01T09:00:00.000Z",
+    title: "Invoice created",
+    tone: "info"
+  }
+];
+
 beforeEach(() => {
   vi.mocked(getInvoice).mockResolvedValue(invoiceResponse);
+  vi.mocked(getInvoiceActivity).mockResolvedValue({ activity: sentActivity, viewSummary: null });
   Object.assign(navigator, {
     clipboard: {
       writeText: vi.fn().mockResolvedValue(undefined)
@@ -111,6 +155,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.history.replaceState({}, "", "/");
 });
 
 describe("InvoiceDetailContent public URL", () => {
@@ -125,7 +170,7 @@ describe("InvoiceDetailContent public URL", () => {
     await waitFor(() => expect(screen.getByText("Public URL copied.")).toBeInTheDocument());
     expect(screen.getByText(/Payment enabled/)).toBeInTheDocument();
     expect(screen.getByText("Not paid yet")).toBeInTheDocument();
-    expect(screen.getByText(/invoice sent/)).toBeInTheDocument();
+    expect(screen.getByText("Invoice sent")).toBeInTheDocument();
     expect(screen.queryByText(/invoice_sent/)).not.toBeInTheDocument();
   });
 
@@ -212,5 +257,199 @@ describe("InvoiceDetailContent public URL", () => {
       "href",
       "/settings/payment-setup"
     );
+  });
+});
+
+describe("InvoiceDetailContent delivery", () => {
+  it("shows the delivery badge separately from the invoice status", async () => {
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByText("Delivered")).toBeInTheDocument();
+    expect(screen.getAllByText("Sent").length).toBeGreaterThan(0);
+  });
+
+  it("renders the unified activity timeline with a collapsed view summary", async () => {
+    vi.mocked(getInvoiceActivity).mockResolvedValueOnce({
+      activity: [
+        {
+          id: "view-summary",
+          type: "invoice_viewed",
+          occurredAt: "2026-09-19T08:44:00.000Z",
+          title: "Invoice viewed",
+          detail: "Viewed 4 times · first 18 Sept, 10:12 · last 19 Sept, 08:44",
+          tone: "info"
+        },
+        {
+          id: "email-comm-1-delivered",
+          type: "email_delivered",
+          occurredAt: "2026-09-18T09:19:00.000Z",
+          title: "Email delivered",
+          detail: "Delivered to accounts@lagosbrightprints.test.",
+          tone: "success"
+        }
+      ],
+      viewSummary: { viewCount: 4, firstViewedAt: "2026-09-18T10:12:00.000Z", lastViewedAt: "2026-09-19T08:44:00.000Z" }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByText("Invoice viewed")).toBeInTheDocument();
+    expect(screen.getByText(/Viewed 4 times/)).toBeInTheDocument();
+    expect(screen.getByText("Email delivered")).toBeInTheDocument();
+    expect(screen.queryByText(/sent → viewed/)).not.toBeInTheDocument();
+  });
+
+  it("opens the send dialog prefilled and submits recipients", async () => {
+    const draftResponse = {
+      ...invoiceResponse,
+      invoice: { ...invoiceResponse.invoice, status: "draft" as const, publicAccessEnabled: false },
+      delivery: { ...invoiceResponse.delivery, state: "not_emailed" as const },
+      publicUrl: null
+    };
+    vi.mocked(getInvoice).mockResolvedValueOnce(draftResponse);
+    vi.mocked(sendInvoice).mockResolvedValue({
+      ...draftResponse,
+      invoice: { ...draftResponse.invoice, status: "sent" as const, publicAccessEnabled: true },
+      publicUrl: "http://localhost:3000/invoice/public-token",
+      delivery: { ...draftResponse.delivery, state: "accepted" as const }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Send invoice" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Recipient email addresses")).toHaveValue(
+      "accounts@lagosbrightprints.test"
+    );
+
+    fireEvent.change(within(dialog).getByLabelText(/CC email/), {
+      target: { value: "finance@example.com, bad-email" }
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send invoice" }));
+    expect(await within(dialog).findByText(/not a valid email/)).toBeInTheDocument();
+    expect(sendInvoice).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText(/CC email/), {
+      target: { value: "finance@example.com" }
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send invoice" }));
+
+    await waitFor(() =>
+      expect(sendInvoice).toHaveBeenCalledWith("token", "invoice-1", {
+        to: ["accounts@lagosbrightprints.test"],
+        cc: ["finance@example.com"],
+        subject: "Invoice INV-000007"
+      })
+    );
+    expect(await screen.findByText(/Invoice emailed/)).toBeInTheDocument();
+  });
+
+  it("shows partial success with copy and resend actions when email fails", async () => {
+    const draftResponse = {
+      ...invoiceResponse,
+      invoice: { ...invoiceResponse.invoice, status: "draft" as const, publicAccessEnabled: false },
+      delivery: { ...invoiceResponse.delivery, state: "not_emailed" as const },
+      publicUrl: null
+    };
+    vi.mocked(getInvoice).mockResolvedValueOnce(draftResponse);
+    vi.mocked(sendInvoice).mockResolvedValue({
+      ...draftResponse,
+      invoice: { ...draftResponse.invoice, status: "sent" as const, publicAccessEnabled: true },
+      publicUrl: "http://localhost:3000/invoice/public-token",
+      delivery: {
+        ...draftResponse.delivery,
+        state: "failed" as const,
+        message: "Invoice issued, but the email could not be sent. Copy the public link or try again."
+      }
+    });
+    vi.mocked(resendInvoiceEmail).mockResolvedValue({
+      delivery: { ...draftResponse.delivery, state: "accepted" as const }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Send invoice" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send invoice" }));
+
+    expect(await screen.findByText(/Invoice issued, but the email could not be sent/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Copy public link" }));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "http://localhost:3000/invoice/public-token"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Resend email" }));
+    const resendDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(resendDialog).getByRole("button", { name: "Resend email" }));
+
+    await waitFor(() =>
+      expect(resendInvoiceEmail).toHaveBeenCalledWith("token", "invoice-1", {
+        to: ["accounts@lagosbrightprints.test"],
+        cc: [],
+        subject: "Invoice INV-000007"
+      })
+    );
+  });
+
+  it("auto-opens the send dialog from the save-and-send flow", async () => {
+    window.history.replaceState({}, "", "/invoices/invoice-1?send=1");
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      invoice: { ...invoiceResponse.invoice, status: "draft" as const, publicAccessEnabled: false },
+      delivery: { ...invoiceResponse.delivery, state: "not_emailed" as const },
+      publicUrl: null
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Send INV-000007?")).toBeInTheDocument();
+  });
+
+  it("hides send actions from viewers", async () => {
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="viewer" />);
+
+    await screen.findByText("Delivered");
+    expect(screen.queryByRole("button", { name: "Send invoice" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("More invoice actions")).not.toBeInTheDocument();
+  });
+
+  it("shows partial failure and recipient-specific activity without hiding the delivery", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      delivery: {
+        ...invoiceResponse.delivery,
+        state: "partially_failed",
+        message: "Email delivery partially failed. See the activity timeline for the affected addresses."
+      }
+    });
+    vi.mocked(getInvoiceActivity).mockResolvedValueOnce({
+      activity: [
+        {
+          id: "email-comm-1-recipient-bounce-failed",
+          type: "email_failed",
+          occurredAt: "2026-09-18T09:19:00.000Z",
+          title: "Email to bounce@example.com failed",
+          detail: "The email address bounced. Check the recipient and try again.",
+          tone: "danger"
+        },
+        {
+          id: "email-comm-1-accepted",
+          type: "email_accepted",
+          occurredAt: "2026-09-18T09:18:00.000Z",
+          title: "Invoice emailed to accounts@example.com +1 more",
+          detail: "Accepted by the email provider.",
+          tone: "info"
+        }
+      ],
+      viewSummary: null
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    expect(await screen.findByText("Partially failed")).toBeInTheDocument();
+    expect(screen.getByText("Email to bounce@example.com failed")).toBeInTheDocument();
+    expect(screen.getByText("Invoice emailed to accounts@example.com +1 more")).toBeInTheDocument();
   });
 });

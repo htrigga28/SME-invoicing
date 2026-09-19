@@ -26,6 +26,7 @@ Customers paying public invoices do not need a platform account.
 | Customers create/update/archive | Yes | Yes | Yes | No |
 | Invoices view | Yes | Yes | Yes | Yes |
 | Invoices create/update/send | Yes | Yes | Yes | No |
+| Invoices resend email | Yes | Yes | Yes | No |
 | Invoices duplicate | Yes | Yes | Yes | No |
 | Invoices cancel/void | Yes | Yes | No | No |
 | Catalogue view | Yes | Yes | Yes | Yes |
@@ -88,6 +89,8 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Only Owner/Admin can browse full audit logs. Accountant operational history should stay entity-specific unless later scoped.
 - Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
 - Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
+- Invoice email resend follows the same Owner/Admin/Accountant permission as invoice send; Viewer is read-only.
+- Invoice activity timelines are readable by all invoice viewers (Owner/Admin/Accountant/Viewer) and contain only customer-safe lifecycle data, never audit-only metadata.
 - Archived customers remain readable but cannot be updated in the MVP.
 - The backend should derive active organisation access from the authenticated session and membership.
 - Customers, invoices, payments, receipts, exports, audit logs, and dashboard data must be organisation-scoped.

@@ -22,16 +22,28 @@ import {
   cancelInvoice,
   duplicateInvoice,
   getInvoice,
+  getInvoiceActivity,
+  resendInvoiceEmail,
   sendInvoice,
-  voidInvoice
+  voidInvoice,
+  type SendInvoiceEmailInput
 } from "./invoices-api";
+import { DeliveryBadge, InvoiceActivityTimeline } from "./invoice-activity";
 import { InvoiceDocument } from "./invoice-document";
 import { formatDate, formatMoney, InvoiceStatusBadge, StatusPanel } from "./invoice-ui";
-import type { InvoiceDetailResponse } from "./types";
+import { SendInvoiceDialog } from "./send-invoice-dialog";
+import type { DeliverySummary, InvoiceActivityItem, InvoiceDetailResponse } from "./types";
 import { canCancelOrVoidInvoices, canManageInvoices } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
-type DialogAction = "send" | "cancel" | "void" | null;
+type DialogAction = "cancel" | "void" | null;
+type SendDialogMode = "send" | "resend" | null;
+
+type DeliveryNotice = {
+  message: string;
+  showCopyLink: boolean;
+  showResend: boolean;
+};
 
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
   return (
@@ -57,13 +69,19 @@ export function InvoiceDetailContent({
   role: "owner" | "admin" | "accountant" | "viewer";
 }) {
   const [response, setResponse] = useState<InvoiceDetailResponse | null>(null);
+  const [activity, setActivity] = useState<InvoiceActivityItem[] | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [deliveryNotice, setDeliveryNotice] = useState<DeliveryNotice | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [dialogAction, setDialogAction] = useState<DialogAction>(null);
+  const [sendDialogMode, setSendDialogMode] = useState<SendDialogMode>(null);
+  const [sendDialogError, setSendDialogError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [isMutating, setIsMutating] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const router = useRouter();
   const invoice = response?.invoice;
@@ -74,6 +92,21 @@ export function InvoiceDetailContent({
     void loadInvoice();
   }, [accessToken, invoiceId]);
 
+  useEffect(() => {
+    if (state !== "ready" || !invoice || typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("send") === "1" && canManage && invoice.status === "draft") {
+      params.delete("send");
+      const nextQuery = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+      setSendDialogMode("send");
+    }
+  }, [state, invoice, canManage]);
+
   async function loadInvoice() {
     setState("loading");
     setError(null);
@@ -82,10 +115,25 @@ export function InvoiceDetailContent({
       const nextResponse = await getInvoice(accessToken, invoiceId);
       setResponse(nextResponse);
       setState("ready");
+      void loadActivity();
     } catch (loadError) {
       handleAuthError(loadError);
       setError(loadError instanceof Error ? loadError.message : "Could not load invoice.");
       setState("error");
+    }
+  }
+
+  async function loadActivity() {
+    setActivityError(null);
+
+    try {
+      const activityResponse = await getInvoiceActivity(accessToken, invoiceId);
+      setActivity(activityResponse.activity);
+    } catch (activityLoadError) {
+      handleAuthError(activityLoadError);
+      setActivityError(
+        activityLoadError instanceof Error ? activityLoadError.message : "Could not load activity."
+      );
     }
   }
 
@@ -94,7 +142,7 @@ export function InvoiceDetailContent({
       return;
     }
 
-    if ((dialogAction === "cancel" || dialogAction === "void") && !reason.trim()) {
+    if (!reason.trim()) {
       setError("A reason is required.");
       return;
     }
@@ -102,30 +150,78 @@ export function InvoiceDetailContent({
     setIsMutating(true);
     setError(null);
     setSuccess(null);
+    setDeliveryNotice(null);
 
     try {
       const nextResponse =
-        dialogAction === "send"
-          ? await sendInvoice(accessToken, invoice.id)
-          : dialogAction === "cancel"
-            ? await cancelInvoice(accessToken, invoice.id, reason.trim())
-            : await voidInvoice(accessToken, invoice.id, reason.trim());
+        dialogAction === "cancel"
+          ? await cancelInvoice(accessToken, invoice.id, reason.trim())
+          : await voidInvoice(accessToken, invoice.id, reason.trim());
       setResponse(nextResponse);
-      setSuccess(
-        dialogAction === "send"
-          ? "Invoice sent. Public access is enabled."
-          : dialogAction === "cancel"
-            ? "Invoice cancelled."
-            : "Invoice voided."
-      );
+      setSuccess(dialogAction === "cancel" ? "Invoice cancelled." : "Invoice voided.");
       setDialogAction(null);
       setReason("");
+      void loadActivity();
     } catch (actionError) {
       handleAuthError(actionError);
       setError(actionError instanceof Error ? actionError.message : "Could not update invoice.");
     } finally {
       setIsMutating(false);
     }
+  }
+
+  async function handleSendSubmit(input: SendInvoiceEmailInput) {
+    if (!invoice || !sendDialogMode) {
+      return;
+    }
+
+    setIsSending(true);
+    setSendDialogError(null);
+    setError(null);
+    setSuccess(null);
+    setDeliveryNotice(null);
+
+    try {
+      if (sendDialogMode === "send") {
+        const nextResponse = await sendInvoice(accessToken, invoice.id, input);
+        setResponse(nextResponse);
+        handleDeliveryResult(nextResponse.delivery, input.to?.[0]);
+      } else {
+        const resendResponse = await resendInvoiceEmail(accessToken, invoice.id, input);
+        setResponse((current) =>
+          current ? { ...current, delivery: resendResponse.delivery } : current
+        );
+        handleDeliveryResult(resendResponse.delivery, input.to?.[0]);
+      }
+
+      setSendDialogMode(null);
+      void loadActivity();
+    } catch (submitError) {
+      handleAuthError(submitError);
+      setSendDialogError(
+        submitError instanceof Error ? submitError.message : "Could not send the email."
+      );
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  function handleDeliveryResult(delivery: DeliverySummary, firstRecipient?: string) {
+    const recipientSuffix = firstRecipient ? ` to ${firstRecipient}` : "";
+
+    if (delivery.state === "accepted" || delivery.state === "delivered") {
+      setSuccess(`Invoice emailed${recipientSuffix}.`);
+      return;
+    }
+
+    setDeliveryNotice({
+      message: delivery.message,
+      showCopyLink: true,
+      showResend:
+        delivery.state === "failed" ||
+        delivery.state === "uncertain" ||
+        delivery.state === "partially_failed"
+    });
   }
 
   function handleAuthError(apiError: unknown) {
@@ -189,6 +285,10 @@ export function InvoiceDetailContent({
 
   const canEdit = canManage && invoice.status === "draft";
   const canSend = canManage && invoice.status === "draft";
+  const canResend =
+    canManage &&
+    invoice.publicAccessEnabled &&
+    ["sent", "viewed", "overdue", "partially_paid", "paid"].includes(invoice.status);
   const canCancel =
     canCancelVoid && ["draft", "sent", "viewed", "overdue"].includes(invoice.status);
   const canVoid =
@@ -204,6 +304,7 @@ export function InvoiceDetailContent({
 
   const overflowItems = [
     ...(canEdit ? [{ label: "Edit", href: `/invoices/${invoice.id}/edit` }] : []),
+    ...(canResend ? [{ label: "Resend email", onSelect: () => setSendDialogMode("resend") }] : []),
     ...(canDuplicate
       ? [
           {
@@ -239,6 +340,9 @@ export function InvoiceDetailContent({
                 {invoice.invoiceNumber}
               </h1>
               <InvoiceStatusBadge status={invoice.status} />
+              {invoice.status !== "draft" ? (
+                <DeliveryBadge state={response.delivery.state} />
+              ) : null}
             </div>
             <p className="mt-1.5 truncate text-sm text-[var(--text-secondary)]">
               {invoice.customer.name} · {invoice.customer.email}
@@ -269,7 +373,7 @@ export function InvoiceDetailContent({
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {canSend ? (
-              <Button onClick={() => setDialogAction("send")} type="button">
+              <Button onClick={() => setSendDialogMode("send")} type="button">
                 Send invoice
               </Button>
             ) : canSharePublicUrl ? (
@@ -303,6 +407,31 @@ export function InvoiceDetailContent({
 
       {error ? <StatusPanel message={error} tone="error" /> : null}
       {success ? <StatusPanel message={success} tone="success" /> : null}
+      {deliveryNotice ? (
+        <StatusPanel
+          action={
+            <span className="flex flex-wrap gap-2">
+              {deliveryNotice.showCopyLink && canSharePublicUrl ? (
+                <Button
+                  onClick={() => void handleCopyPublicUrl(response.publicUrl!)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Copy public link
+                </Button>
+              ) : null}
+              {deliveryNotice.showResend && canResend ? (
+                <Button onClick={() => setSendDialogMode("resend")} size="sm" type="button">
+                  Resend email
+                </Button>
+              ) : null}
+            </span>
+          }
+          message={deliveryNotice.message}
+          tone="warning"
+        />
+      ) : null}
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
@@ -415,20 +544,13 @@ export function InvoiceDetailContent({
         <aside className="space-y-4">
           <SectionCard>
             <h2 className="text-base font-semibold text-[var(--text-primary)]">Activity</h2>
-            <ol className="mt-3 space-y-3">
-              {response.statusEvents.map((event) => (
-                <li className="border-l-2 border-[var(--border-default)] pl-3" key={event.id}>
-                  <p className="text-sm font-medium text-[var(--text-primary)]">
-                    {event.fromStatus ? `${event.fromStatus} → ` : ""}
-                    {event.toStatus}
-                  </p>
-                  <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                    {new Date(event.createdAt).toLocaleString("en-NG")}
-                    {event.reason ? ` · ${event.reason.replaceAll("_", " ")}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ol>
+            {activityError ? (
+              <p className="mt-3 text-sm text-[var(--danger)]">{activityError}</p>
+            ) : activity === null ? (
+              <p className="mt-3 text-sm text-[var(--text-secondary)]">Loading activity…</p>
+            ) : (
+              <InvoiceActivityTimeline activity={activity} />
+            )}
           </SectionCard>
 
           <SectionCard>
@@ -503,21 +625,13 @@ export function InvoiceDetailContent({
       </div>
 
       <ConfirmDialog
-        confirmLabel={
-          dialogAction === "send"
-            ? "Send invoice"
-            : dialogAction === "cancel"
-              ? "Cancel invoice"
-              : "Void invoice"
-        }
+        confirmLabel={dialogAction === "cancel" ? "Cancel invoice" : "Void invoice"}
         description={
-          dialogAction === "send"
-            ? "This enables public access and creates a shareable URL."
-            : dialogAction === "cancel"
-              ? "Cancelled invoices are retained for records and cannot be paid."
-              : "Voided invoices are retained for audit history and public access will be disabled."
+          dialogAction === "cancel"
+            ? "Cancelled invoices are retained for records and cannot be paid."
+            : "Voided invoices are retained for audit history and public access will be disabled."
         }
-        destructive={dialogAction !== "send"}
+        destructive
         isLoading={isMutating}
         loadingLabel="Saving..."
         onCancel={() => {
@@ -526,26 +640,35 @@ export function InvoiceDetailContent({
         }}
         onConfirm={() => void handleConfirmAction()}
         open={dialogAction !== null}
-        title={
-          dialogAction === "send"
-            ? "Send invoice?"
-            : dialogAction === "cancel"
-              ? "Cancel invoice?"
-              : "Void invoice?"
-        }
+        title={dialogAction === "cancel" ? "Cancel invoice?" : "Void invoice?"}
       >
-        {dialogAction === "cancel" || dialogAction === "void" ? (
-          <label className="block">
-            <span className="text-sm font-medium text-[var(--text-secondary)]">Reason</span>
-            <textarea
-              className="mt-1 min-h-24 w-full rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm"
-              disabled={isMutating}
-              onChange={(event) => setReason(event.target.value)}
-              value={reason}
-            />
-          </label>
-        ) : null}
+        <label className="block">
+          <span className="text-sm font-medium text-[var(--text-secondary)]">Reason</span>
+          <textarea
+            className="mt-1 min-h-24 w-full rounded-[var(--radius-control)] border border-[var(--border-default)] bg-[var(--surface)] px-3 py-2 text-sm"
+            disabled={isMutating}
+            onChange={(event) => setReason(event.target.value)}
+            value={reason}
+          />
+        </label>
       </ConfirmDialog>
+
+      {invoice ? (
+        <SendInvoiceDialog
+          defaultSubject={`Invoice ${invoice.invoiceNumber}`}
+          defaultToEmail={invoice.customer.email}
+          error={sendDialogError}
+          invoiceNumber={invoice.invoiceNumber}
+          isSubmitting={isSending}
+          mode={sendDialogMode === "resend" ? "resend" : "send"}
+          onCancel={() => {
+            setSendDialogMode(null);
+            setSendDialogError(null);
+          }}
+          onSubmit={(input) => void handleSendSubmit(input)}
+          open={sendDialogMode !== null}
+        />
+      ) : null}
     </section>
   );
 }
