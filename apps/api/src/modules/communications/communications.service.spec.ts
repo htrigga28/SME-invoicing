@@ -516,6 +516,24 @@ describe("CommunicationsService.processBrevoWebhook", () => {
     };
   }
 
+  async function runWebhook(input: {
+    select: unknown[][];
+    insert?: unknown[][];
+    update?: unknown[][];
+    payload: Record<string, unknown>;
+  }) {
+    const { db, service } = setup({
+      config: { BREVO_WEBHOOK_SECRET: secret },
+      db: stubDb({
+        select: input.select,
+        insert: input.insert ?? [[{ id: "event-1" }]],
+        update: input.update ?? []
+      })
+    });
+    const result = await service.processBrevoWebhook(secret, input.payload as never);
+    return { db, result };
+  }
+
   it("rejects requests without a configured or matching secret", async () => {
     const { service } = setup({ config: {} });
     await expect(
@@ -549,40 +567,34 @@ describe("CommunicationsService.processBrevoWebhook", () => {
 
   it("ignores replayed events without touching delivery state", async () => {
     const replayed = createCommunication();
-    const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({ select: [[replayed], [replayed]], insert: [[]] })
-    });
-
-    await expect(
-      service.processBrevoWebhook(secret, {
+    const { db, result } = await runWebhook({
+      select: [[replayed], [replayed]],
+      insert: [[]],
+      payload: {
         id: "evt-replay-1",
         event: "delivered",
         "message-id": "<msg-1@relay.brevo.com>",
         ts_event: 1758192000
-      })
-    ).resolves.toEqual({ received: true, duplicate: true });
+      }
+    });
+
+    expect(result).toEqual({ received: true, duplicate: true });
     expect(db.update).not.toHaveBeenCalled();
   });
 
   it("never trusts tenant identity from the webhook payload", async () => {
     const communication = createCommunication({ status: "accepted" });
-    const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({
-        select: [[communication], [communication], [], []],
-        insert: [[{ id: "event-1" }]],
-        update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }]]
-      })
+    const { db, result } = await runWebhook({
+      select: [[communication], [communication], [], []],
+      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }]],
+      payload: {
+        id: "evt-attacker-1",
+        event: "delivered",
+        email: "attacker@example.com",
+        "message-id": "<msg-1@relay.brevo.com>",
+        organisationId: "attacker-org"
+      }
     });
-
-    const result = await service.processBrevoWebhook(secret, {
-      id: "evt-attacker-1",
-      event: "delivered",
-      email: "attacker@example.com",
-      "message-id": "<msg-1@relay.brevo.com>",
-      organisationId: "attacker-org"
-    } as never);
 
     expect(result).toEqual({ received: true });
     // Recipient lookup misses (no row for the attacker address), so the
@@ -594,23 +606,19 @@ describe("CommunicationsService.processBrevoWebhook", () => {
   it("stores unknown-recipient events without mutating delivery state", async () => {
     const communication = createCommunication({ status: "accepted" });
     const existing = createRecipient({ status: "accepted" });
-    const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({
-        select: [[communication], [communication], [], [existing]],
-        insert: [[{ id: "event-unknown-recipient" }]],
-        update: [[{ id: "quarantine-resolve" }]]
-      })
-    });
-
-    await expect(
-      service.processBrevoWebhook(secret, {
+    const { db, result } = await runWebhook({
+      select: [[communication], [communication], [], [existing]],
+      insert: [[{ id: "event-unknown-recipient" }]],
+      update: [[{ id: "quarantine-resolve" }]],
+      payload: {
         id: "evt-unknown-recipient-1",
         event: "delivered",
         email: "unknown@example.com",
         "message-id": "<msg-1@relay.brevo.com>"
-      })
-    ).resolves.toEqual({ received: true });
+      }
+    });
+
+    expect(result).toEqual({ received: true });
     // The single update resolves the quarantine row. Recipient and parent
     // delivery state are untouched when recipient rows exist but the event
     // recipient is unknown.
@@ -620,47 +628,37 @@ describe("CommunicationsService.processBrevoWebhook", () => {
   it("advances one recipient and derives a delivered aggregate", async () => {
     const communication = createCommunication({ status: "accepted" });
     const recipient = createRecipient({ status: "accepted" });
-    const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({
-        select: [[communication], [communication], [recipient], [{ ...recipient, status: "delivered" }]],
-        insert: [[{ id: "event-1" }]],
-        update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]]
-      })
-    });
-
-    await expect(
-      service.processBrevoWebhook(secret, {
+    const { db, result } = await runWebhook({
+      select: [[communication], [communication], [recipient], [{ ...recipient, status: "delivered" }]],
+      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]],
+      payload: {
         id: "evt-delivered-1",
         event: "delivered",
         email: "accounts@northstar.example",
         "message-id": "<msg-1@relay.brevo.com>"
-      })
-    ).resolves.toEqual({ received: true });
+      }
+    });
 
+    expect(result).toEqual({ received: true });
     expect(db.update).toHaveBeenCalledTimes(3);
   });
 
   it("keeps a delivered recipient delivered when a late failure arrives", async () => {
     const communication = createCommunication({ status: "delivered" });
     const recipient = createRecipient({ status: "delivered" });
-    const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({
-        select: [[communication], [communication], [recipient]],
-        insert: [[{ id: "event-2" }]],
-        update: [[{ id: "quarantine-resolve" }]]
-      })
-    });
-
-    await expect(
-      service.processBrevoWebhook(secret, {
+    const { db, result } = await runWebhook({
+      select: [[communication], [communication], [recipient]],
+      insert: [[{ id: "event-2" }]],
+      update: [[{ id: "quarantine-resolve" }]],
+      payload: {
         id: "evt-late-failure-1",
         event: "hard_bounce",
         email: "accounts@northstar.example",
         "message-id": "<msg-1@relay.brevo.com>"
-      })
-    ).resolves.toEqual({ received: true });
+      }
+    });
+
+    expect(result).toEqual({ received: true });
     // Only the quarantine-resolution update runs. The delivered recipient
     // and parent keep their state when a late failure arrives.
     expect(db.update).toHaveBeenCalledTimes(1);
@@ -673,29 +671,24 @@ describe("CommunicationsService.processBrevoWebhook", () => {
       email: "bounce@example.com",
       status: "accepted"
     });
-    const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({
-        select: [
-          [communication],
-          [communication],
-          [failedRecipient],
-          [createRecipient({ status: "delivered" }), { ...failedRecipient, status: "failed" }]
-        ],
-        insert: [[{ id: "event-3" }]],
-        update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-bounce" }], [{ id: "comm-1" }]]
-      })
-    });
-
-    await expect(
-      service.processBrevoWebhook(secret, {
+    const { db, result } = await runWebhook({
+      select: [
+        [communication],
+        [communication],
+        [failedRecipient],
+        [createRecipient({ status: "delivered" }), { ...failedRecipient, status: "failed" }]
+      ],
+      insert: [[{ id: "event-3" }]],
+      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-bounce" }], [{ id: "comm-1" }]],
+      payload: {
         id: "evt-partial-1",
         event: "hard_bounce",
         email: "bounce@example.com",
         "message-id": "<msg-1@relay.brevo.com>"
-      })
-    ).resolves.toEqual({ received: true });
+      }
+    });
 
+    expect(result).toEqual({ received: true });
     expect(db.update).toHaveBeenCalledTimes(3);
   });
 });
