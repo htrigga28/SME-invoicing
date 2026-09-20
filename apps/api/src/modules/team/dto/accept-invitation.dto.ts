@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsIn, IsString, MinLength, ValidateIf } from "class-validator";
+import { IsIn, IsString, MaxLength, MinLength, ValidateIf } from "class-validator";
 
 export class AcceptInvitationDto {
   @ApiProperty({ enum: ["existing", "new"] })
@@ -16,5 +16,6 @@ export class AcceptInvitationDto {
   @ValidateIf((body: AcceptInvitationDto) => body.mode === "new")
   @IsString()
   @MinLength(8)
+  @MaxLength(256)
   password?: string;
 }
