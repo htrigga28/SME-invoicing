@@ -72,9 +72,10 @@ export class BrevoEmailProvider implements EmailProvider {
           htmlContent: input.htmlContent,
           textContent: input.textContent,
           tags: input.tags,
-          ...(input.idempotencyKey
-            ? { headers: { idempotencyKey: input.idempotencyKey } }
-            : {})
+          headers: {
+            "X-Mailin-custom": `lumina-communication:${input.correlationId}`,
+            ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {})
+          }
         }),
         signal: AbortSignal.timeout(timeoutMs)
       });

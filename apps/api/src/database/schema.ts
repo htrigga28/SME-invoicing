@@ -844,6 +844,8 @@ export const communications = pgTable(
     ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull(),
     providerMessageId: varchar("provider_message_id", { length: 200 }),
     providerIdempotencyKey: varchar("provider_idempotency_key", { length: 36 }).notNull(),
+    retryClaimToken: varchar("retry_claim_token", { length: 36 }),
+    retryClaimedAt: timestamp("retry_claimed_at", { withTimezone: true }),
     status: communicationStatusEnum("status").notNull().default("pending"),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -940,6 +942,43 @@ export const communicationEvents = pgTable(
   })
 );
 
+/**
+ * Authenticated Brevo events that cannot yet be correlated to a communication.
+ * This table deliberately stores only normalized routing fields, never raw
+ * provider payloads or message content.
+ */
+export const communicationEventQuarantine = pgTable(
+  "communication_event_quarantine",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: varchar("provider", { length: 40 }).notNull().default("brevo"),
+    providerEventId: varchar("provider_event_id", { length: 200 }),
+    providerEventKey: varchar("provider_event_key", { length: 300 }).notNull().unique(),
+    providerMessageId: varchar("provider_message_id", { length: 200 }),
+    correlationCommunicationId: uuid("correlation_communication_id"),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    recipientEmail: varchar("recipient_email", { length: 320 }),
+    reason: varchar("reason", { length: 120 }).notNull(),
+    resolvedCommunicationId: uuid("resolved_communication_id").references(() => communications.id, {
+      onDelete: "set null"
+    }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    providerEventUnique: uniqueIndex("communication_event_quarantine_provider_event_unique")
+      .on(table.provider, table.providerEventId)
+      .where(sql`${table.providerEventId} is not null`),
+    unresolvedMessageIndex: index("communication_event_quarantine_unresolved_message_idx").on(
+      table.providerMessageId
+    ),
+    unresolvedCorrelationIndex: index("communication_event_quarantine_unresolved_correlation_idx").on(
+      table.correlationCommunicationId
+    )
+  })
+);
+
 export const invoiceViewEvents = pgTable(
   "invoice_view_events",
   {
@@ -1011,6 +1050,16 @@ export const communicationEventsRelations = relations(communicationEvents, ({ on
     references: [invoices.id]
   })
 }));
+
+export const communicationEventQuarantineRelations = relations(
+  communicationEventQuarantine,
+  ({ one }) => ({
+    resolvedCommunication: one(communications, {
+      fields: [communicationEventQuarantine.resolvedCommunicationId],
+      references: [communications.id]
+    })
+  })
+);
 
 export const invoiceViewEventsRelations = relations(invoiceViewEvents, ({ one }) => ({
   organisation: one(organisations, {
@@ -1120,6 +1169,7 @@ export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
 export type Communication = typeof communications.$inferSelect;
 export type NewCommunication = typeof communications.$inferInsert;
 export type CommunicationEvent = typeof communicationEvents.$inferSelect;
+export type CommunicationEventQuarantine = typeof communicationEventQuarantine.$inferSelect;
 export type CommunicationRecipient = typeof communicationRecipients.$inferSelect;
 export type InvoiceViewEvent = typeof invoiceViewEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;

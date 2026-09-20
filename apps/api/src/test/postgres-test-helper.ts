@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, promises as fs, readdirSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -33,11 +34,17 @@ async function findFreePort(): Promise<number> {
   return port;
 }
 
+export function embeddedPostgresPlatform(platform: string = process.platform): string {
+  return platform === "win32" ? "windows" : platform;
+}
+
 function binaryDir(): string {
   // The embedded-postgres package exposes an exports-only entry point, so
   // resolve its platform binaries by scanning pnpm's content-addressable
   // store instead of relying on subpath resolution.
-  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  // Package names follow Node's platform naming: darwin (not macos) on Apple
+  // hardware, matching @embedded-postgres/darwin-arm64 in the lockfile.
+  const platform = embeddedPostgresPlatform();
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   const storeDirs: string[] = [];
   let cursor = __dirname;
@@ -183,7 +190,7 @@ export async function startTestPostgres(): Promise<TestPostgres> {
 }
 
 export function uniqueSlug(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
 }
 
 export function requiredRow<T>(rows: T[], what: string): T {

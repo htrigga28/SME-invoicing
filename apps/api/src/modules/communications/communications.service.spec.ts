@@ -1,6 +1,16 @@
 import { BadGatewayException, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 
 import type { Communication } from "../../database/schema";
+
+const mockRandomUUID = jest.fn(() => "test-claim-token");
+jest.mock("crypto", () => {
+  const actual = jest.requireActual("crypto") as Record<string, unknown>;
+  return {
+    ...actual,
+    randomUUID: (...args: unknown[]) =>
+      (mockRandomUUID as unknown as (...callArgs: unknown[]) => string)(...args)
+  };
+});
 import { BrevoEmailProvider } from "./brevo-email.provider";
 import {
   aggregateRecipientStatuses,
@@ -33,6 +43,8 @@ function createCommunication(overrides: Partial<Communication> = {}): Communicat
     ccRecipients: [],
     providerMessageId: "<msg-1@relay.brevo.com>",
     providerIdempotencyKey: "11111111-1111-4111-8111-111111111111",
+    retryClaimToken: null,
+    retryClaimedAt: null,
     status: "accepted",
     acceptedAt: now,
     deliveredAt: null,
@@ -75,13 +87,15 @@ function stubDb(queues: {
   const insert = jest.fn(() => chain(insertQueue.length ? insertQueue.shift() : []));
   const update = jest.fn(() => chain(updateQueue.length ? updateQueue.shift() : []));
   const select = jest.fn(() => chain(selectQueue.length ? selectQueue.shift() : []));
+  const execute = jest.fn(async () => []);
 
   const db = {
     insert,
     update,
     select,
+    execute,
     transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
-      callback({ insert, update, select })
+      callback({ insert, update, select, execute })
     )
   };
 
@@ -94,6 +108,8 @@ function setup(input: {
   brevo?: Partial<BrevoEmailProvider>;
   audit?: { create: jest.Mock };
 } = {}) {
+  mockRandomUUID.mockReset();
+  mockRandomUUID.mockReturnValue("test-claim-token");
   const db = input.db ?? stubDb();
   const configService = {
     get: jest.fn((key: string) => input.config?.[key])
@@ -235,9 +251,18 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
 
   it("creates a pending communication and marks it accepted with the provider message id", async () => {
     const pending = createCommunication({ status: "pending", providerMessageId: null });
+    const claimedPending = createCommunication({
+      status: "pending",
+      providerMessageId: null,
+      retryClaimToken: "test-claim-token"
+    });
     const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
     const { brevoEmailProvider, db, service } = setup({
-      db: stubDb({ insert: [[pending]], update: [[accepted]] })
+      db: stubDb({
+        insert: [[claimedPending]],
+        select: [[claimedPending], [], [accepted]],
+        update: [[accepted], []]
+      })
     });
 
     const result = await service.sendInvoiceEmail(baseInput);
@@ -259,8 +284,17 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
 
   it("marks the communication failed and rethrows definite provider failures", async () => {
     const pending = createCommunication({ status: "pending", providerMessageId: null });
+    const claimedPending = createCommunication({
+      status: "pending",
+      providerMessageId: null,
+      retryClaimToken: "test-claim-token"
+    });
     const { db, service } = setup({
-      db: stubDb({ insert: [[pending]], update: [[]] }),
+      db: stubDb({
+        insert: [[pending]],
+        select: [[claimedPending]],
+        update: [[{ id: "comm-1" }], []]
+      }),
       brevo: {
         sendEmail: jest.fn(async () => {
           throw new BadGatewayException("Email provider could not send the message.");
@@ -274,9 +308,18 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
 
   it("records submission-uncertain instead of failed when the provider outcome is ambiguous", async () => {
     const pending = createCommunication({ status: "pending", providerMessageId: null });
+    const claimedPending = createCommunication({
+      status: "pending",
+      providerMessageId: null,
+      retryClaimToken: "test-claim-token"
+    });
     const uncertain = createCommunication({ status: "submission_uncertain" });
     const { db, service } = setup({
-      db: stubDb({ insert: [[pending]], update: [[uncertain]] }),
+      db: stubDb({
+        insert: [[pending]],
+        select: [[claimedPending]],
+        update: [[uncertain]]
+      }),
       brevo: {
         sendEmail: jest.fn(async () => {
           throw new EmailUncertainError();
@@ -298,8 +341,17 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
 
   it("never marks an accepted send as failed when persistence fails afterwards", async () => {
     const pending = createCommunication({ status: "pending", providerMessageId: null });
+    const claimedPending = createCommunication({
+      status: "pending",
+      providerMessageId: null,
+      retryClaimToken: "test-claim-token"
+    });
     const { db, service } = setup({
-      db: stubDb({ insert: [[pending]], update: [[]] }),
+      db: stubDb({
+        insert: [[pending]],
+        select: [[claimedPending]],
+        update: [[]]
+      }),
       audit: {
         create: jest.fn(async () => {
           throw new Error("audit unavailable");
@@ -335,10 +387,19 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
 
   it("does not let audit failures change delivery state", async () => {
     const pending = createCommunication({ status: "pending", providerMessageId: null });
+    const claimedPending = createCommunication({
+      status: "pending",
+      providerMessageId: null,
+      retryClaimToken: "test-claim-token"
+    });
     const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
     const audit = { create: jest.fn(async () => { throw new Error("audit down"); }) };
     const { service } = setup({
-      db: stubDb({ insert: [[pending]], update: [[accepted]] }),
+      db: stubDb({
+        insert: [[claimedPending]],
+        select: [[claimedPending], [], [accepted]],
+        update: [[accepted], []]
+      }),
       audit
     });
 
@@ -371,7 +432,10 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       outcome: "accepted" as const
     }));
     const { service } = setup({
-      db: stubDb({ select: [[uncertain]] })
+      db: stubDb({
+        select: [[uncertain]],
+        update: [[{ ...uncertain, retryClaimToken: "test-claim-token" }]]
+      })
     });
     service.sendInvoiceEmail = sendInvoiceEmail;
 
@@ -381,6 +445,32 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
     expect(sendInvoiceEmail).toHaveBeenCalledWith(
       baseInput,
       expect.objectContaining({ idempotencyKey: "reuse-key-1" })
+    );
+  });
+
+  it("reuses the idempotency key when resending a pending attempt after a persistence failure", async () => {
+    const pending = createCommunication({
+      status: "pending",
+      providerIdempotencyKey: "reuse-pending-key"
+    });
+    const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
+    const sendInvoiceEmail = jest.fn(async () => ({
+      communication: accepted,
+      outcome: "accepted" as const
+    }));
+    const { service } = setup({
+      db: stubDb({
+        select: [[pending]],
+        update: [[{ ...pending, retryClaimToken: "test-claim-token" }]]
+      })
+    });
+    service.sendInvoiceEmail = sendInvoiceEmail;
+
+    await service.resendInvoiceEmail(baseInput);
+
+    expect(sendInvoiceEmail).toHaveBeenCalledWith(
+      baseInput,
+      expect.objectContaining({ idempotencyKey: "reuse-pending-key" })
     );
   });
 
@@ -401,7 +491,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
 
     await service.resendInvoiceEmail(baseInput);
 
-    expect(sendInvoiceEmail).toHaveBeenCalledWith(baseInput, undefined);
+    expect(sendInvoiceEmail).toHaveBeenCalledWith(baseInput);
   });
 });
 
@@ -448,6 +538,7 @@ describe("CommunicationsService.processBrevoWebhook", () => {
 
     await expect(
       service.processBrevoWebhook(secret, {
+        id: "evt-unknown-1",
         event: "delivered",
         "message-id": "<unknown@relay.brevo.com>"
       })
@@ -459,13 +550,15 @@ describe("CommunicationsService.processBrevoWebhook", () => {
   });
 
   it("ignores replayed events without touching delivery state", async () => {
+    const replayed = createCommunication();
     const { db, service } = setup({
       config: { BREVO_WEBHOOK_SECRET: secret },
-      db: stubDb({ select: [[createCommunication()]], insert: [[]] })
+      db: stubDb({ select: [[replayed], [replayed]], insert: [[]] })
     });
 
     await expect(
       service.processBrevoWebhook(secret, {
+        id: "evt-replay-1",
         event: "delivered",
         "message-id": "<msg-1@relay.brevo.com>",
         ts_event: 1758192000
@@ -479,13 +572,14 @@ describe("CommunicationsService.processBrevoWebhook", () => {
     const { db, service } = setup({
       config: { BREVO_WEBHOOK_SECRET: secret },
       db: stubDb({
-        select: [[communication], [], []],
+        select: [[communication], [communication], [], []],
         insert: [[{ id: "event-1" }]],
-        update: [[{ id: "recipient-1" }]]
+        update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }]]
       })
     });
 
     const result = await service.processBrevoWebhook(secret, {
+      id: "evt-attacker-1",
       event: "delivered",
       email: "attacker@example.com",
       "message-id": "<msg-1@relay.brevo.com>",
@@ -494,7 +588,34 @@ describe("CommunicationsService.processBrevoWebhook", () => {
 
     expect(result).toEqual({ received: true });
     // Recipient lookup misses (no row for the attacker address), so the
-    // legacy fallback advances the stored communication instead.
+    // legacy fallback advances the stored communication instead. One update
+    // resolves the quarantine row; the other advances delivery state.
+    expect(db.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("stores unknown-recipient events without mutating delivery state", async () => {
+    const communication = createCommunication({ status: "accepted" });
+    const existing = createRecipient({ status: "accepted" });
+    const { db, service } = setup({
+      config: { BREVO_WEBHOOK_SECRET: secret },
+      db: stubDb({
+        select: [[communication], [communication], [], [existing]],
+        insert: [[{ id: "event-unknown-recipient" }]],
+        update: [[{ id: "quarantine-resolve" }]]
+      })
+    });
+
+    await expect(
+      service.processBrevoWebhook(secret, {
+        id: "evt-unknown-recipient-1",
+        event: "delivered",
+        email: "unknown@example.com",
+        "message-id": "<msg-1@relay.brevo.com>"
+      })
+    ).resolves.toEqual({ received: true });
+    // The single update resolves the quarantine row. Recipient and parent
+    // delivery state are untouched when recipient rows exist but the event
+    // recipient is unknown.
     expect(db.update).toHaveBeenCalledTimes(1);
   });
 
@@ -504,21 +625,22 @@ describe("CommunicationsService.processBrevoWebhook", () => {
     const { db, service } = setup({
       config: { BREVO_WEBHOOK_SECRET: secret },
       db: stubDb({
-        select: [[communication], [recipient], [communication], [{ ...recipient, status: "delivered" }]],
+        select: [[communication], [communication], [recipient], [{ ...recipient, status: "delivered" }]],
         insert: [[{ id: "event-1" }]],
-        update: [[{ id: "recipient-1" }], [{ id: "comm-1" }]]
+        update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]]
       })
     });
 
     await expect(
       service.processBrevoWebhook(secret, {
+        id: "evt-delivered-1",
         event: "delivered",
         email: "accounts@northstar.example",
         "message-id": "<msg-1@relay.brevo.com>"
       })
     ).resolves.toEqual({ received: true });
 
-    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.update).toHaveBeenCalledTimes(3);
   });
 
   it("keeps a delivered recipient delivered when a late failure arrives", async () => {
@@ -527,20 +649,23 @@ describe("CommunicationsService.processBrevoWebhook", () => {
     const { db, service } = setup({
       config: { BREVO_WEBHOOK_SECRET: secret },
       db: stubDb({
-        select: [[communication], [recipient]],
+        select: [[communication], [communication], [recipient]],
         insert: [[{ id: "event-2" }]],
-        update: []
+        update: [[{ id: "quarantine-resolve" }]]
       })
     });
 
     await expect(
       service.processBrevoWebhook(secret, {
+        id: "evt-late-failure-1",
         event: "hard_bounce",
         email: "accounts@northstar.example",
         "message-id": "<msg-1@relay.brevo.com>"
       })
     ).resolves.toEqual({ received: true });
-    expect(db.update).not.toHaveBeenCalled();
+    // Only the quarantine-resolution update runs. The delivered recipient
+    // and parent keep their state when a late failure arrives.
+    expect(db.update).toHaveBeenCalledTimes(1);
   });
 
   it("represents mixed recipient outcomes as partially failed", async () => {
@@ -555,31 +680,35 @@ describe("CommunicationsService.processBrevoWebhook", () => {
       db: stubDb({
         select: [
           [communication],
-          [failedRecipient],
           [communication],
+          [failedRecipient],
           [createRecipient({ status: "delivered" }), { ...failedRecipient, status: "failed" }]
         ],
         insert: [[{ id: "event-3" }]],
-        update: [[{ id: "recipient-bounce" }], [{ id: "comm-1" }]]
+        update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-bounce" }], [{ id: "comm-1" }]]
       })
     });
 
     await expect(
       service.processBrevoWebhook(secret, {
+        id: "evt-partial-1",
         event: "hard_bounce",
         email: "bounce@example.com",
         "message-id": "<msg-1@relay.brevo.com>"
       })
     ).resolves.toEqual({ received: true });
 
-    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.update).toHaveBeenCalledTimes(3);
   });
 });
 
 describe("CommunicationsService.recordInvoiceViewEvent", () => {
   it("inserts a view event and increments the invoice view summary", async () => {
     const { db, service } = setup({
-      db: stubDb({ insert: [[{ id: "view-1" }]], update: [[{ viewCount: 4 }]] })
+      db: stubDb({
+        insert: [[{ id: "view-1" }]],
+        update: [[{ viewCount: 4, firstViewedAt: new Date(), lastViewedAt: new Date() }]]
+      })
     });
 
     await expect(service.recordInvoiceViewEvent("org-1", "invoice-1")).resolves.toEqual(

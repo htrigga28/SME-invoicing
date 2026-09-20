@@ -1,7 +1,8 @@
-import { randomUUID, timingSafeEqual } from "crypto";
+import { createHash, randomUUID, timingSafeEqual } from "crypto";
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   HttpException,
   Inject,
   Injectable,
@@ -11,10 +12,11 @@ import {
   UnauthorizedException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-import { DatabaseService } from "../../database/database.service";
+import { DatabaseService, type AppDatabase } from "../../database/database.service";
 import {
+  communicationEventQuarantine,
   communicationEvents,
   communicationRecipients,
   communications,
@@ -63,6 +65,7 @@ export type SendInvoiceEmailInput = {
 };
 
 export type BrevoWebhookPayload = {
+  id?: unknown;
   event?: unknown;
   email?: unknown;
   "message-id"?: unknown;
@@ -71,11 +74,25 @@ export type BrevoWebhookPayload = {
   ts?: unknown;
   ts_event?: unknown;
   subject?: unknown;
+  "X-Mailin-custom"?: unknown;
+  "x-mailin-custom"?: unknown;
 };
 
 type MappedBrevoEvent = {
   outcome: "accepted" | "delivered" | "deferred" | "failed" | "ignored";
   eventType: string;
+};
+
+type DatabaseTransaction = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
+
+type ParsedBrevoWebhookEvent = {
+  correlationCommunicationId: string | null;
+  email: string | null;
+  eventKey: string;
+  eventType: MappedBrevoEvent;
+  messageId: string | null;
+  occurredAt: Date;
+  providerEventId: string | null;
 };
 
 const STATUS_RANK: Record<CommunicationStatus, number> = {
@@ -109,6 +126,9 @@ const FAILURE_REASONS: Record<string, string> = {
   invalid_email: "A recipient address was rejected as invalid.",
   error: "The email provider reported an error."
 };
+
+const COMMUNICATION_ID_PREFIX = "lumina-communication:";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Derives the parent communication state from its recipient states.
@@ -223,7 +243,7 @@ export class CommunicationsService {
       customerId: string;
       content: SendInvoiceEmailInput;
     },
-    options?: { idempotencyKey?: string }
+    options?: { communication?: Communication; claimToken?: string; idempotencyKey?: string }
   ): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
     let recipients: { to: string[]; cc: string[] };
 
@@ -262,9 +282,183 @@ export class CommunicationsService {
       dueDate: input.content.dueDate,
       publicUrl: input.content.publicUrl
     });
+    const claimToken = options?.claimToken ?? randomUUID();
     const idempotencyKey = options?.idempotencyKey ?? randomUUID();
+    const communication =
+      options?.communication ??
+      (await this.createPendingCommunication(input, recipients, subject, idempotencyKey, claimToken));
 
-    const communication = await this.databaseService.db.transaction(async (tx) => {
+    // Provider boundary: only an explicit provider rejection may mark the
+    // attempt failed. Anything ambiguous (transport/timeout/5xx/unreadable)
+    // is recorded as uncertain so a later retry cannot silently duplicate mail.
+    let providerMessageId: string;
+
+    try {
+      ({ providerMessageId } = await this.brevoEmailProvider.sendEmail({
+        fromEmail: this.brevoEmailProvider.getFromEmail()!,
+        fromName: `${input.content.businessName} via Lumina`,
+        replyToEmail: input.content.businessEmail,
+        to: recipients.to.map((email) => ({
+          email,
+          name: email === recipients.to[0] ? input.content.customerName : null
+        })),
+        cc: recipients.cc.map((email) => ({ email })),
+        subject,
+        htmlContent,
+        textContent,
+        tags: ["invoice_delivery", input.content.invoiceNumber],
+        idempotencyKey,
+        correlationId: communication.id
+      }));
+    } catch (error) {
+      if (error instanceof EmailUncertainError) {
+        const current = await this.completeUncertainAttempt(communication, claimToken, error.message);
+        return { communication: current ?? communication, outcome: "uncertain" as const };
+      }
+
+      const failed = await this.completeFailedAttempt(
+        communication,
+        claimToken,
+        error instanceof Error && error.message
+          ? error.message
+          : "Email provider could not send the message."
+      );
+
+      if (failed) {
+        await this.auditSafely({
+          organisationId: input.organisationId,
+          actorUserId: input.userId,
+          action: "invoice_email_failed",
+          entityType: "invoice",
+          entityId: input.invoice.id,
+          metadataRedacted: {
+            invoiceNumber: input.content.invoiceNumber,
+            communicationId: communication.id
+          }
+        });
+      }
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new BadGatewayException("Email provider could not send the message.");
+    }
+
+    // Persistence boundary: the provider has accepted the message, so this
+    // block must never rewrite the attempt as failed. If Lumina cannot save
+    // the confirmation, surface a 500 and leave the row pending/accepted so
+    // a later provider webhook can still advance it.
+    const acceptedAt = new Date();
+    let accepted: Communication;
+
+    try {
+      const persisted = await this.persistProviderAcceptance(
+        communication,
+        claimToken,
+        providerMessageId,
+        acceptedAt
+      );
+
+      if (!persisted.applied) {
+        return { communication: persisted.communication, outcome: "uncertain" };
+      }
+
+      accepted = persisted.communication;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        "The email provider accepted the message, but Lumina could not save the confirmation. Check the activity timeline before resending."
+      );
+    }
+
+    await this.auditSafely({
+      organisationId: input.organisationId,
+      actorUserId: input.userId,
+      action: "invoice_email_sent",
+      entityType: "invoice",
+      entityId: input.invoice.id,
+      metadataRedacted: {
+        invoiceNumber: input.content.invoiceNumber,
+        communicationId: communication.id,
+        recipientCount: recipients.to.length + recipients.cc.length
+      }
+    });
+
+    return { communication: accepted, outcome: "accepted" as const };
+  }
+
+  /**
+   * Retries one unresolved logical attempt. Resolved attempts create a new
+   * communication so their delivery history remains intact.
+   */
+  async resendInvoiceEmail(input: {
+    organisationId: string;
+    userId: string;
+    invoice: Pick<Invoice, "id" | "invoiceNumber">;
+    customerId: string;
+    content: SendInvoiceEmailInput;
+  }): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
+    const latest = await this.findLatestCommunication(input.organisationId, input.invoice.id);
+    if (!latest || !["pending", "submission_uncertain"].includes(latest.status)) {
+      return this.sendInvoiceEmail(input);
+    }
+
+    const claimToken = randomUUID();
+    const claimed = await this.claimRetry(latest.id, claimToken);
+
+    if (!claimed) {
+      return {
+        communication: (await this.findLatestCommunication(input.organisationId, input.invoice.id)) ?? latest,
+        outcome: "uncertain"
+      };
+    }
+
+    return this.sendInvoiceEmail(input, {
+      communication: claimed,
+      claimToken,
+      idempotencyKey: claimed.providerIdempotencyKey
+    });
+  }
+
+  async findLatestCommunication(
+    organisationId: string,
+    invoiceId: string
+  ): Promise<Communication | null> {
+    const [row] = await this.databaseService.db
+      .select()
+      .from(communications)
+      .where(
+        and(
+          eq(communications.organisationId, organisationId),
+          eq(communications.invoiceId, invoiceId)
+        )
+      )
+      .orderBy(desc(communications.createdAt))
+      .limit(1);
+
+    return row ?? null;
+  }
+
+  private async createPendingCommunication(
+    input: {
+      organisationId: string;
+      userId: string;
+      invoice: Pick<Invoice, "id" | "invoiceNumber">;
+      customerId: string;
+      content: SendInvoiceEmailInput;
+    },
+    recipients: { to: string[]; cc: string[] },
+    subject: string,
+    idempotencyKey: string,
+    claimToken: string
+  ): Promise<Communication> {
+    const claimedAt = new Date();
+
+    return this.databaseService.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(communications)
         .values({
@@ -278,6 +472,8 @@ export class CommunicationsService {
           toRecipients: recipients.to,
           ccRecipients: recipients.cc,
           providerIdempotencyKey: idempotencyKey,
+          retryClaimToken: claimToken,
+          retryClaimedAt: claimedAt,
           status: "pending",
           createdByUserId: input.userId
         })
@@ -308,170 +504,190 @@ export class CommunicationsService {
 
       return created;
     });
+  }
 
-    // Provider boundary: only an explicit provider rejection may mark the
-    // attempt failed. Anything ambiguous (transport/timeout/5xx/unreadable)
-    // is recorded as uncertain so a later retry cannot silently duplicate mail.
-    let providerMessageId: string;
+  private retryClaimLeaseMs(): number {
+    const timeout = Number(this.configService.get<number>("BREVO_REQUEST_TIMEOUT_MS") ?? 15000);
+    return Math.max(1000, timeout) + 5000;
+  }
 
-    try {
-      ({ providerMessageId } = await this.brevoEmailProvider.sendEmail({
-        fromEmail: this.brevoEmailProvider.getFromEmail()!,
-        fromName: `${input.content.businessName} via Lumina`,
-        replyToEmail: input.content.businessEmail,
-        to: recipients.to.map((email) => ({
-          email,
-          name: email === recipients.to[0] ? input.content.customerName : null
-        })),
-        cc: recipients.cc.map((email) => ({ email })),
-        subject,
-        htmlContent,
-        textContent,
-        tags: ["invoice_delivery", input.content.invoiceNumber],
-        idempotencyKey
-      }));
-    } catch (error) {
-      if (error instanceof EmailUncertainError) {
-        const [uncertain] = await this.databaseService.db
-          .update(communications)
-          .set({
-            status: "submission_uncertain",
-            failureReason: error.message.slice(0, 300),
-            updatedAt: new Date()
-          })
-          .where(eq(communications.id, communication.id))
-          .returning();
+  private async claimRetry(communicationId: string, claimToken: string): Promise<Communication | null> {
+    const claimedAt = new Date();
+    const expiredBefore = new Date(claimedAt.getTime() - this.retryClaimLeaseMs());
+    const [claimed] = await this.databaseService.db
+      .update(communications)
+      .set({ retryClaimToken: claimToken, retryClaimedAt: claimedAt, updatedAt: claimedAt })
+      .where(
+        and(
+          eq(communications.id, communicationId),
+          inArray(communications.status, ["pending", "submission_uncertain"]),
+          or(
+            isNull(communications.retryClaimToken),
+            isNull(communications.retryClaimedAt),
+            lt(communications.retryClaimedAt, expiredBefore)
+          )
+        )
+      )
+      .returning();
 
-        return { communication: uncertain ?? communication, outcome: "uncertain" as const };
+    return claimed ?? null;
+  }
+
+  private async lockCommunication(
+    tx: DatabaseTransaction,
+    communicationId: string
+  ): Promise<Communication | null> {
+    await tx.execute(sql`SELECT 1 FROM communications WHERE id = ${communicationId} FOR UPDATE`);
+    const [communication] = await tx
+      .select()
+      .from(communications)
+      .where(eq(communications.id, communicationId))
+      .limit(1);
+    return communication ?? null;
+  }
+
+  private async completeUncertainAttempt(
+    communication: Communication,
+    claimToken: string,
+    message: string
+  ): Promise<Communication | null> {
+    return this.databaseService.db.transaction(async (tx) => {
+      const current = await this.lockCommunication(tx, communication.id);
+
+      if (!current || current.retryClaimToken !== claimToken) {
+        return current;
       }
 
-      await this.databaseService.db
+      const now = new Date();
+      const [updated] = await tx
         .update(communications)
         .set({
-          status: "failed",
-          failedAt: new Date(),
+          status: current.status === "pending" ? "submission_uncertain" : current.status,
           failureReason:
-            error instanceof Error && error.message
-              ? error.message.slice(0, 300)
-              : "Email provider could not send the message.",
-          updatedAt: new Date()
+            current.status === "pending" ? message.slice(0, 300) : current.failureReason,
+          retryClaimToken: null,
+          retryClaimedAt: null,
+          updatedAt: now
         })
-        .where(eq(communications.id, communication.id));
-      await this.databaseService.db
-        .update(communicationRecipients)
-        .set({ status: "failed", failedAt: new Date(), updatedAt: new Date() })
-        .where(eq(communicationRecipients.communicationId, communication.id));
-
-      await this.auditSafely({
-        organisationId: input.organisationId,
-        actorUserId: input.userId,
-        action: "invoice_email_failed",
-        entityType: "invoice",
-        entityId: input.invoice.id,
-        metadataRedacted: {
-          invoiceNumber: input.content.invoiceNumber,
-          communicationId: communication.id
-        }
-      });
-
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      throw new BadGatewayException("Email provider could not send the message.");
-    }
-
-    // Persistence boundary: the provider has accepted the message, so this
-    // block must never rewrite the attempt as failed. If Lumina cannot save
-    // the confirmation, surface a 500 and leave the row pending/accepted so
-    // a later provider webhook can still advance it.
-    const acceptedAt = new Date();
-    let accepted: Communication;
-
-    try {
-      const [updated] = await this.databaseService.db
-        .update(communications)
-        .set({
-          providerMessageId,
-          status: "accepted",
-          acceptedAt,
-          updatedAt: acceptedAt
-        })
-        .where(eq(communications.id, communication.id))
+        .where(
+          and(eq(communications.id, current.id), eq(communications.retryClaimToken, claimToken))
+        )
         .returning();
 
-      if (!updated) {
+      return updated ?? current;
+    });
+  }
+
+  private async completeFailedAttempt(
+    communication: Communication,
+    claimToken: string,
+    message: string
+  ): Promise<boolean> {
+    return this.databaseService.db.transaction(async (tx) => {
+      const current = await this.lockCommunication(tx, communication.id);
+
+      if (!current || current.retryClaimToken !== claimToken) {
+        return false;
+      }
+
+      const now = new Date();
+      const updated = await tx
+        .update(communications)
+        .set({
+          status: current.status === "pending" ? "failed" : current.status,
+          failedAt: current.status === "pending" ? now : current.failedAt,
+          failureReason: current.status === "pending" ? message.slice(0, 300) : current.failureReason,
+          retryClaimToken: null,
+          retryClaimedAt: null,
+          updatedAt: now
+        })
+        .where(
+          and(eq(communications.id, current.id), eq(communications.retryClaimToken, claimToken))
+        )
+        .returning({ id: communications.id });
+
+      if (updated.length === 0 || current.status !== "pending") {
+        return false;
+      }
+
+      await tx
+        .update(communicationRecipients)
+        .set({ status: "failed", failedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(communicationRecipients.communicationId, current.id),
+            eq(communicationRecipients.status, "pending")
+          )
+        );
+
+      return true;
+    });
+  }
+
+  private async persistProviderAcceptance(
+    communication: Communication,
+    claimToken: string,
+    providerMessageId: string,
+    acceptedAt: Date
+  ): Promise<{ applied: boolean; communication: Communication }> {
+    return this.databaseService.db.transaction(async (tx) => {
+      const current = await this.lockCommunication(tx, communication.id);
+
+      if (!current) {
         throw new Error("Accepted communication could not be saved.");
       }
 
-      await this.databaseService.db
-        .update(communicationRecipients)
-        .set({ status: "accepted", acceptedAt, updatedAt: acceptedAt })
-        .where(eq(communicationRecipients.communicationId, communication.id));
-
-      accepted = updated;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
+      if (current.retryClaimToken !== claimToken) {
+        return { applied: false, communication: current };
       }
 
-      throw new InternalServerErrorException(
-        "The email provider accepted the message, but Lumina could not save the confirmation. Check the activity timeline before resending."
-      );
-    }
-
-    await this.auditSafely({
-      organisationId: input.organisationId,
-      actorUserId: input.userId,
-      action: "invoice_email_sent",
-      entityType: "invoice",
-      entityId: input.invoice.id,
-      metadataRedacted: {
-        invoiceNumber: input.content.invoiceNumber,
-        communicationId: communication.id,
-        recipientCount: recipients.to.length + recipients.cc.length
+      if (current.providerMessageId && current.providerMessageId !== providerMessageId) {
+        throw new ConflictException(
+          "The email provider returned a different message ID for this delivery attempt."
+        );
       }
-    });
 
-    return { communication: accepted, outcome: "accepted" as const };
-  }
-
-  /**
-   * Starts a distinct resend attempt. When the latest attempt for the invoice
-   * is still submission-uncertain, the new attempt reuses its idempotency key
-   * so a provider-side retry of the same logical send cannot duplicate mail.
-   */
-  async resendInvoiceEmail(input: {
-    organisationId: string;
-    userId: string;
-    invoice: Pick<Invoice, "id" | "invoiceNumber">;
-    customerId: string;
-    content: SendInvoiceEmailInput;
-  }): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
-    const latest = await this.findLatestCommunication(input.organisationId, input.invoice.id);
-    const reuseKey =
-      latest?.status === "submission_uncertain" ? latest.providerIdempotencyKey : undefined;
-
-    return this.sendInvoiceEmail(input, reuseKey ? { idempotencyKey: reuseKey } : undefined);
-  }
-
-  async findLatestCommunication(
-    organisationId: string,
-    invoiceId: string
-  ): Promise<Communication | null> {
-    const [row] = await this.databaseService.db
-      .select()
-      .from(communications)
-      .where(
-        and(
-          eq(communications.organisationId, organisationId),
-          eq(communications.invoiceId, invoiceId)
+      const [updated] = await tx
+        .update(communications)
+        .set({
+          providerMessageId,
+          status:
+            current.status === "pending" || current.status === "submission_uncertain"
+              ? "accepted"
+              : current.status,
+          acceptedAt: current.acceptedAt ?? acceptedAt,
+          retryClaimToken: null,
+          retryClaimedAt: null,
+          updatedAt: acceptedAt
+        })
+        .where(
+          and(eq(communications.id, current.id), eq(communications.retryClaimToken, claimToken))
         )
-      )
-      .orderBy(desc(communications.createdAt))
-      .limit(1);
+        .returning();
 
-    return row ?? null;
+      if (!updated) {
+        return { applied: false, communication: current };
+      }
+
+      await tx
+        .update(communicationRecipients)
+        .set({
+          status: "accepted",
+          acceptedAt: sql`COALESCE(${communicationRecipients.acceptedAt}, ${acceptedAt})`,
+          updatedAt: acceptedAt
+        })
+        .where(
+          and(
+            eq(communicationRecipients.communicationId, updated.id),
+            eq(communicationRecipients.status, "pending")
+          )
+        );
+
+      await this.resolveQuarantinedEvents(tx, updated);
+      const resolved = await this.lockCommunication(tx, updated.id);
+
+      return { applied: true, communication: resolved ?? updated };
+    });
   }
 
   private async auditSafely(
@@ -479,22 +695,20 @@ export class CommunicationsService {
   ): Promise<void> {
     try {
       await this.auditLogService.create(input);
-    } catch (error) {
+    } catch {
       // Audit logging is observability, never authority: a logging failure
       // must not change delivery state or fail the request.
-      this.logger.warn(
-        `Audit log write failed for ${input.action}: ${error instanceof Error ? error.message : String(error)}`
-      );
+      this.logger.warn({ action: input.action, event: "communication_audit_write_failed" });
     }
   }
 
   async recordInvoiceViewEvent(
     organisationId: string,
     invoiceId: string
-  ): Promise<{ occurredAt: Date; viewCount: number }> {
+  ): Promise<{ occurredAt: Date; viewCount: number; firstViewedAt: Date; lastViewedAt: Date }> {
     const occurredAt = new Date();
 
-    const viewCount = await this.databaseService.db.transaction(async (tx) => {
+    const summary = await this.databaseService.db.transaction(async (tx) => {
       await tx.insert(invoiceViewEvents).values({
         organisationId,
         invoiceId,
@@ -511,16 +725,29 @@ export class CommunicationsService {
           updatedAt: occurredAt
         })
         .where(and(eq(invoices.id, invoiceId), eq(invoices.organisationId, organisationId)))
-        .returning({ viewCount: invoices.viewCount });
+        .returning({
+          viewCount: invoices.viewCount,
+          firstViewedAt: invoices.viewedAt,
+          lastViewedAt: invoices.lastViewedAt
+        });
 
       if (!updated) {
         throw new Error("Invoice view summary could not be updated.");
       }
 
-      return updated.viewCount;
+      return {
+        viewCount: updated.viewCount,
+        firstViewedAt: updated.firstViewedAt ?? occurredAt,
+        lastViewedAt: updated.lastViewedAt ?? occurredAt
+      };
     });
 
-    return { occurredAt, viewCount };
+    return {
+      occurredAt,
+      viewCount: summary.viewCount,
+      firstViewedAt: summary.firstViewedAt,
+      lastViewedAt: summary.lastViewedAt
+    };
   }
 
   async processBrevoWebhook(
@@ -529,74 +756,163 @@ export class CommunicationsService {
   ): Promise<{ received: true; duplicate?: boolean; ignored?: boolean; unknown?: boolean }> {
     this.assertWebhookSecret(secretHeader);
 
+    const parsed = this.parseBrevoWebhook(payload);
+    let communication = parsed.messageId
+      ? await this.findCommunicationByMessageId(parsed.messageId)
+      : null;
+
+    if (!communication && parsed.correlationCommunicationId) {
+      communication = await this.findCommunicationById(parsed.correlationCommunicationId);
+    }
+
+    if (!parsed.providerEventId || !communication) {
+      await this.quarantineBrevoWebhook(
+        parsed,
+        !parsed.providerEventId ? "invalid_provider_event_id" : "unmatched_communication"
+      );
+      return !parsed.providerEventId
+        ? { received: true, ignored: true }
+        : { received: true, unknown: true };
+    }
+
+    return this.processMatchedBrevoWebhook(communication.id, parsed);
+  }
+
+  private parseBrevoWebhook(payload: BrevoWebhookPayload): ParsedBrevoWebhookEvent {
     const messageId = this.readMessageId(payload);
-    const rawEvent = typeof payload.event === "string" ? payload.event : "";
-    const mapped = mapBrevoEventType(rawEvent);
-
-    if (!messageId) {
-      return { received: true, ignored: true };
-    }
-
-    const communication = await this.findCommunicationByMessageId(messageId);
-
-    if (!communication) {
-      return { received: true, unknown: true };
-    }
-
-    const occurredAt = this.readOccurredAt(payload);
+    const correlationCommunicationId = this.readCommunicationCorrelation(payload);
+    const providerEventId = this.readProviderEventId(payload);
     const email =
       typeof payload.email === "string" && payload.email.trim()
         ? payload.email.trim().toLowerCase()
         : null;
-    const providerEventKey = [
+    const eventType = mapBrevoEventType(typeof payload.event === "string" ? payload.event : "");
+    const occurredAt = this.readOccurredAt(payload);
+    const eventKey = providerEventId
+      ? `brevo:${providerEventId}`
+      : `brevo:invalid:${createHash("sha256")
+          .update(
+            JSON.stringify({
+              correlationCommunicationId,
+              email,
+              eventType: eventType.eventType,
+              messageId,
+              occurredAt: occurredAt.toISOString()
+            })
+          )
+          .digest("hex")}`;
+
+    return {
+      correlationCommunicationId,
+      email,
+      eventKey,
+      eventType,
       messageId,
-      mapped.eventType,
-      Math.floor(occurredAt.getTime() / 1000),
-      email ?? "-"
-    ].join("::");
+      occurredAt,
+      providerEventId
+    };
+  }
 
-    const inserted = await this.databaseService.db
-      .insert(communicationEvents)
+  private async quarantineBrevoWebhook(
+    event: ParsedBrevoWebhookEvent,
+    reason: "invalid_provider_event_id" | "unmatched_communication"
+  ): Promise<void> {
+    await this.databaseService.db
+      .insert(communicationEventQuarantine)
       .values({
-        organisationId: communication.organisationId,
-        communicationId: communication.id,
-        invoiceId: communication.invoiceId,
         provider: "brevo",
-        providerEventKey,
-        eventType: mapped.eventType,
-        occurredAt,
-        metadataRedacted: email ? { email } : null
+        providerEventId: event.providerEventId,
+        providerEventKey: event.eventKey,
+        providerMessageId: event.messageId,
+        correlationCommunicationId: event.correlationCommunicationId,
+        eventType: event.eventType.eventType,
+        occurredAt: event.occurredAt,
+        recipientEmail: event.email,
+        reason
       })
-      .onConflictDoNothing({ target: communicationEvents.providerEventKey })
-      .returning({ id: communicationEvents.id });
+      .onConflictDoNothing({ target: communicationEventQuarantine.providerEventKey });
+  }
 
-    if (inserted.length === 0) {
-      return { received: true, duplicate: true };
-    }
+  private async processMatchedBrevoWebhook(
+    communicationId: string,
+    event: ParsedBrevoWebhookEvent
+  ): Promise<{ received: true; duplicate?: boolean; ignored?: boolean; unknown?: boolean }> {
+    const result = await this.databaseService.db.transaction(async (tx) => {
+      const communication = await this.lockCommunication(tx, communicationId);
 
-    if (mapped.outcome === "ignored") {
-      return { received: true };
-    }
-
-    if (email) {
-      const recipient = await this.findCommunicationRecipient(communication.id, email);
-
-      if (recipient) {
-        const advanced = await this.tryAdvanceRecipient(recipient, mapped, occurredAt);
-
-        if (advanced) {
-          await this.refreshCommunicationAggregate(communication.id);
-        }
-
-        return { received: true };
+      if (!communication) {
+        return { response: { received: true, unknown: true } as const, audit: null };
       }
+
+      const inserted = await tx
+        .insert(communicationEvents)
+        .values({
+          organisationId: communication.organisationId,
+          communicationId: communication.id,
+          invoiceId: communication.invoiceId,
+          provider: "brevo",
+          providerEventKey: event.eventKey,
+          eventType: event.eventType.eventType,
+          occurredAt: event.occurredAt,
+          metadataRedacted: event.email ? { email: event.email } : null
+        })
+        .onConflictDoNothing({ target: communicationEvents.providerEventKey })
+        .returning({ id: communicationEvents.id });
+
+      if (inserted.length === 0) {
+        return { response: { received: true, duplicate: true } as const, audit: null };
+      }
+
+      await tx
+        .update(communicationEventQuarantine)
+        .set({ resolvedCommunicationId: communication.id, resolvedAt: new Date() })
+        .where(
+          and(
+            eq(communicationEventQuarantine.providerEventKey, event.eventKey),
+            isNull(communicationEventQuarantine.resolvedAt)
+          )
+        );
+
+      if (event.eventType.outcome === "ignored") {
+        return { response: { received: true } as const, audit: null };
+      }
+
+      if (event.email) {
+        const recipient = await this.findCommunicationRecipientInTransaction(
+          tx,
+          communication.id,
+          event.email
+        );
+
+        if (recipient) {
+          const advanced = await this.tryAdvanceRecipient(tx, recipient, event.eventType, event.occurredAt);
+          const aggregate = advanced
+            ? await this.refreshCommunicationAggregate(tx, communication)
+            : null;
+          return { response: { received: true } as const, audit: aggregate };
+        }
+      }
+
+      const recipients = await this.listRecipientsInTransaction(tx, communication.id);
+
+      if (recipients.length === 0) {
+        return {
+          response: { received: true } as const,
+          audit: await this.tryAdvanceCommunication(tx, communication, event.eventType, event.occurredAt)
+        };
+      }
+
+      // A known communication with recipient rows must not let an unknown or
+      // absent recipient event change parent delivery truth.
+      this.logger.warn({ communicationId: communication.id, event: "brevo_webhook_unknown_recipient" });
+      return { response: { received: true } as const, audit: null };
+    });
+
+    if (result.audit) {
+      await this.auditSafely(result.audit);
     }
 
-    // Legacy fallback for events without a resolvable recipient row: advance
-    // the parent with the same conditional-update protection.
-    await this.tryAdvanceCommunication(communication, mapped, occurredAt);
-
-    return { received: true };
+    return result.response;
   }
 
   async getDeliverySummary(organisationId: string, invoiceId: string) {
@@ -748,8 +1064,20 @@ export class CommunicationsService {
       .orderBy(communicationRecipients.email);
   }
 
-  private async findCommunicationRecipient(communicationId: string, email: string) {
-    const [row] = await this.databaseService.db
+  private async listRecipientsInTransaction(tx: DatabaseTransaction, communicationId: string) {
+    return tx
+      .select()
+      .from(communicationRecipients)
+      .where(eq(communicationRecipients.communicationId, communicationId))
+      .orderBy(communicationRecipients.email);
+  }
+
+  private async findCommunicationRecipientInTransaction(
+    tx: DatabaseTransaction,
+    communicationId: string,
+    email: string
+  ) {
+    const [row] = await tx
       .select()
       .from(communicationRecipients)
       .where(
@@ -770,6 +1098,7 @@ export class CommunicationsService {
    * rows and is safely ignored.
    */
   private async tryAdvanceRecipient(
+    tx: DatabaseTransaction,
     recipient: CommunicationRecipient,
     mapped: MappedBrevoEvent,
     occurredAt: Date
@@ -801,7 +1130,7 @@ export class CommunicationsService {
         FAILURE_REASONS[mapped.eventType] ?? "The email provider reported a delivery failure.";
     }
 
-    const updated = await this.databaseService.db
+    const updated = await tx
       .update(communicationRecipients)
       .set(patch)
       .where(
@@ -816,32 +1145,24 @@ export class CommunicationsService {
   }
 
   /**
-   * Recomputes the parent communication state from its recipient rows. The
-   * parent is derived data: recipient transitions above are the concurrency
-   * authority, and this refresh converges to the same aggregate regardless of
-   * webhook arrival order.
+   * The parent row is already locked by the caller. Read recipient truth only
+   * after that lock, derive one aggregate, and write it in the same transaction.
+   * This removes the stale-writer retry ceiling from the previous CAS loop.
    */
-  private async refreshCommunicationAggregate(communicationId: string): Promise<void> {
-    const [communication] = await this.databaseService.db
-      .select()
-      .from(communications)
-      .where(eq(communications.id, communicationId))
-      .limit(1);
-
-    if (!communication) {
-      return;
-    }
-
-    const recipients = await this.listRecipients(communicationId);
+  private async refreshCommunicationAggregate(
+    tx: DatabaseTransaction,
+    communication: Communication
+  ): Promise<Parameters<AuditLogService["create"]>[0] | null> {
+    const recipients = await this.listRecipientsInTransaction(tx, communication.id);
 
     if (recipients.length === 0) {
-      return;
+      return null;
     }
 
     const aggregate = aggregateRecipientStatuses(recipients.map((row) => row.status));
 
     if (aggregate === communication.status) {
-      return;
+      return null;
     }
 
     const deliveredAt = maxTimestamp(recipients.map((row) => row.deliveredAt));
@@ -850,7 +1171,7 @@ export class CommunicationsService {
     const failedRecipients = recipients.filter((row) => row.status === "failed");
     const now = new Date();
 
-    await this.databaseService.db
+    await tx
       .update(communications)
       .set({
         status: aggregate,
@@ -872,24 +1193,25 @@ export class CommunicationsService {
       .where(eq(communications.id, communication.id));
 
     if (
-      aggregate === "delivered" ||
-      aggregate === "failed" ||
-      aggregate === "partially_failed"
+      aggregate !== "delivered" &&
+      aggregate !== "failed" &&
+      aggregate !== "partially_failed"
     ) {
-      await this.auditSafely({
-        organisationId: communication.organisationId,
-        actorUserId: null,
-        action:
-          aggregate === "delivered" ? "invoice_email_delivered" : "invoice_email_failed",
-        entityType: "invoice",
-        entityId: communication.invoiceId,
-        metadataRedacted: {
-          communicationId: communication.id,
-          aggregate,
-          failedRecipients: failedRecipients.map((row) => row.email)
-        }
-      });
+      return null;
     }
+
+    return {
+      organisationId: communication.organisationId,
+      actorUserId: null,
+      action: aggregate === "delivered" ? "invoice_email_delivered" : "invoice_email_failed",
+      entityType: "invoice",
+      entityId: communication.invoiceId,
+      metadataRedacted: {
+        communicationId: communication.id,
+        aggregate,
+        failedRecipients: failedRecipients.map((row) => row.email)
+      }
+    };
   }
 
   private aggregateFailureReason(
@@ -906,15 +1228,94 @@ export class CommunicationsService {
     return `${failedCount} of ${recipients.length} recipients failed delivery. See the activity timeline for the affected addresses.`;
   }
 
+  private async resolveQuarantinedEvents(
+    tx: DatabaseTransaction,
+    communication: Communication
+  ): Promise<void> {
+    const matches = [
+      eq(communicationEventQuarantine.correlationCommunicationId, communication.id)
+    ];
+
+    if (communication.providerMessageId) {
+      matches.push(
+        eq(communicationEventQuarantine.providerMessageId, communication.providerMessageId)
+      );
+    }
+
+    const quarantined = await tx
+      .select()
+      .from(communicationEventQuarantine)
+      .where(
+        and(
+          isNull(communicationEventQuarantine.resolvedAt),
+          or(...matches)
+        )
+      );
+
+    let recipientChanged = false;
+
+    for (const event of quarantined) {
+      // Events with no authoritative provider ID remain quarantined for review.
+      if (!event.providerEventId) {
+        continue;
+      }
+
+      const inserted = await tx
+        .insert(communicationEvents)
+        .values({
+          organisationId: communication.organisationId,
+          communicationId: communication.id,
+          invoiceId: communication.invoiceId,
+          provider: "brevo",
+          providerEventKey: event.providerEventKey,
+          eventType: event.eventType,
+          occurredAt: event.occurredAt,
+          metadataRedacted: event.recipientEmail ? { email: event.recipientEmail } : null
+        })
+        .onConflictDoNothing({ target: communicationEvents.providerEventKey })
+        .returning({ id: communicationEvents.id });
+
+      if (inserted.length > 0 && mapBrevoEventType(event.eventType).outcome !== "ignored") {
+        const recipient = event.recipientEmail
+          ? await this.findCommunicationRecipientInTransaction(
+              tx,
+              communication.id,
+              event.recipientEmail
+            )
+          : null;
+
+        if (recipient) {
+          recipientChanged =
+            (await this.tryAdvanceRecipient(
+              tx,
+              recipient,
+              mapBrevoEventType(event.eventType),
+              event.occurredAt
+            )) || recipientChanged;
+        }
+      }
+
+      await tx
+        .update(communicationEventQuarantine)
+        .set({ resolvedCommunicationId: communication.id, resolvedAt: new Date() })
+        .where(eq(communicationEventQuarantine.id, event.id));
+    }
+
+    if (recipientChanged) {
+      await this.refreshCommunicationAggregate(tx, communication);
+    }
+  }
+
   /**
    * Legacy fallback for events that cannot be resolved to a recipient row.
    * Uses the same conditional-update protection as the recipient path.
    */
   private async tryAdvanceCommunication(
+    tx: DatabaseTransaction,
     communication: Communication,
     mapped: MappedBrevoEvent,
     occurredAt: Date
-  ): Promise<boolean> {
+  ): Promise<Parameters<AuditLogService["create"]>[0] | null> {
     const nextStatus =
       mapped.outcome === "accepted"
         ? "accepted"
@@ -925,7 +1326,7 @@ export class CommunicationsService {
             : "failed";
 
     if (STATUS_RANK[nextStatus] <= STATUS_RANK[communication.status]) {
-      return false;
+      return null;
     }
 
     const patch: Partial<Communication> = { status: nextStatus, updatedAt: occurredAt };
@@ -942,23 +1343,18 @@ export class CommunicationsService {
         FAILURE_REASONS[mapped.eventType] ?? "The email provider reported a delivery failure.";
     }
 
-    const updated = await this.databaseService.db
+    const updated = await tx
       .update(communications)
       .set(patch)
-      .where(
-        and(
-          eq(communications.id, communication.id),
-          eq(communications.status, communication.status)
-        )
-      )
+      .where(eq(communications.id, communication.id))
       .returning({ id: communications.id });
 
     if (updated.length === 0) {
-      return false;
+      return null;
     }
 
     if (nextStatus === "delivered" || nextStatus === "failed") {
-      await this.auditSafely({
+      return {
         organisationId: communication.organisationId,
         actorUserId: null,
         action: nextStatus === "delivered" ? "invoice_email_delivered" : "invoice_email_failed",
@@ -968,10 +1364,10 @@ export class CommunicationsService {
           communicationId: communication.id,
           eventType: mapped.eventType
         }
-      });
+      };
     }
 
-    return true;
+    return null;
   }
 
   private async findCommunicationByMessageId(messageId: string) {
@@ -984,12 +1380,54 @@ export class CommunicationsService {
     return row ?? null;
   }
 
+  private async findCommunicationById(communicationId: string) {
+    const [row] = await this.databaseService.db
+      .select()
+      .from(communications)
+      .where(eq(communications.id, communicationId))
+      .limit(1);
+
+    return row ?? null;
+  }
+
   private readMessageId(payload: BrevoWebhookPayload): string | null {
     const candidates = [payload["message-id"], payload.messageId, payload.message_id];
 
     for (const candidate of candidates) {
       if (typeof candidate === "string" && candidate.trim()) {
         return candidate.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private readProviderEventId(payload: BrevoWebhookPayload): string | null {
+    if (typeof payload.id === "number" && Number.isSafeInteger(payload.id) && payload.id >= 0) {
+      return String(payload.id);
+    }
+
+    if (typeof payload.id === "string") {
+      const value = payload.id.trim();
+      if (value && value.length <= 200 && /^[A-Za-z0-9._:-]+$/.test(value)) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  private readCommunicationCorrelation(payload: BrevoWebhookPayload): string | null {
+    const candidates = [payload["X-Mailin-custom"], payload["x-mailin-custom"]];
+
+    for (const candidate of candidates) {
+      if (typeof candidate !== "string" || !candidate.startsWith(COMMUNICATION_ID_PREFIX)) {
+        continue;
+      }
+
+      const communicationId = candidate.slice(COMMUNICATION_ID_PREFIX.length);
+      if (UUID_PATTERN.test(communicationId)) {
+        return communicationId;
       }
     }
 

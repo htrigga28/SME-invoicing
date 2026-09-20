@@ -54,11 +54,14 @@ function communicationsService() {
   );
 }
 
+let brevoEventSequence = 0;
+
 function brevoPayload(messageId: string, event: string, email: string, ts: number) {
+  brevoEventSequence += 1;
   return {
     event,
     email,
-    id: 26224,
+    id: `evt-${Date.now().toString(36)}-${brevoEventSequence}`,
     date: "2026-09-18 10:00:00",
     ts,
     "message-id": messageId,

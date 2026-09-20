@@ -24,6 +24,8 @@ export type SendEmailInput = {
   htmlContent: string;
   textContent: string;
   tags: string[];
+  /** Stable internal ID echoed by Brevo in transactional webhooks. */
+  correlationId: string;
   /**
    * Deterministic per-attempt idempotency key. Sent to Brevo as the documented
    * batch `idempotencyKey` header value so provider-side retries of the same

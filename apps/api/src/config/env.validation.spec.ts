@@ -3,8 +3,8 @@ import { validateEnv } from "./env.validation";
 const productionConfig = {
   NODE_ENV: "production",
   DATABASE_URL: "postgresql://example.invalid/lumina",
-  JWT_ACCESS_SECRET: "production-access-secret",
-  JWT_REFRESH_SECRET: "production-refresh-secret",
+  JWT_ACCESS_SECRET: "production-access-secret-32-chars-min",
+  JWT_REFRESH_SECRET: "production-refresh-secret-32-chars!",
   PAYSTACK_SECRET_KEY: "paystack-secret",
   FRONTEND_APP_URL: "https://app.example.test",
   MARKETING_SITE_URL: "https://www.example.test",
@@ -63,6 +63,42 @@ describe("validateEnv", () => {
         API_PUBLIC_URL: "http://api.example.test"
       })
     ).toThrow(/HTTPS/);
+  });
+
+  it("rejects short production JWT secrets", () => {
+    expect(() =>
+      validateEnv({
+        ...productionConfig,
+        JWT_ACCESS_SECRET: "too-short"
+      })
+    ).toThrow(/JWT_ACCESS_SECRET must be at least 32 characters/);
+  });
+
+  it("requires the Brevo webhook secret whenever sending is configured", () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: "test",
+        BREVO_API_KEY: "brevo-key",
+        BREVO_FROM_EMAIL: "billing@example.test"
+      })
+    ).toThrow(/BREVO_WEBHOOK_SECRET is required/);
+    expect(
+      validateEnv({
+        NODE_ENV: "test",
+        BREVO_API_KEY: "brevo-key",
+        BREVO_FROM_EMAIL: "billing@example.test",
+        BREVO_WEBHOOK_SECRET: "webhook-secret"
+      })
+    ).toMatchObject({ BREVO_WEBHOOK_SECRET: "webhook-secret" });
+  });
+
+  it("rejects identical production JWT secrets", () => {
+    expect(() =>
+      validateEnv({
+        ...productionConfig,
+        JWT_REFRESH_SECRET: productionConfig.JWT_ACCESS_SECRET
+      })
+    ).toThrow(/must be distinct/);
   });
 
   it("keeps local defaults outside production", () => {

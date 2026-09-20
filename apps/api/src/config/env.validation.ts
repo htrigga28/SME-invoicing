@@ -20,11 +20,23 @@ const envSchema = z.object({
   BREVO_WEBHOOK_SECRET: z.string().min(1).optional(),
   BREVO_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
-  TRUST_PROXY: z.string().min(1).default("loopback")
+  TRUST_PROXY: z.string().min(1).default("loopback"),
+  // Compat window for pre-cookie clients that still POST the refresh token in
+  // the body. New clients use the HttpOnly cookie. Removal is tracked as a
+  // follow-up; every legacy use is logged while enabled.
+  LEGACY_REFRESH_BODY_ENABLED: z.string().default("true")
 });
 
 export function validateEnv(config: Record<string, unknown>) {
   const parsed = envSchema.parse(config);
+
+  // Fail-closed in every environment: outbound email without the webhook
+  // secret means every delivery event is rejected and silently lost.
+  if ((parsed.BREVO_API_KEY || parsed.BREVO_FROM_EMAIL) && !parsed.BREVO_WEBHOOK_SECRET) {
+    throw new Error(
+      "BREVO_WEBHOOK_SECRET is required when Brevo sending is configured (BREVO_API_KEY/BREVO_FROM_EMAIL)."
+    );
+  }
 
   if (parsed.NODE_ENV !== "production") {
     return parsed;
@@ -91,6 +103,19 @@ export function validateEnv(config: Record<string, unknown>) {
     parsed.JWT_REFRESH_SECRET === "dev-refresh-secret-change-me"
   ) {
     throw new Error("Development JWT secrets must not be used in production.");
+  }
+
+  for (const [key, value] of [
+    ["JWT_ACCESS_SECRET", parsed.JWT_ACCESS_SECRET],
+    ["JWT_REFRESH_SECRET", parsed.JWT_REFRESH_SECRET]
+  ] as const) {
+    if (value.length < 32) {
+      throw new Error(`${key} must be at least 32 characters in production.`);
+    }
+  }
+
+  if (parsed.JWT_ACCESS_SECRET === parsed.JWT_REFRESH_SECRET) {
+    throw new Error("JWT access and refresh secrets must be distinct in production.");
   }
 
   return parsed;
