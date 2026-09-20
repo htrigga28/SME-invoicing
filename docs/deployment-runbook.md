@@ -128,9 +128,11 @@ Do not put `PAYSTACK_SECRET_KEY` or any other server credential in this project.
 | `API_PUBLIC_URL` | No | Yes | Production and Preview configured separately |
 | `CORS_ORIGINS` | No | Yes | Production and Preview configured separately |
 | `TRUST_PROXY` | No | Yes | Configured |
-| `BREVO_API_KEY` | Yes | Only when email is implemented | Missing |
-| `BREVO_FROM_EMAIL` | No | Only when email is implemented | Missing |
-| `BREVO_SENDER_EMAIL` | No | Legacy/documented sender name | Missing |
+| `BREVO_API_KEY` | Conditional | Required when Brevo email is enabled; omit only when email is disabled | Configure on API project only |
+| `BREVO_FROM_EMAIL` | Conditional | Approved sender address when Brevo email is enabled | Must be a verified Brevo sender identity |
+| `BREVO_SENDER_EMAIL` | No | Legacy/documented sender name | Kept for compatibility; prefer `BREVO_FROM_EMAIL` |
+| `BREVO_WEBHOOK_SECRET` | Conditional | Required when Brevo webhooks are enabled | Used to authenticate transactional webhook callbacks |
+| `LEGACY_REFRESH_BODY_ENABLED` | No | Compatibility switch for pre-cookie browser sessions | Keep enabled for 30 days after the cookie-session deployment, then disable and remove |
 
 Paystack signs webhook payloads with the account secret key. The current code verifies `x-paystack-signature` with `PAYSTACK_SECRET_KEY`; Paystack does not issue a separate webhook signing secret for this flow. Keep `PAYSTACK_WEBHOOK_SECRET` unset unless the code is intentionally changed to use it and the value matches provider semantics.
 
@@ -226,7 +228,8 @@ The first two responses should echo the trusted Origin. The third must not.
 
 | Purpose | Method and path |
 | --- | --- |
-| Health | `GET /health` |
+| Health (liveness) | `GET /health` |
+| Readiness (dependency-aware) | `GET /health/ready` |
 | Waitlist | `POST /public/waitlist` |
 | Public invoice | `GET /public/invoices/:token` |
 | Mark invoice viewed | `POST /public/invoices/:token/view` |
@@ -265,13 +268,18 @@ If delivery fails, inspect Paystack delivery history and Vercel function logs. R
 
 ## Brevo
 
-The repository does not currently implement email sending. Brevo is therefore a future integration, not a launch dependency. When implemented:
+Brevo transactional email is implemented. Email is optional at runtime: when `BREVO_API_KEY` is unset, sends fail closed with a controlled error; when set, the API validates the sender and webhook secret conditionally.
 
 1. Verify a sender identity or sending domain in Brevo.
 2. Configure `BREVO_API_KEY` only on the API project.
-3. Configure the approved sender address variable used by the implementation.
-4. Send only to controlled test recipients during QA.
-5. Review Vercel logs for safe error summaries without message bodies or credentials.
+3. Configure `BREVO_FROM_EMAIL` to the approved sender address.
+4. Configure `BREVO_WEBHOOK_SECRET` and register the transactional webhook URL on the API project.
+5. The API sends `X-Mailin-custom: lumina-communication:<communications.id>` before provider submission and deduplicates inbound events with the Brevo webhook `id` as `brevo:<id>`. A missing or invalid webhook `id` is quarantined and cannot mutate delivery state.
+6. Authenticated events that cannot yet be correlated are stored in `communication_event_quarantine` (migration `0015`) with normalized routing fields only — never raw payloads. When provider acceptance later stores the message ID, or a later webhook provides valid correlation, matching rows resolve through the idempotent event processor. Monitor unresolved quarantine counts in safe operational logs.
+7. Send only to controlled test recipients during QA.
+8. Review Vercel logs for safe error summaries without message bodies or credentials.
+
+Uncertain sends keep `submission_uncertain` state and retry on the same communication row and idempotency key under an atomic expiring claim. A true resend after a resolved outcome creates a new communication row.
 
 ## Vercel-hosted NestJS limitations
 
@@ -312,8 +320,8 @@ Check current provider dashboards before a launch because free-tier limits are p
 1. Merge validated repository changes.
 2. Confirm all required API secrets are present in Vercel.
 3. Confirm DNS is valid and TLS is issued.
-4. Run `pnpm db:migrate` with the direct Neon migration URL.
-5. Redeploy the API and verify health/CORS/logs.
+4. Run `pnpm db:migrate` with the direct Neon migration URL. This includes delivery-tracking migrations `0013`/`0014` and the quarantine plus retry-claim migration `0015` (`communication_event_quarantine`, `communications.retry_claim_token`, `communications.retry_claimed_at`).
+5. Redeploy the API and verify liveness (`GET /health`), readiness (`GET /health/ready`, which fails when PostgreSQL is unavailable), CORS, and logs.
 6. Redeploy the product and marketing projects.
 7. Verify canonical URLs and that no production page targets localhost.
 8. Configure the Paystack test webhook.

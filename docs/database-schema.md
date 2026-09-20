@@ -291,8 +291,10 @@ One row per invoice email send attempt (initial send or manual resend). Resends 
 | subject | Nullable email subject. |
 | to_recipients | JSONB array of normalized recipient emails. |
 | cc_recipients | JSONB array of normalized CC emails. |
-| provider_message_id | Nullable Brevo message ID. Unique where present. |
-| provider_idempotency_key | Per-attempt UUID sent to Brevo as `idempotencyKey`. Reused only when resending a `submission_uncertain` attempt. Indexed (non-unique, reuse is intentional). |
+| provider_message_id | Nullable Brevo message ID. Unique where present. Backfilled monotonically: only when null or equal; a conflicting value goes to review. |
+| provider_idempotency_key | Per-attempt UUID sent to Brevo as `idempotencyKey`. Reused only when retrying a `pending`/`submission_uncertain` attempt on the same row. Indexed (non-unique, reuse is intentional). |
+| retry_claim_token | Nullable atomic retry claimant token for same-row retries. |
+| retry_claimed_at | Nullable claim timestamp; claims expire after a bounded lease longer than the Brevo request timeout. |
 | status | `pending`, `accepted`, `delivered`, `deferred`, `failed`, `submission_uncertain`, `in_progress`, `partially_failed`. The last three are derived/ambiguity states, documented below. |
 | accepted_at | Nullable provider-acceptance timestamp. |
 | delivered_at | Nullable delivery timestamp. |
@@ -352,13 +354,35 @@ Normalized provider webhook events. Raw payloads are never stored; only the even
 | communication_id | References communications. Cascade on deletion. |
 | invoice_id | References invoices. Cascade on deletion. |
 | provider | Currently `brevo`. |
-| provider_event_key | Stable idempotency key (`message-id::event::timestamp::recipient-email`). Unique. |
+| provider_event_key | Stable idempotency key (`brevo:<webhook id>`). Unique; the webhook `id` is the authoritative event identity. |
 | event_type | Normalized provider event name. |
 | occurred_at | Provider event timestamp. |
 | metadata_redacted | Optional safe metadata only. |
 | created_at | Timestamp. |
 
 Indexes: `organisation_id + communication_id`; `organisation_id + invoice_id`.
+
+### communication_event_quarantine
+
+Authenticated Brevo events that cannot yet be correlated to a communication (migration `0015`). Rows store only normalized routing fields — never raw payloads, secrets, subjects, or bodies — and cannot mutate delivery truth before exact correlation.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| provider | Currently `brevo`. |
+| provider_event_id | Nullable authoritative Brevo webhook `id`. |
+| provider_event_key | Unique (`brevo:<webhook id>`); conflict recovery keeps the first writer. |
+| provider_message_id | Nullable provider message ID for later message-ID matching. |
+| correlation_communication_id | Validated Lumina communication UUID from `X-Mailin-custom`, when present. |
+| event_type | Normalized provider event name. |
+| occurred_at | Provider event timestamp. |
+| recipient_email | Normalized recipient email when present. |
+| reason | Safe redacted quarantine reason. |
+| resolved_communication_id | Nullable resolved communication; set with `resolved_at` when a later acceptance or webhook correlates exactly. |
+| resolved_at | Nullable resolution timestamp. |
+| created_at | Timestamp. |
+
+Unique partial index on `(provider, provider_event_id)` where not null; indexes on `provider_message_id` and `correlation_communication_id` for resolution scans.
 
 ### invoice_view_events
 

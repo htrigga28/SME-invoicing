@@ -178,7 +178,7 @@ If net received exceeds invoice total:
 `payment_refunds` tracks refund lifecycle separately from the original charge status:
 
 - `pending` and `processing` refunds do not reduce `amount_paid_kobo`.
-- `needs_attention` keeps the overpayment review open and requires provider-side action.
+- `needs_attention` means the provider outcome is ambiguous (timeout, 5xx, or unreadable response after a possible transmission). It keeps the reservation and the overpayment review open; only explicit provider `failed` proof releases reserved capacity, via the Owner/Admin bodyless reconcile route against authoritative Paystack evidence.
 - `failed` keeps the overpayment review open.
 - `processed` refunds reduce net received and trigger invoice financial recalculation.
 - Processed refunds can resolve overpayment review when `overpaymentKobo` becomes zero.

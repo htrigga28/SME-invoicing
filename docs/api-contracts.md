@@ -17,10 +17,10 @@ All protected endpoints derive organisation access from the authenticated user's
 
 | Endpoint | Auth | Role | Request | Response | Important errors |
 | --- | --- | --- | --- | --- | --- |
-| `POST /auth/register` | Public | None | `{ email, password, name }` | `{ user, activeOrganisation, membership, businessProfile, accessToken, refreshToken, onboardingRequired: true, onboardingStep: "business_profile" }` | Duplicate email, weak password, throttled request. |
-| `POST /auth/login` | Public | None | `{ email, password }` | `{ user, accessToken, refreshToken, onboardingRequired, onboardingStep }` | Invalid credentials. |
-| `POST /auth/refresh` | Refresh token | Member | `{ refreshToken }` | `{ accessToken, refreshToken }` | Invalid/expired refresh token. |
-| `POST /auth/logout` | Required | Member | `{ refreshToken? }` | `{ success: true }` | Invalid session. |
+| `POST /auth/register` | Public, throttled (5/min) | None | `{ email, password, name }` | `{ user, activeOrganisation, membership, businessProfile, accessToken, onboardingRequired: true, onboardingStep: "business_profile" }` + HttpOnly refresh cookie | Duplicate email, weak password, throttled request. |
+| `POST /auth/login` | Public, throttled (3/min) | None | `{ email, password }` | `{ user, accessToken, onboardingRequired, onboardingStep }` + HttpOnly refresh cookie | Invalid credentials (no account-enumeration detail). |
+| `POST /auth/refresh` | Refresh cookie (or legacy body token while `LEGACY_REFRESH_BODY_ENABLED`) | Member | Cookie; legacy `{ refreshToken }` only when the compatibility flag is enabled | `{ accessToken }` + rotated HttpOnly refresh cookie | Invalid/expired refresh token. |
+| `POST /auth/logout` | Required | Member | Cookie; legacy `{ refreshToken? }` when supplied | `{ success: true }`, refresh cookie cleared | Invalid session. |
 | `GET /me` | Required | Member | None | `{ user, activeOrganisation, membership, businessProfile, onboardingRequired, onboardingStep }` | No active membership. |
 | `POST /me/active-organisation` | Required | Member | `{ organisationId }` | `{ activeOrganisation, membership }` | Organisation not in authenticated user's active memberships. |
 
@@ -30,8 +30,10 @@ Registration rules:
 - Duplicate email must be rejected.
 - Password must be hashed.
 - Raw refresh tokens must never be stored; only token hashes are persisted for refresh, rotation, and logout revocation.
-- Refresh should rotate the refresh token, revoke the old token hash, and return a new raw refresh token once.
-- Logout should revoke the submitted refresh token hash when provided.
+- Browser sessions use an HttpOnly refresh cookie on every session-issuing route (login, registration, refresh, legacy exchange, invitation acceptance). JavaScript keeps only the short-lived access token in memory and never persists credentials.
+- Refresh rotates the refresh token with a compare-and-swap update: one concurrent use wins and yields the single child token; the loser is rejected. The cookie path takes precedence when both cookie and legacy body tokens are present.
+- Pre-cookie browsers migrate once: the stored legacy refresh token is submitted through the compatibility body path, the API sets the cookie and returns the renewed access token, the browser publishes it to the active app context, and only then deletes legacy storage. A failed exchange retains legacy storage. The compatibility path lives behind `LEGACY_REFRESH_BODY_ENABLED` for a maximum 30-day window after the cookie release.
+- Logout revokes the cookie token and any submitted legacy token once each, then clears the cookie with the exact set attributes.
 - Response must not return password hash.
 - `onboardingStep` is `business_profile` until profile and organisation onboarding timestamps are set, `payment_setup` until any organisation payment-account record exists, and `null` afterward.
 - `onboardingRequired` remains `onboardingStep !== null` for compatibility.
@@ -567,12 +569,21 @@ Amount mismatch checks compare Paystack subunit amounts directly against `paymen
 
 - Owner/Admin only. Accountant/Viewer remain read-only.
 - Payment must belong to the active organisation and must be `successful`.
-- The backend recalculates invoice financial state before validating the refund.
+- Every financial mutation locks in invoice, then payment, then refund order and re-reads truth under the lock before validating.
 - Refund amount must be positive, must not exceed the invoice overpayment, and must not exceed the selected payment's remaining refundable amount.
-- Backend creates a local refund record, calls Paystack Create Refund server-side with the original transaction reference, then stores normalized safe provider status.
+- Backend creates a local refund reservation first with a stable `lumina-refund:<payment_refunds.id>` token in Paystack `merchant_note`, calls Paystack Create Refund server-side with the original transaction reference, then stores normalized safe provider status.
+- A definite provider rejection (400/404/422/409) marks the reservation `failed`; a timeout, 5xx, rate limit, or unreadable response marks it `needs_attention` and keeps the capacity reserved until authoritative reconciliation.
 - Refund initiation does not reduce `amount_paid_kobo`. Only a processed refund event reduces net received.
 - Paystack refund statuses map to `pending`, `processing`, `needs_attention`, `processed`, and `failed`.
 - Responses must not expose raw Paystack refund responses, secrets, `provider_subaccount_code`, card/authorization data, or customer bank details.
+
+`POST /payments/:paymentId/refunds/:refundId/reconcile` rules:
+
+- Owner/Admin only; tenant scope derives from the authenticated context (`404` for foreign or mismatched pairs). No request body: the caller cannot choose a target status or release capacity.
+- Reads authoritative Paystack evidence only: direct `GET /refund/:id` when `providerRefundId` exists, otherwise resolves the provider transaction ID from the payment reference and lists `GET /refund?transaction=<id>`, matching exactly one result by stable merchant-note token, transaction, amount, and currency.
+- Zero matches, multiple matches, provider timeout, or inconsistent fields leave the reservation in `needs_attention` and never release capacity. Only explicit provider `failed` proof releases reserved capacity; `processed` triggers invoice reconciliation under the invoice, payment, refund lock order.
+- Allowed transitions: `needs_attention`/`pending`/`processing` to `pending`/`processing`/`needs_attention`/`processed`/`failed`; `processed`/`failed` are terminal for this route. Repeated calls with the same evidence are idempotent; concurrent calls serialize under the financial locks.
+- Records the actor, local IDs, evidence type, prior/final status, and observation time through the existing audit path without raw payloads.
 
 `GET /payments/events/review` only returns organisation-scoped events that have safe review signals such as processing errors or unprocessed state. Events with null `organisation_id` are excluded unless they can be safely scoped through a linked payment reference.
 
