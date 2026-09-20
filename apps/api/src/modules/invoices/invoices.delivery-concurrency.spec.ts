@@ -1,8 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { and, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
 
 import { AuditLogService } from "../audit-log/audit-log.service";
 import { CommunicationsService } from "../communications/communications.service";
@@ -19,24 +17,20 @@ import {
   users
 } from "../../database/schema";
 import { InvoicesService } from "./invoices.service";
-import { startTestPostgres, uniqueSlug, requiredRow, type TestPostgres } from "../../test/postgres-test-helper";
+import {
+  requiredRow,
+  startApiTestPool,
+  uniqueSlug,
+  type ApiTestPool
+} from "../../test/postgres-test-helper";
 
 jest.setTimeout(180000);
 
-let postgres: TestPostgres;
-let connectionString: string;
+let pool: ApiTestPool;
 
 let db: AppDatabase;
 
-const databaseServices: DatabaseService[] = [];
-
-function databaseService() {
-  const service = new DatabaseService({
-    get: (key: string) => (key === "DATABASE_URL" ? connectionString : undefined)
-  } as unknown as ConfigService);
-  databaseServices.push(service);
-  return service;
-}
+let databaseService: () => DatabaseService;
 
 function stubConfig(values: Record<string, string> = {}) {
   return {
@@ -132,21 +126,13 @@ async function sentTransitionCount(invoiceId: string) {
 }
 
 beforeAll(async () => {
-  postgres = await startTestPostgres();
-  connectionString = postgres.connectionString;
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10000 });
-  const schema = await import("../../database/schema");
-  db = drizzle(pool, { schema });
-  (db as unknown as { __pool?: Pool }).__pool = pool;
+  pool = await startApiTestPool();
+  db = pool.db;
+  databaseService = pool.databaseService;
 });
 
 afterAll(async () => {
-  for (const service of databaseServices) {
-    await service.onModuleDestroy().catch(() => undefined);
-  }
-  const pool = (db as unknown as { __pool?: Pool }).__pool;
-  await pool?.end();
-  await postgres.stop();
+  await pool.stop();
 });
 
 describe("concurrent invoice sends (real Postgres)", () => {

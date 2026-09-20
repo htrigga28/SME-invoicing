@@ -1,11 +1,14 @@
 import { ConfigService } from "@nestjs/config";
 import { and, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
 
 import { DatabaseService, type AppDatabase } from "../../database/database.service";
 import { refreshTokens, users } from "../../database/schema";
-import { requiredRow, startTestPostgres, uniqueSlug, type TestPostgres } from "../../test/postgres-test-helper";
+import {
+  requiredRow,
+  startApiTestPool,
+  uniqueSlug,
+  type ApiTestPool
+} from "../../test/postgres-test-helper";
 import { TenantContextService } from "../tenant/tenant-context.service";
 import { AuthRepository } from "./auth.repository";
 import { AuthService } from "./auth.service";
@@ -14,10 +17,9 @@ import { TokenService } from "./token.service";
 
 jest.setTimeout(180000);
 
-let postgres: TestPostgres;
-let connectionString: string;
+let pool: ApiTestPool;
 let db: AppDatabase;
-const databaseServices: DatabaseService[] = [];
+let databaseService: () => DatabaseService;
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -71,14 +73,6 @@ class BarrierAuthRepository extends AuthRepository {
   }
 }
 
-function databaseService() {
-  const service = new DatabaseService({
-    get: (key: string) => (key === "DATABASE_URL" ? connectionString : undefined)
-  } as unknown as ConfigService);
-  databaseServices.push(service);
-  return service;
-}
-
 function tokenService() {
   return new TokenService({
     getOrThrow: (key: string) => `${key}-test-secret-that-is-long-enough`
@@ -95,20 +89,13 @@ function authService(repository: AuthRepository) {
 }
 
 beforeAll(async () => {
-  postgres = await startTestPostgres();
-  connectionString = postgres.connectionString;
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10000 });
-  const schema = await import("../../database/schema");
-  db = drizzle(pool, { schema });
-  (db as unknown as { __pool?: Pool }).__pool = pool;
+  pool = await startApiTestPool();
+  db = pool.db;
+  databaseService = pool.databaseService;
 });
 
 afterAll(async () => {
-  for (const service of databaseServices) {
-    await service.onModuleDestroy().catch(() => undefined);
-  }
-  await (db as unknown as { __pool?: Pool }).__pool?.end();
-  await postgres.stop();
+  await pool.stop();
 });
 
 describe("refresh rotation (real Postgres)", () => {

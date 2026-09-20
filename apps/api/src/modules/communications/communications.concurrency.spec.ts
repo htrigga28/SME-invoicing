@@ -1,6 +1,4 @@
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
 
 import { ConfigService } from "@nestjs/config";
 
@@ -17,17 +15,21 @@ import {
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import { CommunicationsService } from "./communications.service";
-import { startTestPostgres, uniqueSlug, requiredRow, type TestPostgres } from "../../test/postgres-test-helper";
+import {
+  requiredRow,
+  startApiTestPool,
+  uniqueSlug,
+  type ApiTestPool
+} from "../../test/postgres-test-helper";
 
 jest.setTimeout(180000);
 
-let postgres: TestPostgres;
-let connectionString: string;
+let pool: ApiTestPool;
 
 let db: AppDatabase;
 let auditCreate: jest.Mock;
 
-const databaseServices: DatabaseService[] = [];
+let databaseService: () => DatabaseService;
 
 function configStub() {
   return {
@@ -35,14 +37,6 @@ function configStub() {
       key === "BREVO_WEBHOOK_SECRET" ? "test-webhook-secret" : undefined
     )
   } as unknown as ConfigService;
-}
-
-function databaseService() {
-  const service = new DatabaseService({
-    get: (key: string) => (key === "DATABASE_URL" ? connectionString : undefined)
-  } as unknown as ConfigService);
-  databaseServices.push(service);
-  return service;
 }
 
 function communicationsService() {
@@ -181,21 +175,13 @@ async function eventCount(communicationId: string) {
 }
 
 beforeAll(async () => {
-  postgres = await startTestPostgres();
-  connectionString = postgres.connectionString;
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10000 });
-  const schema = await import("../../database/schema");
-  db = drizzle(pool, { schema });
-  (db as unknown as { __pool?: Pool }).__pool = pool;
+  pool = await startApiTestPool();
+  db = pool.db;
+  databaseService = pool.databaseService;
 });
 
 afterAll(async () => {
-  for (const service of databaseServices) {
-    await service.onModuleDestroy().catch(() => undefined);
-  }
-  const pool = (db as unknown as { __pool?: Pool }).__pool;
-  await pool?.end();
-  await postgres.stop();
+  await pool.stop();
 });
 
 beforeEach(() => {

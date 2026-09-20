@@ -250,7 +250,6 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
   };
 
   it("creates a pending communication and marks it accepted with the provider message id", async () => {
-    const pending = createCommunication({ status: "pending", providerMessageId: null });
     const claimedPending = createCommunication({
       status: "pending",
       providerMessageId: null,
@@ -386,7 +385,6 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
   });
 
   it("does not let audit failures change delivery state", async () => {
-    const pending = createCommunication({ status: "pending", providerMessageId: null });
     const claimedPending = createCommunication({
       status: "pending",
       providerMessageId: null,

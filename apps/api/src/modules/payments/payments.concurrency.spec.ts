@@ -1,10 +1,8 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
 
-import { DatabaseService, type AppDatabase } from "../../database/database.service";
+import type { AppDatabase } from "../../database/database.service";
 import {
   customers,
   invoices,
@@ -16,27 +14,18 @@ import {
 } from "../../database/schema";
 import {
   requiredRow,
-  startTestPostgres,
+  startApiTestPool,
   uniqueSlug,
-  type TestPostgres
+  type ApiTestPool
 } from "../../test/postgres-test-helper";
 import { ReceiptsService } from "../receipts/receipts.service";
 import { PaymentsService } from "./payments.service";
 
 jest.setTimeout(180000);
 
-let postgres: TestPostgres;
-let connectionString: string;
+let pool: ApiTestPool;
 let db: AppDatabase;
-const databaseServices: DatabaseService[] = [];
-
-function databaseService() {
-  const service = new DatabaseService({
-    get: (key: string) => (key === "DATABASE_URL" ? connectionString : undefined)
-  } as unknown as ConfigService);
-  databaseServices.push(service);
-  return service;
-}
+let databaseService: ApiTestPool["databaseService"];
 
 function stubConfig() {
   return {
@@ -56,20 +45,13 @@ function paymentsService(paystackCreateRefund: jest.Mock) {
 }
 
 beforeAll(async () => {
-  postgres = await startTestPostgres();
-  connectionString = postgres.connectionString;
-  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10000 });
-  const schema = await import("../../database/schema");
-  db = drizzle(pool, { schema });
-  (db as unknown as { __pool?: Pool }).__pool = pool;
+  pool = await startApiTestPool();
+  db = pool.db;
+  databaseService = pool.databaseService;
 });
 
 afterAll(async () => {
-  for (const service of databaseServices) {
-    await service.onModuleDestroy().catch(() => undefined);
-  }
-  await (db as unknown as { __pool?: Pool }).__pool?.end();
-  await postgres.stop();
+  await pool.stop();
 });
 
 describe("concurrent refund reservations (real Postgres)", () => {

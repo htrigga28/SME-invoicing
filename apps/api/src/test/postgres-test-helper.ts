@@ -6,10 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import type { ConfigService } from "@nestjs/config";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client, Pool } from "pg";
 
+import { DatabaseService, type AppDatabase } from "../database/database.service";
 import * as schema from "../database/schema";
 
 const execFileAsync = promisify(execFile);
@@ -201,4 +203,46 @@ export function requiredRow<T>(rows: T[], what: string): T {
   }
 
   return row;
+}
+
+export type ApiTestPool = {
+  connectionString: string;
+  db: AppDatabase;
+  databaseService: () => DatabaseService;
+  stop: () => Promise<void>;
+};
+
+/**
+ * Starts one embedded-Postgres pool for a real-database concurrency spec and
+ * hands out DatabaseService instances backed by independent pools, matching
+ * how production requests arrive on separate connections. Every spec that
+ * proves a cross-connection invariant shares this harness so the pool,
+ * teardown, and service-factory code is written once.
+ */
+export async function startApiTestPool(): Promise<ApiTestPool> {
+  const postgres = await startTestPostgres();
+  const connectionString = postgres.connectionString;
+  const pool = new Pool({ connectionString, connectionTimeoutMillis: 10000 });
+  const db: AppDatabase = drizzle(pool, { schema });
+  const databaseServices: DatabaseService[] = [];
+  const databaseService = () => {
+    const service = new DatabaseService({
+      get: (key: string) => (key === "DATABASE_URL" ? connectionString : undefined)
+    } as unknown as ConfigService);
+    databaseServices.push(service);
+    return service;
+  };
+
+  return {
+    connectionString,
+    db,
+    databaseService,
+    stop: async () => {
+      for (const service of databaseServices) {
+        await service.onModuleDestroy().catch(() => undefined);
+      }
+      await pool.end();
+      await postgres.stop();
+    }
+  };
 }
