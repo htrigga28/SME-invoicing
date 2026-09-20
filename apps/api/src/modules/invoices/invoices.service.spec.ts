@@ -185,9 +185,12 @@ function setup(
   },
   communicationsService: unknown = {
     getDeliverySummary: jest.fn(),
-    recordInvoiceViewEvent: jest
-      .fn()
-      .mockResolvedValue({ occurredAt: now, viewCount: 1 })
+    recordInvoiceViewEvent: jest.fn().mockResolvedValue({
+      occurredAt: now,
+      viewCount: 1,
+      firstViewedAt: now,
+      lastViewedAt: now
+    })
   }
 ) {
   const service = new InvoicesService(
@@ -705,9 +708,12 @@ describe("InvoicesService public view tracking", () => {
 
   it("moves a sent invoice to viewed and writes one status event and audit log", async () => {
     const { db, insertValues } = createTransactionDb();
-    const recordInvoiceViewEvent = jest
-      .fn()
-      .mockResolvedValue({ occurredAt: now, viewCount: 1 });
+    const recordInvoiceViewEvent = jest.fn().mockResolvedValue({
+      occurredAt: now,
+      viewCount: 1,
+      firstViewedAt: now,
+      lastViewedAt: now
+    });
     const service = setup(
       { db },
       {},
@@ -741,9 +747,12 @@ describe("InvoicesService public view tracking", () => {
 
   it("does not duplicate viewed transitions for repeated views", async () => {
     const { db } = createTransactionDb();
-    const recordInvoiceViewEvent = jest
-      .fn()
-      .mockResolvedValue({ occurredAt: now, viewCount: 4 });
+    const recordInvoiceViewEvent = jest.fn().mockResolvedValue({
+      occurredAt: now,
+      viewCount: 4,
+      firstViewedAt: now,
+      lastViewedAt: now
+    });
     const service = setup(
       { db },
       {},
@@ -766,9 +775,12 @@ describe("InvoicesService public view tracking", () => {
 
   it("does not move overdue invoices back to viewed", async () => {
     const { db } = createTransactionDb();
-    const recordInvoiceViewEvent = jest
-      .fn()
-      .mockResolvedValue({ occurredAt: now, viewCount: 2 });
+    const recordInvoiceViewEvent = jest.fn().mockResolvedValue({
+      occurredAt: now,
+      viewCount: 2,
+      firstViewedAt: now,
+      lastViewedAt: now
+    });
     const service = setup(
       { db },
       {},

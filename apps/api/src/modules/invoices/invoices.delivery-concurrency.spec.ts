@@ -10,6 +10,7 @@ import { DatabaseService, type AppDatabase } from "../../database/database.servi
 import {
   businessProfiles,
   customers,
+  invoiceLineItems,
   invoices,
   invoiceStatusEvents,
   invoiceViewEvents,
@@ -200,6 +201,90 @@ describe("concurrent invoice sends (real Postgres)", () => {
       "invoice"
     );
     expect(stored.status).toBe("sent");
+  });
+});
+
+describe("draft edit versus send (real Postgres)", () => {
+  it("never mutates line items or totals after the invoice is sent", async () => {
+    const sendInvoiceEmail = jest.fn(async () => ({
+      communication: { id: "comm-1" },
+      outcome: "accepted" as const
+    }));
+    const makeService = () =>
+      new InvoicesService(
+        databaseService(),
+        { create: jest.fn() } as unknown as AuditLogService,
+        stubConfig({ FRONTEND_APP_URL: "http://localhost:3000" }),
+        {} as never,
+        {
+          getInvoiceFinancialSummary: jest.fn(async () => ({
+            balanceDueKobo: 50000,
+            netReceivedKobo: 0
+          }))
+        } as never,
+        {
+          sendInvoiceEmail,
+          getDeliverySummary: jest.fn(async () => ({
+            state: "accepted",
+            attempts: 1,
+            lastCommunication: null
+          }))
+        } as unknown as CommunicationsService
+      );
+
+    const { context, customer, organisation } = await seedOrgFixture();
+    const invoice = await seedDraftInvoice(organisation.id, customer.id, context.user.id);
+    await db.insert(invoiceLineItems).values({
+      organisationId: organisation.id,
+      invoiceId: invoice.id,
+      description: "Design services",
+      quantity: "1.00",
+      unitPriceKobo: 50000,
+      lineTotalKobo: 50000,
+      sortOrder: 0
+    });
+
+    const editor = makeService();
+    const sender = makeService();
+
+    const [editResult, sendResult] = await Promise.allSettled([
+      editor.updateInvoice(context as never, invoice.id, {
+        notes: "Edited after send race"
+      }),
+      sender.sendInvoice(context as never, invoice.id, { to: ["accounts@northstar.example"] })
+    ]);
+
+    // Send must win at least once across retries; edit may win the race if it
+    // commits first, but it must never corrupt a sent invoice.
+    expect(sendResult.status === "fulfilled" || editResult.status === "fulfilled").toBe(true);
+
+    const stored = requiredRow(
+      await db
+        .select({
+          status: invoices.status,
+          totalKobo: invoices.totalKobo,
+          subtotalKobo: invoices.subtotalKobo
+        })
+        .from(invoices)
+        .where(eq(invoices.id, invoice.id))
+        .limit(1),
+      "invoice"
+    );
+
+    if (sendResult.status === "fulfilled") {
+      expect(stored.status).toBe("sent");
+      // Totals must remain the issued 50000 kobo fixture value: the CAS
+      // predicate prevents a late edit from rewriting a sent invoice.
+      expect(stored.totalKobo).toBe(50000);
+      expect(stored.subtotalKobo).toBe(50000);
+
+      // A post-send edit must always be rejected with 409.
+      await expect(
+        editor.updateInvoice(context as never, invoice.id, { notes: "Late edit" })
+      ).rejects.toBeInstanceOf(ConflictException);
+    } else {
+      expect((sendResult as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+    }
   });
 });
 

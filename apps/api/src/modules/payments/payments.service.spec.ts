@@ -3,7 +3,8 @@ import {
   BadRequestException,
   NotFoundException,
   ServiceUnavailableException,
-  UnauthorizedException
+  UnauthorizedException,
+  UnprocessableEntityException
 } from "@nestjs/common";
 
 import { MAX_KOBO } from "../../common/money-limits";
@@ -349,7 +350,7 @@ describe("PaymentsService event safety", () => {
       processVerifiedWebhook: (tx: unknown, webhook: unknown) => Promise<void>;
     };
     internals.findProcessedDuplicate = jest.fn().mockResolvedValue(duplicate);
-    internals.createPaymentEvent = jest.fn().mockResolvedValue(newEvent);
+    internals.createPaymentEvent = jest.fn().mockResolvedValue({ conflict: false, event: newEvent });
     internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
     internals.processChargeSuccess = jest.fn();
 
@@ -371,6 +372,44 @@ describe("PaymentsService event safety", () => {
       expect.anything(),
       expect.objectContaining({
         action: "payment_webhook_duplicate_ignored"
+      })
+    );
+  });
+
+  it("treats a lost insert race as a duplicate without reconciling again", async () => {
+    const { service } = setup();
+    const winner = createPaymentEvent({ id: "winner-event", processed: false });
+    const internals = service as unknown as {
+      createAuditLog: jest.Mock;
+      createPaymentEvent: jest.Mock;
+      findProcessedDuplicate: jest.Mock;
+      processChargeSuccess: jest.Mock;
+      processRefundWebhook: jest.Mock;
+      processVerifiedWebhook: (tx: unknown, webhook: unknown) => Promise<void>;
+    };
+    // Both deliveries miss the pre-insert lookup; the insert arbiter decides.
+    internals.findProcessedDuplicate = jest.fn().mockResolvedValue(undefined);
+    internals.createPaymentEvent = jest.fn().mockResolvedValue({ conflict: true, event: winner });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.processChargeSuccess = jest.fn();
+    internals.processRefundWebhook = jest.fn();
+
+    await internals.processVerifiedWebhook(
+      {},
+      {
+        eventType: "charge.success",
+        providerEventId: "evt-1",
+        providerReference: "SME-INV000001-ABC123"
+      }
+    );
+
+    expect(internals.processChargeSuccess).not.toHaveBeenCalled();
+    expect(internals.processRefundWebhook).not.toHaveBeenCalled();
+    expect(internals.createAuditLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "payment_webhook_duplicate_ignored",
+        entityId: "winner-event"
       })
     );
   });
@@ -1021,6 +1060,8 @@ describe("PaymentsService refunds", () => {
     const updateWhere = jest.fn(() => ({ returning: updateReturning }));
     const updateSet = jest.fn(() => ({ where: updateWhere }));
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({ from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) })) })),
       insert: jest.fn(() => ({ values: insertValues })),
       update: jest.fn(() => ({ set: updateSet }))
     };
@@ -1049,6 +1090,7 @@ describe("PaymentsService refunds", () => {
       calculateInvoiceFinancialSummaryForId: jest.Mock;
       createAuditLog: jest.Mock;
       getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
     };
     internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
       payment: createPayment({ status: "successful", amountKobo: 170000 }),
@@ -1080,6 +1122,34 @@ describe("PaymentsService refunds", () => {
       }
     });
     internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.lockInvoiceFinancialState = jest
+      .fn()
+      .mockResolvedValueOnce({
+        invoice: createInvoice({
+          amountPaidKobo: 340000,
+          balanceDueKobo: 0,
+          status: "paid",
+          totalKobo: 170000
+        }),
+        payments: [
+          createPayment({ status: "successful", amountKobo: 170000 }),
+          createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+        ],
+        refunds: []
+      })
+      .mockResolvedValue({
+        invoice: createInvoice({
+          amountPaidKobo: 340000,
+          balanceDueKobo: 0,
+          status: "paid",
+          totalKobo: 170000
+        }),
+        payments: [
+          createPayment({ status: "successful", amountKobo: 170000 }),
+          createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+        ],
+        refunds: [refundTx.pendingRefund]
+      });
 
     const response = await service.createPaymentRefund(
       context as never,
@@ -1093,11 +1163,12 @@ describe("PaymentsService refunds", () => {
       amountKobo: 170000,
       currency: "NGN",
       customerNote: "Duplicate payment",
-      merchantNote: "Duplicate payment"
+      merchantNote: expect.stringMatching(/^lumina-refund:/)
     });
     expect(refundTx.insertValues).toHaveBeenCalledWith(
       expect.objectContaining({
         amountKobo: 170000,
+        merchantNote: expect.stringMatching(/^lumina-refund:/),
         reason: "Duplicate payment",
         status: "pending"
       })
@@ -1117,6 +1188,90 @@ describe("PaymentsService refunds", () => {
       amountKobo: 170000
     });
     expect(JSON.stringify(response)).not.toContain("sk_test");
+  });
+
+  it("keeps ambiguous provider failures as needs_attention so capacity stays reserved", async () => {
+    const { paystackService, service, transaction } = setup();
+    const refundTx = createRefundTx();
+    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+    paystackService.createRefund.mockRejectedValue(
+      new ServiceUnavailableException("Paystack is temporarily unavailable.")
+    );
+    const internals = service as unknown as {
+      createAuditLog: jest.Mock;
+      getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: { overpaymentKobo: 170000 },
+      remainingRefundableKobo: 170000
+    });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
+      invoice: createInvoice({
+        amountPaidKobo: 340000,
+        balanceDueKobo: 0,
+        status: "paid",
+        totalKobo: 170000
+      }),
+      payments: [
+        createPayment({ status: "successful", amountKobo: 170000 }),
+        createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+      ],
+      refunds: []
+    });
+
+    await expect(
+      service.createPaymentRefund(context as never, { userId: "user-1" } as never, "payment-1", {
+        amountKobo: 170000,
+        reason: "Duplicate payment"
+      })
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(refundTx.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "needs_attention" })
+    );
+  });
+
+  it("marks definite provider rejections as failed so capacity is released", async () => {
+    const { paystackService, service, transaction } = setup();
+    const refundTx = createRefundTx();
+    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+    paystackService.createRefund.mockRejectedValue(
+      new UnprocessableEntityException("Paystack could not validate this payment request.")
+    );
+    const internals = service as unknown as {
+      createAuditLog: jest.Mock;
+      getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: { overpaymentKobo: 170000 },
+      remainingRefundableKobo: 170000
+    });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
+      invoice: createInvoice({
+        amountPaidKobo: 340000,
+        balanceDueKobo: 0,
+        status: "paid",
+        totalKobo: 170000
+      }),
+      payments: [
+        createPayment({ status: "successful", amountKobo: 170000 }),
+        createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+      ],
+      refunds: []
+    });
+
+    await expect(
+      service.createPaymentRefund(context as never, { userId: "user-1" } as never, "payment-1", {
+        amountKobo: 170000,
+        reason: "Duplicate payment"
+      })
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(refundTx.updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
   });
 
   it("rejects refund amounts above the invoice overpayment before calling Paystack", async () => {

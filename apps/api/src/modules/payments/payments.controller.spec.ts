@@ -20,7 +20,8 @@ describe("PaymentsController", () => {
       getPaymentSummary: jest.fn(),
       listPayments: jest.fn(),
       listReviewEvents: jest.fn(),
-      processPaystackWebhook: jest.fn().mockResolvedValue({ received: true })
+      processPaystackWebhook: jest.fn().mockResolvedValue({ received: true }),
+      reconcilePaymentRefund: jest.fn()
     };
     const controller = new PaymentsController(service as never);
     const rawBody = Buffer.from('{"event":"charge.success"}');
@@ -37,7 +38,8 @@ describe("PaymentsController", () => {
       getPaymentSummary: jest.fn(),
       listPayments: jest.fn(),
       listReviewEvents: jest.fn(),
-      processPaystackWebhook: jest.fn()
+      processPaystackWebhook: jest.fn(),
+      reconcilePaymentRefund: jest.fn()
     };
     const controller = new PaymentsController(service as never);
 
@@ -62,6 +64,9 @@ describe("PaymentsController", () => {
       Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.createRefund)
     ).toBeDefined();
     expect(
+      Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.reconcileRefund)
+    ).toBeDefined();
+    expect(
       Reflect.getMetadata(GUARDS_METADATA, PaymentsController.prototype.processPaystackWebhook)
     ).toBeUndefined();
   });
@@ -73,7 +78,8 @@ describe("PaymentsController", () => {
       getPaymentSummary: jest.fn(),
       listPayments: jest.fn(),
       listReviewEvents: jest.fn(),
-      processPaystackWebhook: jest.fn()
+      processPaystackWebhook: jest.fn(),
+      reconcilePaymentRefund: jest.fn()
     };
     const controller = new PaymentsController(service as never);
     const context = { activeOrganisation: { id: "org-1" } };
@@ -86,6 +92,12 @@ describe("PaymentsController", () => {
       amountKobo: 170000,
       reason: "Duplicate payment"
     });
+    controller.reconcileRefund(
+      context as never,
+      { userId: "user-1" } as never,
+      "payment-1",
+      "refund-1"
+    );
 
     expect(service.listPayments).toHaveBeenCalledWith(context, { search: "ref" });
     expect(service.getPaymentSummary).toHaveBeenCalledWith(context, { dateFrom: "2026-06-01" });
@@ -96,6 +108,12 @@ describe("PaymentsController", () => {
       { userId: "user-1" },
       "payment-1",
       { amountKobo: 170000, reason: "Duplicate payment" }
+    );
+    expect(service.reconcilePaymentRefund).toHaveBeenCalledWith(
+      context,
+      { userId: "user-1" },
+      "payment-1",
+      "refund-1"
     );
   });
 });

@@ -80,6 +80,15 @@ export type PaystackCreateRefundResponse = {
   transactionReference: string | null;
 };
 
+export type PaystackRefundResponse = {
+  amountKobo: number;
+  currency: string;
+  merchantNote: string | null;
+  providerRefundId: string | null;
+  status: string;
+  transactionReference: string | null;
+};
+
 type PaystackCreateRefundApiResponse = {
   status: boolean;
   message?: unknown;
@@ -92,6 +101,28 @@ type PaystackCreateRefundApiResponse = {
       reference?: unknown;
     };
   };
+};
+
+type PaystackRefundApiResponse = {
+  status: boolean;
+  message?: unknown;
+  data?:
+    | {
+        amount?: unknown;
+        currency?: unknown;
+        id?: unknown;
+        merchant_note?: unknown;
+        status?: unknown;
+        transaction?: { reference?: unknown };
+      }
+    | Array<{
+        amount?: unknown;
+        currency?: unknown;
+        id?: unknown;
+        merchant_note?: unknown;
+        status?: unknown;
+        transaction?: { reference?: unknown };
+      }>;
 };
 
 @Injectable()
@@ -116,6 +147,7 @@ export class PaystackService {
           Authorization: `Bearer ${secretKey}`,
           "Content-Type": "application/json"
         },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           email: input.email,
           amount: input.amountKobo,
@@ -177,7 +209,8 @@ export class PaystackService {
           headers: {
             Authorization: `Bearer ${secretKey}`,
             "Content-Type": "application/json"
-          }
+          },
+          signal: AbortSignal.timeout(15000)
         }
       );
     } catch {
@@ -229,6 +262,7 @@ export class PaystackService {
           Authorization: `Bearer ${secretKey}`,
           "Content-Type": "application/json"
         },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           transaction: input.transactionReference,
           amount: input.amountKobo,
@@ -263,6 +297,66 @@ export class PaystackService {
       transactionReference:
         this.safeString(payload.data.transaction?.reference, 120) ?? input.transactionReference
     };
+  }
+
+  async fetchRefund(providerRefundId: string): Promise<PaystackRefundResponse> {
+    const [refund] = await this.getRefunds(`/refund/${encodeURIComponent(providerRefundId)}`);
+
+    if (!refund) {
+      throw new BadGatewayException("Paystack refund response was invalid.");
+    }
+
+    return refund;
+  }
+
+  async listRefunds(transactionReference: string): Promise<PaystackRefundResponse[]> {
+    return this.getRefunds(`/refund?transaction=${encodeURIComponent(transactionReference)}`);
+  }
+
+  private async getRefunds(path: string): Promise<PaystackRefundResponse[]> {
+    const secretKey = this.configService.get<string>("PAYSTACK_SECRET_KEY");
+
+    if (!secretKey) {
+      throw new ServiceUnavailableException("Paystack is not configured.");
+    }
+
+    const baseUrl =
+      this.configService.get<string>("PAYSTACK_BASE_URL") ?? "https://api.paystack.co";
+    let response: Response;
+
+    try {
+      response = await fetch(new URL(path, baseUrl), {
+        method: "GET",
+        headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15000)
+      });
+    } catch {
+      throw new ServiceUnavailableException(
+        "Paystack is temporarily unavailable. Please try again later."
+      );
+    }
+
+    let payload: PaystackRefundApiResponse | undefined;
+
+    try {
+      payload = (await response.json()) as PaystackRefundApiResponse;
+    } catch {
+      payload = undefined;
+    }
+
+    if (!response.ok || !payload?.status || !payload.data) {
+      throw this.toPaystackException(response.status, this.safeProviderMessage(payload?.message));
+    }
+
+    const rows = Array.isArray(payload.data) ? payload.data : [payload.data];
+    return rows.map((refund) => ({
+      amountKobo: this.numberValue(refund.amount),
+      currency: this.safeString(refund.currency, 3) ?? "",
+      merchantNote: this.safeString(refund.merchant_note, 240),
+      providerRefundId: this.safeString(refund.id, 120),
+      status: this.safeString(refund.status, 80) ?? "unknown",
+      transactionReference: this.safeString(refund.transaction?.reference, 120)
+    }));
   }
 
   private toPaystackException(responseStatus: number, providerMessage: string | null) {

@@ -784,8 +784,11 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
+    // Conflict (not 422): under a send-vs-edit race the read may already
+    // reflect the winner's state, so every stale-state refusal here must carry
+    // the same 409 the CAS transaction below produces on a lost update.
     if (!editableStatuses.includes(invoiceWithCustomer.invoice.status)) {
-      throw new UnprocessableEntityException("Only draft invoices can be edited.");
+      throw new ConflictException("Only draft invoices can be edited.");
     }
 
     const normalized = this.normalizeInvoiceUpdateInput(input, invoiceWithCustomer.invoice);
@@ -823,11 +826,19 @@ export class InvoicesService {
           balanceDueKobo: totals.balanceDueKobo,
           updatedAt: new Date()
         })
-        .where(eq(invoices.id, invoiceWithCustomer.invoice.id))
+        .where(
+          and(
+            eq(invoices.id, invoiceWithCustomer.invoice.id),
+            eq(invoices.organisationId, context.activeOrganisation.id),
+            eq(invoices.status, "draft")
+          )
+        )
         .returning();
 
       if (!updated) {
-        throw new Error("Invoice update failed.");
+        throw new ConflictException(
+          "The invoice changed before the request completed. Refresh and try again."
+        );
       }
 
       if (normalized.lineItems) {
@@ -868,8 +879,9 @@ export class InvoicesService {
   ) {
     const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
 
+    // Conflict (not 422): same send-vs-send staleness argument as updateInvoice.
     if (invoiceWithCustomer.invoice.status !== "draft") {
-      throw new UnprocessableEntityException("Only draft invoices can be sent.");
+      throw new ConflictException("Only draft invoices can be sent.");
     }
 
     const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email);
@@ -1148,7 +1160,8 @@ export class InvoicesService {
         updatedAt: cancelledAt
       },
       reason: trimmedReason,
-      toStatus: "cancelled"
+      toStatus: "cancelled",
+      expectedFromStatuses: [...cancelableStatuses]
     });
 
     return this.getInvoice(context, invoiceId);
@@ -1173,7 +1186,8 @@ export class InvoicesService {
         voidedAt
       },
       reason: trimmedReason,
-      toStatus: "void"
+      toStatus: "void",
+      expectedFromStatuses: [...voidableStatuses]
     });
 
     return this.getInvoice(context, invoiceId);
@@ -1193,29 +1207,30 @@ export class InvoicesService {
     const publicInvoice = await this.requirePublicInvoice(publicToken);
     const displayStatus = this.displayStatus(publicInvoice.invoice);
 
-    const { occurredAt, viewCount } = await this.communicationsService.recordInvoiceViewEvent(
-      publicInvoice.invoice.organisationId,
-      publicInvoice.invoice.id
-    );
+    // View timestamps are owned by recordInvoiceViewEvent (COALESCE keeps the
+    // earliest). This lifecycle step must only flip status, never rewrite
+    // viewedAt, so concurrent first views cannot replace the true timestamp.
+    const { occurredAt, viewCount, firstViewedAt, lastViewedAt } =
+      await this.communicationsService.recordInvoiceViewEvent(
+        publicInvoice.invoice.organisationId,
+        publicInvoice.invoice.id
+      );
 
     if (publicInvoice.invoice.status !== "sent" || displayStatus === "overdue") {
       return {
         success: true,
         viewCount,
-        firstViewedAt: publicInvoice.invoice.viewedAt ?? occurredAt,
-        lastViewedAt: occurredAt
+        firstViewedAt,
+        lastViewedAt
       };
     }
-
-    const viewedAt = publicInvoice.invoice.viewedAt ?? occurredAt;
 
     await this.databaseService.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(invoices)
         .set({
           status: "viewed",
-          viewedAt,
-          updatedAt: viewedAt
+          updatedAt: occurredAt
         })
         .where(and(eq(invoices.id, publicInvoice.invoice.id), eq(invoices.status, "sent")))
         .returning();
@@ -1250,7 +1265,7 @@ export class InvoicesService {
       });
     });
 
-    return { success: true, viewCount, firstViewedAt: viewedAt, lastViewedAt: viewedAt };
+    return { success: true, viewCount, firstViewedAt, lastViewedAt };
   }
 
   async initializePublicInvoicePayment(publicToken: string) {
@@ -1367,6 +1382,7 @@ export class InvoicesService {
       reason: string;
       toStatus: InvoiceStatusValue;
       expectedFromStatus?: InvoiceStatusValue;
+      expectedFromStatuses?: InvoiceStatusValue[];
     }
   ) {
     await this.databaseService.db.transaction(async (tx) => {
@@ -1377,6 +1393,8 @@ export class InvoicesService {
 
       if (input.expectedFromStatus) {
         conditions.push(eq(invoices.status, input.expectedFromStatus));
+      } else if (input.expectedFromStatuses?.length) {
+        conditions.push(inArray(invoices.status, input.expectedFromStatuses));
       }
 
       const [updated] = await tx
@@ -1386,7 +1404,7 @@ export class InvoicesService {
         .returning();
 
       if (!updated) {
-        if (input.expectedFromStatus) {
+        if (input.expectedFromStatus || input.expectedFromStatuses?.length) {
           throw new ConflictException(
             "The invoice changed before the request completed. Refresh and try again."
           );

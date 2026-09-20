@@ -7,27 +7,22 @@ import { PublicInvoicesController } from "./public-invoices.controller";
 describe("PublicInvoicesController", () => {
   it("does not require auth guards for public invoice endpoints", () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, PublicInvoicesController)).toBeUndefined();
-    expect(
-      Reflect.getMetadata(GUARDS_METADATA, PublicInvoicesController.prototype.getPublicInvoice)
-    ).toBeUndefined();
-    expect(
-      Reflect.getMetadata(
-        GUARDS_METADATA,
-        PublicInvoicesController.prototype.markPublicInvoiceViewed
-      )
-    ).toBeUndefined();
-    expect(
-      Reflect.getMetadata(
-        GUARDS_METADATA,
-        PublicInvoicesController.prototype.initializePublicInvoicePayment
-      )
-    ).toBeUndefined();
-    expect(
-      Reflect.getMetadata(
-        GUARDS_METADATA,
-        PublicInvoicesController.prototype.verifyPublicInvoicePayment
-      )
-    ).toBeUndefined();
+    for (const method of [
+      PublicInvoicesController.prototype.getPublicInvoice,
+      PublicInvoicesController.prototype.markPublicInvoiceViewed,
+      PublicInvoicesController.prototype.initializePublicInvoicePayment,
+      PublicInvoicesController.prototype.verifyPublicInvoicePayment
+    ]) {
+      const guards: unknown[] =
+        Reflect.getMetadata(GUARDS_METADATA, method) ?? [];
+      const names = guards.map((guard) =>
+        typeof guard === "function" ? guard.name : String(guard)
+      );
+      // Rate limiting is allowed on public routes; authentication is not.
+      expect(names).not.toContain("JwtAuthGuard");
+      expect(names).not.toContain("RolesGuard");
+      expect(names).toContain("ThrottlerGuard");
+    }
   });
 
   it("delegates public invoice requests to the invoice service", () => {
