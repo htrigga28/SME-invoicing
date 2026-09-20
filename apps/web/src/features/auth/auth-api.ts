@@ -1,6 +1,6 @@
 import { apiGet, apiRequest } from "@/lib/api";
 
-import type { AuthResponse, BusinessProfile, MeResponse } from "./types";
+import type { AuthResponse, BusinessProfile, MeResponse, OrganisationsResponse } from "./types";
 
 export type RegisterInput = {
   name: string;
@@ -35,8 +35,21 @@ export function login(input: LoginInput) {
   });
 }
 
-export function getMe(accessToken: string) {
-  return apiGet<MeResponse>("/me", { accessToken });
+export function getMe(accessToken: string, organisationId?: string | null) {
+  return apiGet<MeResponse>("/me", { accessToken, organisationId });
+}
+
+export function getOrganisations(accessToken: string, organisationId?: string | null) {
+  return apiGet<OrganisationsResponse>("/me/organisations", { accessToken, organisationId });
+}
+
+export function selectOrganisation(accessToken: string, organisationId: string) {
+  return apiRequest<MeResponse>("/session/organisation", {
+    method: "POST",
+    accessToken,
+    organisationId,
+    body: { organisationId }
+  });
 }
 
 export function getBusinessProfile(accessToken: string) {
@@ -54,9 +67,18 @@ export function updateBusinessProfile(accessToken: string, input: BusinessProfil
   );
 }
 
-export function logout(refreshToken: string) {
+export function refresh(legacyRefreshToken?: string) {
+  // Cookie-authenticated: the HttpOnly refresh cookie travels with the
+  // request, so the long-lived credential never passes through JavaScript.
+  return apiRequest<{ accessToken: string }>("/auth/refresh", {
+    method: "POST",
+    body: legacyRefreshToken ? { refreshToken: legacyRefreshToken } : {}
+  });
+}
+
+export function logout() {
   return apiRequest<{ success: true }>("/auth/logout", {
     method: "POST",
-    body: { refreshToken }
+    body: {}
   });
 }

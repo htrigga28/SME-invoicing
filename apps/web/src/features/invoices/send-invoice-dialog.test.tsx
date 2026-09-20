@@ -99,4 +99,18 @@ describe("SendInvoiceDialog", () => {
     expect(screen.getByText("Resend INV-000007?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Resend email" })).toBeInTheDocument();
   });
+
+  it("moves initial focus into the dialog", () => {
+    renderDialog();
+
+    expect(screen.getByLabelText("Recipient email addresses")).toHaveFocus();
+  });
+
+  it("renders a native dialog with modal semantics", () => {
+    renderDialog();
+
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
 });

@@ -10,7 +10,7 @@ import { FieldError, FormField, FieldLabel, Input } from "@/components/ui/form";
 
 import { login } from "./auth-api";
 import { getOnboardingPath } from "./onboarding";
-import { setStoredSession } from "./session";
+import { scrubLegacyStoredSession, setStoredOrganisationId, setStoredSession } from "./session";
 import { isSubmitDisabled, validateLoginForm } from "./validation";
 
 export function LoginForm() {
@@ -34,10 +34,11 @@ export function LoginForm() {
 
     try {
       const response = await login(form);
-      setStoredSession({
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken
-      });
+      // The API also sets the HttpOnly refresh cookie; only the
+      // short-lived access token is kept here, in memory.
+      setStoredSession({ accessToken: response.accessToken });
+      setStoredOrganisationId(response.activeOrganisation.id);
+      scrubLegacyStoredSession();
       router.push(getOnboardingPath(response.onboardingStep));
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Login failed.");

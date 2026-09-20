@@ -9,7 +9,7 @@ import { FieldError, FieldHint, FieldLabel, FormField, Input } from "@/component
 import { Button } from "@/components/ui/button";
 
 import { register } from "./auth-api";
-import { setStoredSession } from "./session";
+import { scrubLegacyStoredSession, setStoredOrganisationId, setStoredSession } from "./session";
 import { isSubmitDisabled, validateRegisterForm } from "./validation";
 
 export function RegisterForm() {
@@ -41,10 +41,9 @@ export function RegisterForm() {
 
     try {
       const response = await register(form);
-      setStoredSession({
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken
-      });
+      setStoredSession({ accessToken: response.accessToken });
+      setStoredOrganisationId(response.activeOrganisation.id);
+      scrubLegacyStoredSession();
       router.push("/onboarding/business");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Registration failed.");

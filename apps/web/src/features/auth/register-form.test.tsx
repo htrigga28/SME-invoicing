@@ -7,6 +7,8 @@ import { RegisterForm } from "./register-form";
 const push = vi.fn();
 const register = vi.fn();
 const setStoredSession = vi.fn();
+const setStoredOrganisationId = vi.fn();
+const scrubLegacyStoredSession = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push })
@@ -17,7 +19,9 @@ vi.mock("./auth-api", () => ({
 }));
 
 vi.mock("./session", () => ({
-  setStoredSession: (...args: unknown[]) => setStoredSession(...args)
+  setStoredSession: (...args: unknown[]) => setStoredSession(...args),
+  setStoredOrganisationId: (...args: unknown[]) => setStoredOrganisationId(...args),
+  scrubLegacyStoredSession: () => scrubLegacyStoredSession()
 }));
 
 afterEach(() => {
@@ -40,7 +44,7 @@ describe("RegisterForm", () => {
   it("stores the session and advances to business onboarding", async () => {
     register.mockResolvedValue({
       accessToken: "access-token",
-      refreshToken: "refresh-token",
+      activeOrganisation: { id: "org-1" },
       onboardingStep: "business_profile"
     });
     render(<RegisterForm />);
@@ -62,9 +66,10 @@ describe("RegisterForm", () => {
       })
     );
     expect(setStoredSession).toHaveBeenCalledWith({
-      accessToken: "access-token",
-      refreshToken: "refresh-token"
+      accessToken: "access-token"
     });
+    expect(setStoredOrganisationId).toHaveBeenCalledWith("org-1");
+    expect(scrubLegacyStoredSession).toHaveBeenCalledOnce();
     expect(push).toHaveBeenCalledWith("/onboarding/business");
   });
 });

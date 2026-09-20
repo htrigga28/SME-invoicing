@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -65,6 +65,8 @@ export function SendInvoiceDialog({
 }) {
   const titleId = useId();
   const descriptionId = useId();
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
   const [to, setTo] = useState(defaultToEmail);
   const [cc, setCc] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
@@ -80,13 +82,81 @@ export function SendInvoiceDialog({
   }, [open, defaultToEmail, defaultSubject]);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+
+    if (open) {
+      triggerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (!dialog.open) {
+        if (typeof dialog.showModal === "function") {
+          try {
+            dialog.showModal();
+          } catch {
+            dialog.setAttribute("open", "");
+          }
+        } else {
+          dialog.setAttribute("open", "");
+        }
+      }
+      const firstInput = dialog.querySelector("input");
+      if (firstInput instanceof HTMLElement) {
+        firstInput.focus();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    return () => {
+      triggerRef.current?.focus?.();
+      triggerRef.current = null;
+    };
+  }, [open ]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         onCancel();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (focusable.length === 0) {
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
@@ -118,12 +188,16 @@ export function SendInvoiceDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--dialog-backdrop)] px-4 py-6 backdrop-blur-sm">
-      <section
+      <dialog
+        ref={dialogRef}
         aria-describedby={descriptionId}
         aria-labelledby={titleId}
         aria-modal="true"
         className="w-full max-w-md rounded-[var(--radius-card)] border border-[var(--border-default)] bg-[var(--surface-overlay)] p-5"
-        role="dialog"
+        onCancel={(event) => {
+          event.preventDefault();
+          onCancel();
+        }}
       >
         <h2 className="text-lg font-semibold text-[var(--text-primary)]" id={titleId}>
           {mode === "send" ? `Send ${invoiceNumber}?` : `Resend ${invoiceNumber}?`}
@@ -194,7 +268,7 @@ export function SendInvoiceDialog({
             </Button>
           </div>
         </form>
-      </section>
+      </dialog>
     </div>
   );
 }
