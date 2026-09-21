@@ -1234,7 +1234,7 @@ export async function seedDemo() {
         }[] = [
           {
             invoiceNumber: "INV-000007",
-            providerMessageId: "<demo-t021-000007@relay.brevo.com>",
+            providerMessageId: "demo-t021-000007-email-id",
             idempotencyKey: "demo-t021-000007-key",
             toRecipients: ["accounts@example.com"],
             ccRecipients: [],
@@ -1243,7 +1243,7 @@ export async function seedDemo() {
             acceptedAt: new Date(now.getTime() - 2 * dayMs),
             events: [
               {
-                eventType: "request",
+                eventType: "email.sent",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 2 * dayMs)
               }
@@ -1252,7 +1252,7 @@ export async function seedDemo() {
           },
           {
             invoiceNumber: "INV-000008",
-            providerMessageId: "<demo-t021-000008@relay.brevo.com>",
+            providerMessageId: "demo-t021-000008-email-id",
             idempotencyKey: "demo-t021-000008-key",
             toRecipients: ["bounce@example.com"],
             ccRecipients: [],
@@ -1263,12 +1263,12 @@ export async function seedDemo() {
             failureReason: "The email address bounced. Check the recipient and try again.",
             events: [
               {
-                eventType: "request",
+                eventType: "email.sent",
                 email: "bounce@example.com",
                 occurredAt: new Date(now.getTime() - 3 * dayMs)
               },
               {
-                eventType: "hard_bounce",
+                eventType: "email.bounced",
                 email: "bounce@example.com",
                 occurredAt: new Date(now.getTime() - 3 * dayMs + 5 * 60 * 1000)
               }
@@ -1277,7 +1277,7 @@ export async function seedDemo() {
           },
           {
             invoiceNumber: "INV-000013",
-            providerMessageId: "<demo-t021-000013@relay.brevo.com>",
+            providerMessageId: "demo-t021-000013-email-id",
             idempotencyKey: "demo-t021-000013-key",
             toRecipients: ["accounts@example.com"],
             ccRecipients: [],
@@ -1287,12 +1287,12 @@ export async function seedDemo() {
             deliveredAt: new Date(now.getTime() - 4 * dayMs + 2 * 60 * 1000),
             events: [
               {
-                eventType: "request",
+                eventType: "email.sent",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 4 * dayMs)
               },
               {
-                eventType: "delivered",
+                eventType: "email.delivered",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 4 * dayMs + 2 * 60 * 1000)
               }
@@ -1306,7 +1306,7 @@ export async function seedDemo() {
           },
           {
             invoiceNumber: "INV-000011",
-            providerMessageId: "<demo-t021-000011@relay.brevo.com>",
+            providerMessageId: "demo-t021-000011-email-id",
             idempotencyKey: "demo-t021-000011-key",
             toRecipients: ["accounts@example.com"],
             ccRecipients: [],
@@ -1316,12 +1316,12 @@ export async function seedDemo() {
             deliveredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000),
             events: [
               {
-                eventType: "request",
+                eventType: "email.sent",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 18 * dayMs)
               },
               {
-                eventType: "delivered",
+                eventType: "email.delivered",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000)
               }
@@ -1333,7 +1333,7 @@ export async function seedDemo() {
           },
           {
             invoiceNumber: "INV-000025",
-            providerMessageId: "<demo-t021-000025@relay.brevo.com>",
+            providerMessageId: "demo-t021-000025-email-id",
             idempotencyKey: "demo-t021-000025-key",
             toRecipients: ["accounts@example.com"],
             ccRecipients: ["bounce@example.com"],
@@ -1344,17 +1344,17 @@ export async function seedDemo() {
             failureReason: "1 of 2 recipients failed delivery. See the activity timeline for the affected addresses.",
             events: [
               {
-                eventType: "request",
+                eventType: "email.sent",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 1 * dayMs)
               },
               {
-                eventType: "delivered",
+                eventType: "email.delivered",
                 email: "accounts@example.com",
                 occurredAt: new Date(now.getTime() - 1 * dayMs + 2 * 60 * 1000)
               },
               {
-                eventType: "hard_bounce",
+                eventType: "email.bounced",
                 email: "bounce@example.com",
                 occurredAt: new Date(now.getTime() - 1 * dayMs + 10 * 60 * 1000)
               }
@@ -1396,7 +1396,7 @@ export async function seedDemo() {
               customerId: invoice.customerId,
               purpose: "invoice_delivery",
               channel: "email",
-              provider: "brevo",
+              provider: "resend",
               subject: scenario.subject,
               toRecipients: scenario.toRecipients,
               ccRecipients: scenario.ccRecipients,
@@ -1423,15 +1423,15 @@ export async function seedDemo() {
           const recipientOutcomes = new Map<string, { status: "accepted" | "delivered" | "failed"; at: Date; failureReason: string | null }>();
 
           for (const event of scenario.events) {
-            if (event.eventType === "request") {
+            if (event.eventType === "email.sent") {
               continue;
             }
 
             recipientOutcomes.set(event.email, {
-              status: event.eventType === "delivered" ? "delivered" : "failed",
+              status: event.eventType === "email.delivered" ? "delivered" : "failed",
               at: event.occurredAt,
               failureReason:
-                event.eventType === "delivered" ? null : (scenario.failureReason ?? null)
+                event.eventType === "email.delivered" ? null : (scenario.failureReason ?? null)
             });
           }
 
@@ -1490,8 +1490,8 @@ export async function seedDemo() {
                 organisationId: organisation.id,
                 communicationId,
                 invoiceId: invoice.id,
-                provider: "brevo",
-                providerEventKey: `${scenario.providerMessageId}::${event.eventType}::${Math.floor(event.occurredAt.getTime() / 1000)}::${event.email}`,
+                provider: "resend",
+                providerEventKey: `resend:${scenario.providerMessageId}:${event.eventType}:${Math.floor(event.occurredAt.getTime() / 1000)}:${event.email}`,
                 eventType: event.eventType,
                 occurredAt: event.occurredAt,
                 metadataRedacted: { seed: "demo_communication_event", email: event.email },

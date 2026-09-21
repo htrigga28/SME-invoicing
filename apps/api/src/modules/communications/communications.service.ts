@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from "crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "crypto";
 import {
   BadGatewayException,
   BadRequestException,
@@ -27,7 +27,7 @@ import {
   type Invoice
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
-import { BrevoEmailProvider } from "./brevo-email.provider";
+import { RESEND_COMMUNICATION_TAG, ResendEmailProvider } from "./resend-email.provider";
 import {
   buildInvoiceEmailHtml,
   buildInvoiceEmailText,
@@ -64,34 +64,42 @@ export type SendInvoiceEmailInput = {
   subject?: string | undefined;
 };
 
-export type BrevoWebhookPayload = {
-  id?: unknown;
-  event?: unknown;
-  email?: unknown;
-  "message-id"?: unknown;
-  messageId?: unknown;
-  message_id?: unknown;
-  ts?: unknown;
-  ts_event?: unknown;
-  subject?: unknown;
-  "X-Mailin-custom"?: unknown;
-  "x-mailin-custom"?: unknown;
+export type ResendWebhookPayload = {
+  type?: unknown;
+  created_at?: unknown;
+  data?: {
+    email_id?: unknown;
+    message_id?: unknown;
+    from?: unknown;
+    to?: unknown;
+    subject?: unknown;
+    tags?: unknown;
+  } | null;
 };
 
-type MappedBrevoEvent = {
+export type ResendWebhookHeaders = {
+  svixId?: string | undefined;
+  svixTimestamp?: string | undefined;
+  svixSignature?: string | undefined;
+};
+
+type MappedResendEvent = {
   outcome: "accepted" | "delivered" | "deferred" | "failed" | "ignored";
   eventType: string;
 };
 
 type DatabaseTransaction = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
 
-type ParsedBrevoWebhookEvent = {
+type ParsedResendWebhookEvent = {
   correlationCommunicationId: string | null;
-  email: string | null;
+  /** Normalized recipient addresses impacted by this event. */
+  emails: string[];
   eventKey: string;
-  eventType: MappedBrevoEvent;
-  messageId: string | null;
+  eventType: MappedResendEvent;
+  /** Resend email_id; stored as the communication provider message ID. */
+  emailId: string | null;
   occurredAt: Date;
+  /** Svix message id; the authoritative webhook event identity. */
   providerEventId: string | null;
 };
 
@@ -120,14 +128,12 @@ const RECIPIENT_PREDECESSORS: Record<RecipientStatus, RecipientStatus[]> = {
 };
 
 const FAILURE_REASONS: Record<string, string> = {
-  hard_bounce: "The email address bounced. Check the recipient and try again.",
-  blocked: "The email was blocked by the email provider.",
-  invalid: "A recipient address was rejected as invalid.",
-  invalid_email: "A recipient address was rejected as invalid.",
+  "email.bounced": "The email address bounced. Check the recipient and try again.",
+  "email.failed": "The email provider reported a delivery failure.",
+  "email.complained": "The recipient marked the email as spam.",
   error: "The email provider reported an error."
 };
 
-const COMMUNICATION_ID_PREFIX = "lumina-communication:";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
@@ -163,30 +169,95 @@ export function aggregateRecipientStatuses(statuses: RecipientStatus[]): Communi
   return "in_progress";
 }
 
-export function mapBrevoEventType(rawEvent: string): MappedBrevoEvent {
-  const normalized = rawEvent.trim().toLowerCase().replace(/[\s-]+/g, "_");
+export function mapResendEventType(rawEvent: string): MappedResendEvent {
+  const normalized = rawEvent.trim().toLowerCase();
 
   switch (normalized) {
-    case "request":
-    case "sent":
+    case "email.sent":
       return { outcome: "accepted", eventType: normalized };
+    case "email.delivered":
     case "delivered":
-    case "delivery":
-      return { outcome: "delivered", eventType: "delivered" };
+      return { outcome: "delivered", eventType: normalized };
+    case "email.delivery_delayed":
     case "deferred":
-    case "soft_bounce":
-    case "softbounce":
       return { outcome: "deferred", eventType: normalized };
-    case "hard_bounce":
-    case "hardbounce":
-    case "blocked":
-    case "invalid":
-    case "invalid_email":
-    case "error":
+    case "email.bounced":
+    case "email.failed":
+    case "email.complained":
+    case "failed":
       return { outcome: "failed", eventType: normalized };
+    case "email.opened":
+    case "email.clicked":
+      return { outcome: "ignored", eventType: normalized };
     default:
       return { outcome: "ignored", eventType: normalized || "unknown" };
   }
+}
+
+const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 300;
+
+/**
+ * Verifies a Resend (Svix) webhook signature without the Svix SDK, which
+ * ships ESM-only and cannot load under the API's CommonJS Jest runtime.
+ * Algorithm per the Svix verification spec: base64-decode the secret after
+ * stripping the `whsec_` prefix, HMAC-SHA256 over
+ * `<svix-id>.<svix-timestamp>.<raw-body>`, and compare against every
+ * versioned signature in `svix-signature` with a timing-safe equality check.
+ * Messages older or newer than the tolerance window are rejected.
+ */
+export function verifySvixSignature(
+  secret: string,
+  headers: { svixId?: string | undefined; svixTimestamp?: string | undefined; svixSignature?: string | undefined },
+  rawBody: string,
+  nowSeconds = Math.floor(Date.now() / 1000)
+): boolean {
+  const svixId = headers.svixId;
+  const svixTimestamp = headers.svixTimestamp;
+  const svixSignature = headers.svixSignature;
+
+  if (!svixId || !svixTimestamp || !svixSignature) {
+    return false;
+  }
+
+  const timestamp = Number(svixTimestamp);
+
+  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > SVIX_TIMESTAMP_TOLERANCE_SECONDS) {
+    return false;
+  }
+
+  let key: Buffer;
+
+  try {
+    const stripped = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
+    key = Buffer.from(stripped, "base64");
+
+    if (key.length === 0) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const expected = createHmac("sha256", key).update(`${svixId}.${svixTimestamp}.${rawBody}`).digest();
+  const candidates = svixSignature.split(" ");
+
+  for (const candidate of candidates) {
+    const comma = candidate.indexOf(",");
+    const encoded = comma >= 0 ? candidate.slice(comma + 1) : candidate;
+    let actual: Buffer;
+
+    try {
+      actual = Buffer.from(encoded, "base64");
+    } catch {
+      continue;
+    }
+
+    if (actual.length === expected.length && timingSafeEqual(actual, expected)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function maxTimestamp(values: (Date | null)[]): Date | null {
@@ -231,7 +302,7 @@ export class CommunicationsService {
   constructor(
     @Inject(DatabaseService) private readonly databaseService: DatabaseService,
     @Inject(ConfigService) private readonly configService: ConfigService,
-    @Inject(BrevoEmailProvider) private readonly brevoEmailProvider: BrevoEmailProvider,
+    @Inject(ResendEmailProvider) private readonly resendEmailProvider: ResendEmailProvider,
     @Inject(AuditLogService) private readonly auditLogService: AuditLogService
   ) {}
 
@@ -255,7 +326,7 @@ export class CommunicationsService {
       );
     }
 
-    if (!this.brevoEmailProvider.isConfigured()) {
+    if (!this.resendEmailProvider.isConfigured()) {
       throw new ServiceUnavailableException(
         "Email delivery is not configured. The invoice is issued and the public link can still be shared."
       );
@@ -294,8 +365,8 @@ export class CommunicationsService {
     let providerMessageId: string;
 
     try {
-      ({ providerMessageId } = await this.brevoEmailProvider.sendEmail({
-        fromEmail: this.brevoEmailProvider.getFromEmail()!,
+      ({ providerMessageId } = await this.resendEmailProvider.sendEmail({
+        fromEmail: this.resendEmailProvider.getFromEmail()!,
         fromName: `${input.content.businessName} via Lumina`,
         replyToEmail: input.content.businessEmail,
         to: recipients.to.map((email) => ({
@@ -467,7 +538,7 @@ export class CommunicationsService {
           customerId: input.customerId,
           purpose: "invoice_delivery",
           channel: "email",
-          provider: "brevo",
+          provider: "resend",
           subject,
           toRecipients: recipients.to,
           ccRecipients: recipients.cc,
@@ -507,7 +578,7 @@ export class CommunicationsService {
   }
 
   private retryClaimLeaseMs(): number {
-    const timeout = Number(this.configService.get<number>("BREVO_REQUEST_TIMEOUT_MS") ?? 15000);
+    const timeout = Number(this.configService.get<number>("RESEND_REQUEST_TIMEOUT_MS") ?? 15000);
     return Math.max(1000, timeout) + 5000;
   }
 
@@ -750,15 +821,26 @@ export class CommunicationsService {
     };
   }
 
-  async processBrevoWebhook(
-    secretHeader: string | undefined,
-    payload: BrevoWebhookPayload
-  ): Promise<{ received: true; duplicate?: boolean; ignored?: boolean; unknown?: boolean }> {
-    this.assertWebhookSecret(secretHeader);
+  async processResendWebhook(input: {
+    headers: ResendWebhookHeaders;
+    rawBody: string | Buffer;
+    payload: ResendWebhookPayload;
+  }): Promise<{ received: true; duplicate?: boolean; ignored?: boolean; unknown?: boolean }> {
+    const secret = this.configService.get<string>("RESEND_WEBHOOK_SECRET");
 
-    const parsed = this.parseBrevoWebhook(payload);
-    let communication = parsed.messageId
-      ? await this.findCommunicationByMessageId(parsed.messageId)
+    if (!secret) {
+      throw new ServiceUnavailableException("Email webhooks are not configured.");
+    }
+
+    const raw = typeof input.rawBody === "string" ? input.rawBody : input.rawBody.toString("utf8");
+
+    if (!verifySvixSignature(secret, input.headers, raw)) {
+      throw new UnauthorizedException("Invalid webhook signature.");
+    }
+
+    const parsed = this.parseResendWebhook(input.headers.svixId, input.payload);
+    let communication = parsed.emailId
+      ? await this.findCommunicationByMessageId(parsed.emailId)
       : null;
 
     if (!communication && parsed.correlationCommunicationId) {
@@ -766,7 +848,7 @@ export class CommunicationsService {
     }
 
     if (!parsed.providerEventId || !communication) {
-      await this.quarantineBrevoWebhook(
+      await this.quarantineResendWebhook(
         parsed,
         !parsed.providerEventId ? "invalid_provider_event_id" : "unmatched_communication"
       );
@@ -775,28 +857,29 @@ export class CommunicationsService {
         : { received: true, unknown: true };
     }
 
-    return this.processMatchedBrevoWebhook(communication.id, parsed);
+    return this.processMatchedResendWebhook(communication.id, parsed);
   }
 
-  private parseBrevoWebhook(payload: BrevoWebhookPayload): ParsedBrevoWebhookEvent {
-    const messageId = this.readMessageId(payload);
-    const correlationCommunicationId = this.readCommunicationCorrelation(payload);
-    const providerEventId = this.readProviderEventId(payload);
-    const email =
-      typeof payload.email === "string" && payload.email.trim()
-        ? payload.email.trim().toLowerCase()
-        : null;
-    const eventType = mapBrevoEventType(typeof payload.event === "string" ? payload.event : "");
-    const occurredAt = this.readOccurredAt(payload);
+  private parseResendWebhook(
+    svixId: string | undefined,
+    payload: ResendWebhookPayload
+  ): ParsedResendWebhookEvent {
+    const providerEventId = this.readSvixMessageId(svixId);
+    const data = payload.data ?? null;
+    const emailId = this.readResendEmailId(data);
+    const correlationCommunicationId = this.readResendCorrelation(data);
+    const emails = this.readResendRecipients(data);
+    const eventType = mapResendEventType(typeof payload.type === "string" ? payload.type : "");
+    const occurredAt = this.readResendOccurredAt(payload.created_at);
     const eventKey = providerEventId
-      ? `brevo:${providerEventId}`
-      : `brevo:invalid:${createHash("sha256")
+      ? `resend:${providerEventId}`
+      : `resend:invalid:${createHash("sha256")
           .update(
             JSON.stringify({
               correlationCommunicationId,
-              email,
+              emails,
               eventType: eventType.eventType,
-              messageId,
+              emailId,
               occurredAt: occurredAt.toISOString()
             })
           )
@@ -804,38 +887,38 @@ export class CommunicationsService {
 
     return {
       correlationCommunicationId,
-      email,
+      emails,
       eventKey,
       eventType,
-      messageId,
+      emailId,
       occurredAt,
       providerEventId
     };
   }
 
-  private async quarantineBrevoWebhook(
-    event: ParsedBrevoWebhookEvent,
+  private async quarantineResendWebhook(
+    event: ParsedResendWebhookEvent,
     reason: "invalid_provider_event_id" | "unmatched_communication"
   ): Promise<void> {
     await this.databaseService.db
       .insert(communicationEventQuarantine)
       .values({
-        provider: "brevo",
+        provider: "resend",
         providerEventId: event.providerEventId,
         providerEventKey: event.eventKey,
-        providerMessageId: event.messageId,
+        providerMessageId: event.emailId,
         correlationCommunicationId: event.correlationCommunicationId,
         eventType: event.eventType.eventType,
         occurredAt: event.occurredAt,
-        recipientEmail: event.email,
+        recipientEmail: event.emails[0] ?? null,
         reason
       })
       .onConflictDoNothing({ target: communicationEventQuarantine.providerEventKey });
   }
 
-  private async processMatchedBrevoWebhook(
+  private async processMatchedResendWebhook(
     communicationId: string,
-    event: ParsedBrevoWebhookEvent
+    event: ParsedResendWebhookEvent
   ): Promise<{ received: true; duplicate?: boolean; ignored?: boolean; unknown?: boolean }> {
     const result = await this.databaseService.db.transaction(async (tx) => {
       const communication = await this.lockCommunication(tx, communicationId);
@@ -850,11 +933,11 @@ export class CommunicationsService {
           organisationId: communication.organisationId,
           communicationId: communication.id,
           invoiceId: communication.invoiceId,
-          provider: "brevo",
+          provider: "resend",
           providerEventKey: event.eventKey,
           eventType: event.eventType.eventType,
           occurredAt: event.occurredAt,
-          metadataRedacted: event.email ? { email: event.email } : null
+          metadataRedacted: event.emails.length > 0 ? { emails: event.emails } : null
         })
         .onConflictDoNothing({ target: communicationEvents.providerEventKey })
         .returning({ id: communicationEvents.id });
@@ -877,20 +960,32 @@ export class CommunicationsService {
         return { response: { received: true } as const, audit: null };
       }
 
-      if (event.email) {
+      // Resend reports every impacted recipient in one event. Advance each
+      // known recipient row; an event that names no known recipient must not
+      // change delivery truth.
+      let foundRecipient = false;
+      let advancedAny = false;
+
+      for (const address of event.emails) {
         const recipient = await this.findCommunicationRecipientInTransaction(
           tx,
           communication.id,
-          event.email
+          address
         );
 
         if (recipient) {
-          const advanced = await this.tryAdvanceRecipient(tx, recipient, event.eventType, event.occurredAt);
-          const aggregate = advanced
-            ? await this.refreshCommunicationAggregate(tx, communication)
-            : null;
-          return { response: { received: true } as const, audit: aggregate };
+          foundRecipient = true;
+          advancedAny =
+            (await this.tryAdvanceRecipient(tx, recipient, event.eventType, event.occurredAt)) ||
+            advancedAny;
         }
+      }
+
+      if (foundRecipient) {
+        const aggregate = advancedAny
+          ? await this.refreshCommunicationAggregate(tx, communication)
+          : null;
+        return { response: { received: true } as const, audit: aggregate };
       }
 
       const recipients = await this.listRecipientsInTransaction(tx, communication.id);
@@ -904,7 +999,7 @@ export class CommunicationsService {
 
       // A known communication with recipient rows must not let an unknown or
       // absent recipient event change parent delivery truth.
-      this.logger.warn({ communicationId: communication.id, event: "brevo_webhook_unknown_recipient" });
+      this.logger.warn({ communicationId: communication.id, event: "resend_webhook_unknown_recipient" });
       return { response: { received: true } as const, audit: null };
     });
 
@@ -1100,7 +1195,7 @@ export class CommunicationsService {
   private async tryAdvanceRecipient(
     tx: DatabaseTransaction,
     recipient: CommunicationRecipient,
-    mapped: MappedBrevoEvent,
+    mapped: MappedResendEvent,
     occurredAt: Date
   ): Promise<boolean> {
     const nextStatus =
@@ -1266,7 +1361,7 @@ export class CommunicationsService {
           organisationId: communication.organisationId,
           communicationId: communication.id,
           invoiceId: communication.invoiceId,
-          provider: "brevo",
+          provider: "resend",
           providerEventKey: event.providerEventKey,
           eventType: event.eventType,
           occurredAt: event.occurredAt,
@@ -1275,7 +1370,7 @@ export class CommunicationsService {
         .onConflictDoNothing({ target: communicationEvents.providerEventKey })
         .returning({ id: communicationEvents.id });
 
-      if (inserted.length > 0 && mapBrevoEventType(event.eventType).outcome !== "ignored") {
+      if (inserted.length > 0 && mapResendEventType(event.eventType).outcome !== "ignored") {
         const recipient = event.recipientEmail
           ? await this.findCommunicationRecipientInTransaction(
               tx,
@@ -1289,7 +1384,7 @@ export class CommunicationsService {
             (await this.tryAdvanceRecipient(
               tx,
               recipient,
-              mapBrevoEventType(event.eventType),
+              mapResendEventType(event.eventType),
               event.occurredAt
             )) || recipientChanged;
         }
@@ -1313,7 +1408,7 @@ export class CommunicationsService {
   private async tryAdvanceCommunication(
     tx: DatabaseTransaction,
     communication: Communication,
-    mapped: MappedBrevoEvent,
+    mapped: MappedResendEvent,
     occurredAt: Date
   ): Promise<Parameters<AuditLogService["create"]>[0] | null> {
     const nextStatus =
@@ -1390,58 +1485,80 @@ export class CommunicationsService {
     return row ?? null;
   }
 
-  private readMessageId(payload: BrevoWebhookPayload): string | null {
-    const candidates = [payload["message-id"], payload.messageId, payload.message_id];
+  private readSvixMessageId(svixId: string | undefined): string | null {
+    if (typeof svixId !== "string") {
+      return null;
+    }
 
-    for (const candidate of candidates) {
-      if (typeof candidate === "string" && candidate.trim()) {
-        return candidate.trim();
+    const value = svixId.trim();
+
+    if (value && value.length <= 200 && /^[A-Za-z0-9._:-]+$/.test(value)) {
+      return value;
+    }
+
+    return null;
+  }
+
+  private readResendEmailId(data: ResendWebhookPayload["data"]): string | null {
+    const candidate = data?.email_id;
+
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+
+    return null;
+  }
+
+  private readResendCorrelation(data: ResendWebhookPayload["data"]): string | null {
+    const tags = data?.tags;
+
+    if (!Array.isArray(tags)) {
+      return null;
+    }
+
+    for (const tag of tags) {
+      if (
+        typeof tag === "object" &&
+        tag !== null &&
+        (tag as { name?: unknown }).name === RESEND_COMMUNICATION_TAG &&
+        typeof (tag as { value?: unknown }).value === "string" &&
+        UUID_PATTERN.test((tag as { value: string }).value)
+      ) {
+        return (tag as { value: string }).value;
       }
     }
 
     return null;
   }
 
-  private readProviderEventId(payload: BrevoWebhookPayload): string | null {
-    if (typeof payload.id === "number" && Number.isSafeInteger(payload.id) && payload.id >= 0) {
-      return String(payload.id);
-    }
-
-    if (typeof payload.id === "string") {
-      const value = payload.id.trim();
-      if (value && value.length <= 200 && /^[A-Za-z0-9._:-]+$/.test(value)) {
-        return value;
-      }
-    }
-
-    return null;
-  }
-
-  private readCommunicationCorrelation(payload: BrevoWebhookPayload): string | null {
-    const candidates = [payload["X-Mailin-custom"], payload["x-mailin-custom"]];
+  private readResendRecipients(data: ResendWebhookPayload["data"]): string[] {
+    const to = data?.to;
+    const candidates = Array.isArray(to) ? to : typeof to === "string" ? [to] : [];
+    const seen = new Set<string>();
+    const emails: string[] = [];
 
     for (const candidate of candidates) {
-      if (typeof candidate !== "string" || !candidate.startsWith(COMMUNICATION_ID_PREFIX)) {
+      if (typeof candidate !== "string") {
         continue;
       }
 
-      const communicationId = candidate.slice(COMMUNICATION_ID_PREFIX.length);
-      if (UUID_PATTERN.test(communicationId)) {
-        return communicationId;
+      const email = candidate.trim().toLowerCase();
+
+      if (email && !seen.has(email)) {
+        seen.add(email);
+        emails.push(email);
       }
     }
 
-    return null;
+    return emails;
   }
 
-  private readOccurredAt(payload: BrevoWebhookPayload): Date {
-    const candidates = [payload.ts_event, payload.ts];
+  private readResendOccurredAt(createdAt: unknown): Date {
+    if (typeof createdAt === "string" && createdAt.trim()) {
+      const parsed = new Date(createdAt);
 
-    for (const candidate of candidates) {
-      const seconds = typeof candidate === "string" ? Number(candidate) : candidate;
-
-      if (typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0) {
-        return new Date(seconds * 1000);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
       }
     }
 
@@ -1449,7 +1566,7 @@ export class CommunicationsService {
   }
 
   private assertWebhookSecret(secretHeader: string | undefined): void {
-    const expected = this.configService.get<string>("BREVO_WEBHOOK_SECRET");
+    const expected = this.configService.get<string>("RESEND_WEBHOOK_SECRET");
 
     if (!expected) {
       throw new UnauthorizedException("Email webhook is not configured.");

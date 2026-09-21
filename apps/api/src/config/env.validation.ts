@@ -13,18 +13,17 @@ const envSchema = z.object({
   FRONTEND_APP_URL: z.string().url().optional(),
   MARKETING_SITE_URL: z.string().url().optional(),
   API_PUBLIC_URL: z.string().url().optional(),
-  BREVO_API_KEY: z.string().optional(),
-  BREVO_BASE_URL: z.string().url().optional(),
-  BREVO_FROM_EMAIL: z.string().email().optional(),
-  BREVO_SENDER_EMAIL: z.string().email().optional(),
-  BREVO_WEBHOOK_SECRET: z.string().min(1).optional(),
-  BREVO_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().email().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
+  RESEND_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
   TRUST_PROXY: z.string().min(1).default("loopback"),
   // Compat window for pre-cookie clients that still POST the refresh token in
-  // the body. New clients use the HttpOnly cookie. Removal is tracked as a
-  // follow-up; every legacy use is logged while enabled.
-  LEGACY_REFRESH_BODY_ENABLED: z.string().default("true")
+  // the body. New clients use the HttpOnly cookie. Disabled by default: enable
+  // temporarily only while pre-cookie clients remain, then remove the
+  // body-token flow entirely. Every legacy use is logged while enabled.
+  LEGACY_REFRESH_BODY_ENABLED: z.string().default("false")
 });
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -32,9 +31,9 @@ export function validateEnv(config: Record<string, unknown>) {
 
   // Fail-closed in every environment: outbound email without the webhook
   // secret means every delivery event is rejected and silently lost.
-  if ((parsed.BREVO_API_KEY || parsed.BREVO_FROM_EMAIL) && !parsed.BREVO_WEBHOOK_SECRET) {
+  if ((parsed.RESEND_API_KEY || parsed.RESEND_FROM_EMAIL) && !parsed.RESEND_WEBHOOK_SECRET) {
     throw new Error(
-      "BREVO_WEBHOOK_SECRET is required when Brevo sending is configured (BREVO_API_KEY/BREVO_FROM_EMAIL)."
+      "RESEND_WEBHOOK_SECRET is required when Resend sending is configured (RESEND_API_KEY/RESEND_FROM_EMAIL)."
     );
   }
 

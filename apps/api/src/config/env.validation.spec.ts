@@ -74,22 +74,22 @@ describe("validateEnv", () => {
     ).toThrow(/JWT_ACCESS_SECRET must be at least 32 characters/);
   });
 
-  it("requires the Brevo webhook secret whenever sending is configured", () => {
+  it("requires the Resend webhook secret whenever sending is configured", () => {
     expect(() =>
       validateEnv({
         NODE_ENV: "test",
-        BREVO_API_KEY: "brevo-key",
-        BREVO_FROM_EMAIL: "billing@example.test"
+        RESEND_API_KEY: "re_test_key",
+        RESEND_FROM_EMAIL: "billing@example.test"
       })
-    ).toThrow(/BREVO_WEBHOOK_SECRET is required/);
+    ).toThrow(/RESEND_WEBHOOK_SECRET is required/);
     expect(
       validateEnv({
         NODE_ENV: "test",
-        BREVO_API_KEY: "brevo-key",
-        BREVO_FROM_EMAIL: "billing@example.test",
-        BREVO_WEBHOOK_SECRET: "webhook-secret"
+        RESEND_API_KEY: "re_test_key",
+        RESEND_FROM_EMAIL: "billing@example.test",
+        RESEND_WEBHOOK_SECRET: "whsec_dGVzdC13ZWJob29rLXNlY3JldA=="
       })
-    ).toMatchObject({ BREVO_WEBHOOK_SECRET: "webhook-secret" });
+    ).toMatchObject({ RESEND_WEBHOOK_SECRET: "whsec_dGVzdC13ZWJob29rLXNlY3JldA==" });
   });
 
   it("rejects identical production JWT secrets", () => {

@@ -838,7 +838,7 @@ export const communications = pgTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     purpose: varchar("purpose", { length: 40 }).notNull().default("invoice_delivery"),
     channel: varchar("channel", { length: 20 }).notNull().default("email"),
-    provider: varchar("provider", { length: 40 }).notNull().default("brevo"),
+    provider: varchar("provider", { length: 40 }).notNull().default("resend"),
     subject: varchar("subject", { length: 300 }),
     toRecipients: jsonb("to_recipients").$type<string[]>().notNull(),
     ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull(),
@@ -923,7 +923,7 @@ export const communicationEvents = pgTable(
     invoiceId: uuid("invoice_id")
       .notNull()
       .references(() => invoices.id, { onDelete: "cascade" }),
-    provider: varchar("provider", { length: 40 }).notNull().default("brevo"),
+    provider: varchar("provider", { length: 40 }).notNull().default("resend"),
     providerEventKey: varchar("provider_event_key", { length: 300 }).notNull().unique(),
     eventType: varchar("event_type", { length: 80 }).notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
@@ -943,7 +943,7 @@ export const communicationEvents = pgTable(
 );
 
 /**
- * Authenticated Brevo events that cannot yet be correlated to a communication.
+ * Authenticated Resend events that cannot yet be correlated to a communication.
  * This table deliberately stores only normalized routing fields, never raw
  * provider payloads or message content.
  */
@@ -951,7 +951,7 @@ export const communicationEventQuarantine = pgTable(
   "communication_event_quarantine",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    provider: varchar("provider", { length: 40 }).notNull().default("brevo"),
+    provider: varchar("provider", { length: 40 }).notNull().default("resend"),
     providerEventId: varchar("provider_event_id", { length: 200 }),
     providerEventKey: varchar("provider_event_key", { length: 300 }).notNull().unique(),
     providerMessageId: varchar("provider_message_id", { length: 200 }),

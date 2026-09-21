@@ -24,13 +24,17 @@ export type SendEmailInput = {
   htmlContent: string;
   textContent: string;
   tags: string[];
-  /** Stable internal ID echoed by Brevo in transactional webhooks. */
+  /**
+   * Stable internal ID sent to Resend as the `lumina_communication` tag and
+   * echoed back on webhook events for exact correlation.
+   */
   correlationId: string;
   /**
-   * Deterministic per-attempt idempotency key. Sent to Brevo as the documented
-   * batch `idempotencyKey` header value so provider-side retries of the same
-   * attempt cannot produce duplicate deliveries. Retries of an ambiguous
-   * attempt must reuse the same key rather than minting a new delivery.
+   * Deterministic per-attempt idempotency key. Sent to Resend as the
+   * `Idempotency-Key` request option (retained 24 hours) so retries of the
+   * same ambiguous attempt cannot produce duplicate deliveries. Retries of an
+   * uncertain attempt must reuse the same key with an identical payload
+   * rather than minting a new delivery.
    */
   idempotencyKey?: string | undefined;
 };
@@ -53,7 +57,7 @@ export type SendEmailResult = {
 };
 
 export interface EmailProvider {
-  readonly name: "brevo";
+  readonly name: "resend";
   isConfigured(): boolean;
   sendEmail(input: SendEmailInput): Promise<SendEmailResult>;
 }
