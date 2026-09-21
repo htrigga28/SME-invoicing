@@ -171,6 +171,7 @@ The Frankfurt region is usable for this portfolio deployment, but the API functi
 
    ```bash
    pnpm payments:reconcile-invoices
+   pnpm payments:backfill-provider-transaction-ids
    pnpm receipts:backfill
    ```
 

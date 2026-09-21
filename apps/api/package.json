@@ -18,6 +18,7 @@
     "db:test:migrate": "drizzle-kit migrate --config drizzle.test.config.ts",
     "db:seed": "tsx src/database/seed.ts",
     "payments:reconcile-invoices": "tsx src/scripts/reconcile-invoices.ts",
+    "payments:backfill-provider-transaction-ids": "tsx src/scripts/backfill-provider-transaction-ids.ts",
     "receipts:backfill": "tsx src/scripts/backfill-receipts.ts"
   },
   "dependencies": {
