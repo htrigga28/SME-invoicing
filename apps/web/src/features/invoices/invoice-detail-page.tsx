@@ -27,6 +27,7 @@ import {
   retryInvoiceEmailAttempt,
   sendInvoice,
   voidInvoice,
+  type ResendInvoiceEmailInput,
   type SendInvoiceEmailInput
 } from "./invoices-api";
 import { DeliveryBadge, InvoiceActivityTimeline } from "./invoice-activity";
@@ -81,6 +82,7 @@ export function InvoiceDetailContent({
   const [dialogAction, setDialogAction] = useState<DialogAction>(null);
   const [sendDialogMode, setSendDialogMode] = useState<SendDialogMode>(null);
   const [sendDialogError, setSendDialogError] = useState<string | null>(null);
+  const [forceResendConfirmationOpen, setForceResendConfirmationOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [isMutating, setIsMutating] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -233,7 +235,51 @@ export function InvoiceDetailContent({
       void loadActivity();
     } catch (retryError) {
       handleAuthError(retryError);
-      setError(retryError instanceof Error ? retryError.message : "Could not retry delivery.");
+      if (
+        isApiRequestError(retryError) &&
+        retryError.status === 409 &&
+        /idempotency window.*expired/i.test(retryError.message)
+      ) {
+        setForceResendConfirmationOpen(true);
+      } else {
+        setError(retryError instanceof Error ? retryError.message : "Could not retry delivery.");
+      }
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function handleForceResend() {
+    const lastCommunication = response?.delivery.lastCommunication;
+
+    if (!invoice || !lastCommunication) {
+      return;
+    }
+
+    const input: ResendInvoiceEmailInput = {
+      force: true,
+      to: lastCommunication.toRecipients,
+      cc: lastCommunication.ccRecipients,
+      ...(lastCommunication.subject === null ? {} : { subject: lastCommunication.subject })
+    };
+
+    setIsSending(true);
+    setError(null);
+    setSuccess(null);
+    setDeliveryNotice(null);
+
+    try {
+      const resendResponse = await resendInvoiceEmail(accessToken, invoice.id, input);
+      setResponse((current) =>
+        current ? { ...current, delivery: resendResponse.delivery } : current
+      );
+      setForceResendConfirmationOpen(false);
+      handleDeliveryResult(resendResponse.delivery, input.to?.[0]);
+      void loadActivity();
+    } catch (resendError) {
+      handleAuthError(resendError);
+      setForceResendConfirmationOpen(false);
+      setError(resendError instanceof Error ? resendError.message : "Could not resend the email.");
     } finally {
       setIsSending(false);
     }
@@ -678,6 +724,17 @@ export function InvoiceDetailContent({
           </SectionCard>
         </aside>
       </div>
+
+      <ConfirmDialog
+        confirmLabel="Send another email"
+        description="It may already have been delivered. Sending another email could result in a duplicate."
+        isLoading={isSending}
+        loadingLabel="Sending..."
+        onCancel={() => setForceResendConfirmationOpen(false)}
+        onConfirm={() => void handleForceResend()}
+        open={forceResendConfirmationOpen}
+        title="The original delivery can no longer be retried safely."
+      />
 
       <ConfirmDialog
         confirmLabel={dialogAction === "cancel" ? "Cancel invoice" : "Void invoice"}

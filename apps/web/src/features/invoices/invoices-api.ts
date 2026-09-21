@@ -66,6 +66,10 @@ export type SendInvoiceEmailInput = {
   subject?: string;
 };
 
+export type ResendInvoiceEmailInput = SendInvoiceEmailInput & {
+  force?: boolean;
+};
+
 export function sendInvoice(
   accessToken: string,
   invoiceId: string,
@@ -81,7 +85,7 @@ export function sendInvoice(
 export function resendInvoiceEmail(
   accessToken: string,
   invoiceId: string,
-  input: SendInvoiceEmailInput
+  input: ResendInvoiceEmailInput
 ) {
   return apiRequest<{ delivery: InvoiceDetailResponse["delivery"] }>(
     `/invoices/${encodeURIComponent(invoiceId)}/resend`,

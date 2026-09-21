@@ -2,6 +2,8 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiRequestError } from "@/lib/api";
+
 import { InvoiceDetailContent } from "./invoice-detail-page";
 import {
   getInvoice,
@@ -434,6 +436,60 @@ describe("InvoiceDetailContent delivery", () => {
     );
     expect(await screen.findByText("Invoice emailed.")).toBeInTheDocument();
     expect(resendInvoiceEmail).not.toHaveBeenCalled();
+  });
+
+  it("requires confirmation before forcing an expired uncertain delivery", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      delivery: {
+        ...invoiceResponse.delivery,
+        state: "uncertain",
+        message: "Delivery confirmation is uncertain.",
+        lastCommunication: {
+          ...invoiceResponse.delivery.lastCommunication!,
+          status: "submission_uncertain"
+        }
+      }
+    });
+    vi.mocked(retryInvoiceEmailAttempt).mockRejectedValue(
+      new ApiRequestError(
+        "The provider idempotency window for this attempt has expired. Send a new email attempt instead.",
+        409
+      )
+    );
+    vi.mocked(resendInvoiceEmail).mockResolvedValue({
+      delivery: { ...invoiceResponse.delivery, state: "accepted" }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More invoice actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Retry delivery" }));
+
+    const firstConfirmation = await screen.findByRole("dialog");
+    expect(
+      within(firstConfirmation).getByText(/Sending another email could result in a duplicate/)
+    ).toBeInTheDocument();
+    fireEvent.click(within(firstConfirmation).getByRole("button", { name: "Cancel" }));
+    expect(resendInvoiceEmail).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "More invoice actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Retry delivery" }));
+    const secondConfirmation = await screen.findByRole("dialog");
+    fireEvent.click(within(secondConfirmation).getByRole("button", { name: "Send another email" }));
+
+    await waitFor(() =>
+      expect(resendInvoiceEmail).toHaveBeenCalledWith("token", "invoice-1", {
+        force: true,
+        to: ["accounts@lagosbrightprints.test"],
+        cc: [],
+        subject: "Invoice INV-000007"
+      })
+    );
+    expect(
+      await screen.findByText("Invoice emailed to accounts@lagosbrightprints.test.")
+    ).toBeInTheDocument();
+    await waitFor(() => expect(getInvoiceActivity).toHaveBeenCalledTimes(2));
   });
 
   it("auto-opens the send dialog from the save-and-send flow", async () => {
