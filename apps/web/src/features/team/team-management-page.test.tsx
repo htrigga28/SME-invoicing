@@ -46,7 +46,8 @@ const me = {
     setupCompletedAt: "2026-01-01T00:00:00.000Z"
   },
   onboardingRequired: false,
-  onboardingStep: null
+  onboardingStep: null,
+  selectionRequired: false
 } satisfies MeResponse;
 
 beforeEach(() => {

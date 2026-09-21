@@ -1,6 +1,12 @@
 import { apiGet, apiRequest } from "@/lib/api";
 
-import type { AuthResponse, BusinessProfile, MeResponse, OrganisationsResponse } from "./types";
+import type {
+  AuthResponse,
+  BusinessProfile,
+  LoginResponse,
+  MeResponse,
+  OrganisationsResponse
+} from "./types";
 
 export type RegisterInput = {
   name: string;
@@ -29,7 +35,7 @@ export function register(input: RegisterInput) {
 }
 
 export function login(input: LoginInput) {
-  return apiRequest<AuthResponse>("/auth/login", {
+  return apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body: input
   });

@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { FieldError, FormField, FieldLabel, Input } from "@/components/ui/form";
 
-import { login } from "./auth-api";
+import { login, selectOrganisation } from "./auth-api";
 import { getOnboardingPath } from "./onboarding";
-import { scrubLegacyStoredSession, setStoredOrganisationId, setStoredSession } from "./session";
+import {
+  getStoredSession,
+  scrubLegacyStoredSession,
+  setStoredOrganisationId,
+  setStoredSession
+} from "./session";
+import type { OrganisationMembership } from "./types";
 import { isSubmitDisabled, validateLoginForm } from "./validation";
 
 export function LoginForm() {
@@ -19,6 +25,7 @@ export function LoginForm() {
   const [errors, setErrors] = useState<Partial<Record<keyof typeof form, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [workspaceChoices, setWorkspaceChoices] = useState<OrganisationMembership[] | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,14 +44,71 @@ export function LoginForm() {
       // The API also sets the HttpOnly refresh cookie; only the
       // short-lived access token is kept here, in memory.
       setStoredSession({ accessToken: response.accessToken });
-      setStoredOrganisationId(response.activeOrganisation.id);
       scrubLegacyStoredSession();
+
+      // Multi-workspace users choose explicitly; the API never selects a
+      // workspace silently on login.
+      if (response.selectionRequired) {
+        setWorkspaceChoices(response.organisations);
+        return;
+      }
+
+      setStoredOrganisationId(response.activeOrganisation.id);
       router.push(getOnboardingPath(response.onboardingStep));
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Login failed.");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleWorkspaceChoice(organisationId: string) {
+    setSubmitError(null);
+
+    try {
+      const session = getStoredSession();
+
+      if (!session) {
+        setSubmitError("Your session expired. Please log in again.");
+        setWorkspaceChoices(null);
+        return;
+      }
+
+      const response = await selectOrganisation(session.accessToken, organisationId);
+      setStoredOrganisationId(organisationId);
+      router.push(getOnboardingPath(response.onboardingStep));
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Workspace selection failed.");
+    }
+  }
+
+  if (workspaceChoices) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Choose a workspace</h2>
+        <p className="text-sm text-[var(--text-secondary)]">
+          Your account belongs to more than one workspace. Select one to continue.
+        </p>
+        <div className="space-y-2">
+          {workspaceChoices.map(({ organisation, membership }) => (
+            <Button
+              key={organisation.id}
+              className="w-full justify-start"
+              onClick={() => handleWorkspaceChoice(organisation.id)}
+              type="button"
+              variant="outline"
+            >
+              {organisation.name} · {membership.role}
+            </Button>
+          ))}
+        </div>
+        {submitError ? (
+          <Alert role="alert" tone="error">
+            {submitError}
+          </Alert>
+        ) : null}
+      </div>
+    );
   }
 
   return (

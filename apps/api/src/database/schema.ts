@@ -1,4 +1,7 @@
 import { relations, sql } from "drizzle-orm";
+
+import type { SendEmailInput } from "../modules/communications/email-provider";
+
 import {
   boolean,
   date,
@@ -15,6 +18,13 @@ import {
   uuid,
   varchar
 } from "drizzle-orm/pg-core";
+
+/**
+ * Immutable normalized provider request stored per communication attempt.
+ * Internal recovery retries replay this snapshot verbatim. Alias of the
+ * provider input so snapshot and send contract cannot drift apart.
+ */
+export type ProviderRequestSnapshot = SendEmailInput;
 
 export const organisationRoleEnum = pgEnum("organisation_role", [
   "owner",
@@ -844,6 +854,18 @@ export const communications = pgTable(
     ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull(),
     providerMessageId: varchar("provider_message_id", { length: 200 }),
     providerIdempotencyKey: varchar("provider_idempotency_key", { length: 36 }).notNull(),
+    /**
+     * Resend retains idempotency keys for 24 hours. Same-attempt recovery
+     * retries are allowed only before this deadline; afterwards only an
+     * explicit new attempt (new row, new key) may send.
+     */
+    idempotencyExpiresAt: timestamp("idempotency_expires_at", { withTimezone: true }),
+    /**
+     * Immutable normalized provider request for this attempt. Internal
+     * recovery retries replay this snapshot verbatim; Resend rejects a reused
+     * key with a different payload, so retries never rebuild from new input.
+     */
+    providerRequestSnapshot: jsonb("provider_request_snapshot").$type<ProviderRequestSnapshot>(),
     retryClaimToken: varchar("retry_claim_token", { length: 36 }),
     retryClaimedAt: timestamp("retry_claimed_at", { withTimezone: true }),
     status: communicationStatusEnum("status").notNull().default("pending"),

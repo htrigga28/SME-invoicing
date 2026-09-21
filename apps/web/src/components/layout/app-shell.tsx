@@ -148,6 +148,15 @@ function WorkspaceShell({
 
       const accessToken = session.accessToken;
       const storedOrganisationId = getStoredOrganisationId() ?? undefined;
+
+      // No silent workspace default: without a stored selection the shell
+      // resolves memberships explicitly (single auto-select, otherwise an
+      // explicit chooser) instead of rendering the oldest workspace.
+      if (!storedOrganisationId) {
+        await recoverStaleWorkspace(accessToken, Boolean(legacySession));
+        return;
+      }
+
       const cacheKey = `${accessToken}:${storedOrganisationId ?? ""}`;
       const cached = meCache.get(cacheKey);
       if (cached && Date.now() - cached.loadedAt < ME_CACHE_TTL_MS) {
@@ -165,7 +174,7 @@ function WorkspaceShell({
           loadError.status === 403 &&
           storedOrganisationId
         ) {
-          await recoverStaleWorkspace(accessToken);
+          await recoverStaleWorkspace(accessToken, Boolean(legacySession));
           return;
         }
 
@@ -211,7 +220,7 @@ function WorkspaceShell({
       setState("ready");
     }
 
-    async function recoverStaleWorkspace(accessToken: string) {
+    async function recoverStaleWorkspace(accessToken: string, migratedLegacySession = false) {
       meCache.clear();
 
       try {
@@ -238,7 +247,7 @@ function WorkspaceShell({
           setStoredOrganisationId(organisationId);
           const response = await getMe(accessToken, organisationId);
           meCache.set(`${accessToken}:${organisationId}`, { loadedAt: Date.now(), response });
-          applyWorkspaceResponse(accessToken, response);
+          applyWorkspaceResponse(accessToken, response, migratedLegacySession);
           return;
         }
 

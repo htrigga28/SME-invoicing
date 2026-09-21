@@ -67,7 +67,8 @@ const me = {
     setupCompletedAt: "2026-01-01T00:00:00.000Z"
   },
   onboardingRequired: false,
-  onboardingStep: null
+  onboardingStep: null,
+  selectionRequired: false
 } satisfies MeResponse;
 
 beforeEach(() => {
@@ -275,6 +276,28 @@ describe("app shell navigation components", () => {
     });
     expect(window.localStorage.getItem("sme-invoicing-organisation")).toBe("org-1");
     expect(getMe).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a chooser instead of silently defaulting when no workspace is stored", async () => {
+    setStoredSession({ accessToken: "access-1" });
+    vi.mocked(getOrganisations).mockResolvedValue({
+      organisations: [
+        { organisation: me.activeOrganisation, membership: me.membership },
+        {
+          organisation: { ...me.activeOrganisation, id: "org-2", name: "Second Workspace" },
+          membership: { ...me.membership, organisationId: "org-2" }
+        }
+      ],
+      activeOrganisationId: "org-1"
+    });
+
+    render(<AppShell>{({ me: context }) => <p>{context.activeOrganisation.name}</p>}</AppShell>);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Choose a workspace" })).toBeInTheDocument();
+    });
+    expect(getMe).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("sme-invoicing-organisation")).toBeNull();
   });
 
   it("clears access state when no active workspace remains", async () => {

@@ -40,7 +40,17 @@ export type AuthResponse = {
   accessToken: string;
   onboardingRequired: boolean;
   onboardingStep: OnboardingStep;
+  selectionRequired: false;
 };
+
+export type WorkspaceSelectionResponse = {
+  user: SafeUser;
+  selectionRequired: true;
+  organisations: OrganisationMembership[];
+  accessToken: string;
+};
+
+export type LoginResponse = AuthResponse | WorkspaceSelectionResponse;
 
 export type MeResponse = Omit<AuthResponse, "accessToken">;
 

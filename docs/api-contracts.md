@@ -18,7 +18,7 @@ All protected endpoints derive organisation access from the authenticated user's
 | Endpoint | Auth | Role | Request | Response | Important errors |
 | --- | --- | --- | --- | --- | --- |
 | `POST /auth/register` | Public, throttled (5/min) | None | `{ email, password, name }` | `{ user, activeOrganisation, membership, businessProfile, accessToken, onboardingRequired: true, onboardingStep: "business_profile" }` + HttpOnly refresh cookie | Duplicate email, weak password, throttled request. |
-| `POST /auth/login` | Public, throttled (3/min) | None | `{ email, password }` | `{ user, accessToken, onboardingRequired, onboardingStep }` + HttpOnly refresh cookie | Invalid credentials (no account-enumeration detail). |
+| `POST /auth/login` | Public, throttled (3/min) | None | `{ email, password }` | Single workspace: `{ user, activeOrganisation, membership, businessProfile, accessToken, onboardingRequired, onboardingStep, selectionRequired: false }` + HttpOnly refresh cookie. Multiple workspaces: `{ user, selectionRequired: true, organisations, accessToken }` + cookie; the client must `POST /session/organisation` before tenant data loads | Invalid credentials (no account-enumeration detail). |
 | `POST /auth/refresh` | Refresh cookie (or legacy body token while `LEGACY_REFRESH_BODY_ENABLED`) | Member | Cookie; legacy `{ refreshToken }` only when the compatibility flag is enabled | `{ accessToken }` + rotated HttpOnly refresh cookie | Invalid/expired refresh token. |
 | `POST /auth/logout` | Required | Member | Cookie; legacy `{ refreshToken? }` when supplied | `{ success: true }`, refresh cookie cleared | Invalid session. |
 | `GET /me` | Required | Member | None | `{ user, activeOrganisation, membership, businessProfile, onboardingRequired, onboardingStep }` | No active membership. |
@@ -41,10 +41,10 @@ Registration rules:
 
 Active organisation rules:
 
-- If the user has one active membership, use it as the active organisation.
-- If the user has multiple active memberships, backend should support explicit active organisation selection.
-- Complex organisation switching UI is deferred from MVP.
-- `POST /me/active-organisation` is documented for future support and is not required in T003 unless explicitly scoped later.
+- Every tenant-scoped business route (reads and mutations) requires an explicit `x-organisation-id` header. A missing header fails closed with `400`; the server never silently selects a workspace for business data.
+- Login with one active membership auto-selects it. Login with several returns `selectionRequired: true` with the workspace list; the client must `POST /session/organisation` before tenant data loads.
+- `GET /me` without a header is a bootstrap-only contract that returns the oldest membership; the web shell never renders business data from it and instead resolves memberships explicitly (single auto-continue, otherwise chooser).
+- A stale or foreign selection returns the existing non-oracle `403`; the client recovers with one bounded membership refresh (single auto-select, otherwise chooser, never silent fallback, no retry loop).
 - The requested `organisationId` must belong to the authenticated user.
 
 ## Business Profile
@@ -239,7 +239,9 @@ Rules:
 - `POST /invoices/:id/send` accepts optional `{ to?, cc?, subject? }`. When `to` is omitted it defaults to the customer email. Recipients are normalized (trimmed, lower-cased, deduped); To/CC overlap is removed; at most 10 recipients; invalid addresses return `400` before the invoice is issued.
 - Sending issues the invoice first (`draft → sent`, public access enabled) using a compare-and-set update (`WHERE status = 'draft'`), then attempts Resend email delivery. Concurrent sends race safely: exactly one request transitions the draft, and only the winner sends email; losers receive `409`. The response always includes `delivery: { state, message, attempts, lastCommunication }` with state `accepted`, `delivered`, `delayed`, `failed`, `sending`, `not_emailed`, `uncertain`, `in_progress`, or `partially_failed`.
 - Provider submission and post-submission persistence are separate error boundaries. A definite provider rejection marks the attempt failed; an ambiguous outcome (network/timeout/5xx/unreadable response) records `submission_uncertain` and never rewrites an accepted send as failed. Audit-log failures never change delivery state.
-- Each send attempt carries a deterministic `provider_idempotency_key` (sent to Resend as the `Idempotency-Key` request option, retained 24 hours) with an identical payload on retry. Resending while the latest attempt is `submission_uncertain` reuses that key so provider-side retries cannot duplicate mail; a true user-requested resend creates a new communication row and a new key. Resend calls are bounded by `RESEND_REQUEST_TIMEOUT_MS` (default 15000ms); timeouts are treated as ambiguous, never as definite failures.
+- Each send attempt carries a deterministic `provider_idempotency_key` (sent to Resend as the `Idempotency-Key` request option, retained 24 hours) with an identical payload on retry. The normalized outbound request is snapshotted immutably per attempt; internal recovery retries replay that snapshot verbatim with the original key and only inside the 24-hour window (`idempotency_expires_at`). A reused key with a different payload is a local invariant violation (`409`): concurrent identical requests are retryable/uncertain, never proof of failure.
+- `POST /invoices/:id/resend` always creates a NEW communication attempt with a new key. While the latest attempt is `pending`/`submission_uncertain`, resend is refused with `409` unless `{ force: true }` explicitly sends another email (audited as `invoice_email_force_resend` with the superseded attempt id). Internal recovery uses `POST /invoices/:id/delivery-attempts/:attemptId/retry`, which never creates a row.
+- Resend calls are bounded by `RESEND_REQUEST_TIMEOUT_MS` (default 15000ms); timeouts are treated as ambiguous, never as definite failures.
 - If email transmission fails after issuance, the invoice remains issued/public; the communication is marked failed and the response message reads `Invoice issued, but the email could not be sent. Copy the public link or try again.` Invoice status is never used to represent email failure.
 - If Resend is not configured, issuance still succeeds and `delivery.state` is `not_emailed` with a configuration message. Delivery is never faked.
 - `POST /invoices/:id/resend` creates a NEW communication attempt for an issued invoice (`sent`, `viewed`, `overdue`, `partially_paid`, `paid` with public access enabled). Old attempts remain in history. Draft, cancelled, and void invoices return `422`.
@@ -388,7 +390,7 @@ Rules:
 - Organisation scope is resolved from the stored communication matched by Resend `email_id`, falling back to the validated `lumina_communication` tag UUID. Tenant claims in the payload are never trusted.
 - Unknown email IDs return `{ received: true, unknown: true }` and are quarantined durably; events without a valid Svix message id return `{ received: true, ignored: true }` without `500` errors.
 - Each event is persisted once keyed by `resend:<svix message id>`; replays return `{ received: true, duplicate: true }` without touching delivery state. Distinct events for one email produce distinct rows.
-- Event mapping: `email.sent` → accepted; `email.delivered` → delivered; `email.delivery_delayed` → deferred; `email.bounced`/`email.failed`/`email.complained` → failed. Open/click events are stored without changing delivery state.
+- Event mapping: `email.sent` → accepted; `email.delivered` → delivered; `email.delivery_delayed` → deferred; `email.bounced`/`email.failed`/`email.complained`/`email.suppressed` → failed. Open/click events are stored without changing delivery state.
 - Webhook events advance every listed recipient with an atomic conditional update (`WHERE id AND status = <previously read>`); concurrent deliveries cannot regress each other. The parent communication exposes the derived aggregate: all delivered → `delivered`; all failed → `failed`; any failed → `partially_failed`; any deferred → `deferred`; all accepted → `accepted`; otherwise → `in_progress`. Audit entries are written only when a transition (or aggregate change to a terminal state) actually applies.
 - Email open events never mark the invoice `viewed`. Public invoice viewing is the only source of view state.
 
@@ -571,7 +573,7 @@ Amount mismatch checks compare Paystack subunit amounts directly against `paymen
 - Payment must belong to the active organisation and must be `successful`.
 - Every financial mutation locks in invoice, then payment, then refund order and re-reads truth under the lock before validating.
 - Refund amount must be positive, must not exceed the invoice overpayment, and must not exceed the selected payment's remaining refundable amount.
-- Backend creates a local refund reservation first with a stable `lumina-refund:<payment_refunds.id>` token in Paystack `merchant_note`, calls Paystack Create Refund server-side with the original transaction reference, then stores normalized safe provider status.
+- Backend creates a local refund reservation first with a stable `lumina-refund:<payment_refunds.id>` token in Paystack `merchant_note`, calls Paystack Create Refund server-side with the original transaction reference, then validates the response (reference, amount, currency, merchant-note token, refund identity, status) with the same evidence validator as reconciliation before applying it. Any missing or mismatched evidence holds the reservation in `needs_attention` without moving balances.
 - A definite provider rejection (400/404/422/409) marks the reservation `failed`; a timeout, 5xx, rate limit, or unreadable response marks it `needs_attention` and keeps the capacity reserved until authoritative reconciliation.
 - Refund initiation does not reduce `amount_paid_kobo`. Only a processed refund event reduces net received.
 - Paystack refund statuses map to `pending`, `processing`, `needs_attention`, `processed`, and `failed`.

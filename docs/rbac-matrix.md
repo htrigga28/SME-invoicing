@@ -99,13 +99,11 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 
 ## Active Organisation Handling
 
-- If a user has one active membership, use it as the active organisation.
-- If a user has multiple active memberships, the backend should support selecting the active organisation explicitly.
-- Complex organisation switching UI is deferred from MVP.
+- Every tenant-scoped business route requires an explicit `x-organisation-id` header, for reads and mutations alike. A missing header fails closed; the server never silently selects the oldest membership for business data.
+- Login with one active membership auto-selects it. Login with several returns a selection-required response; the client must complete `POST /session/organisation` before tenant data loads.
+- `GET /me` without a header is bootstrap-only (oldest membership) and must not feed business views; the web shell resolves memberships explicitly instead.
 - Never infer organisation from frontend-provided `organisationId` on protected resource operations.
-- A future endpoint may be added as `POST /me/active-organisation` with request `{ organisationId }`; the organisation ID must belong to the authenticated user.
-
-This endpoint is documented for future support and is not required in T003 unless explicitly scoped later.
+- Invoice email resend and uncertain-delivery retry follow the same Owner/Admin/Accountant permission as invoice send; Viewer is read-only.
 
 ## Enforcement Notes
 
