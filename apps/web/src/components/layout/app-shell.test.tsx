@@ -10,13 +10,13 @@ import {
   selectOrganisation
 } from "@/features/auth/auth-api";
 import { ApiRequestError } from "@/lib/api";
-import type { MeResponse } from "@/features/auth/types";
 import {
   clearStoredOrganisationId,
   clearStoredSession,
   setStoredOrganisationId,
   setStoredSession
 } from "@/features/auth/session";
+import { demoMe as me } from "@/test/fixtures";
 
 import { __clearAppShellMeCacheForTests, AppShell } from "./app-shell";
 import { Sidebar } from "./sidebar";
@@ -37,39 +37,16 @@ vi.mock("@/features/auth/auth-api", () => ({
   selectOrganisation: vi.fn()
 }));
 
-const me = {
-  user: {
-    id: "user-1",
-    email: "owner@demo.com",
-    name: "Demo Owner"
-  },
-  activeOrganisation: {
-    id: "org-1",
-    name: "Akin & Co Creative Services",
-    slug: "akin-co-demo",
-    onboardingCompletedAt: "2026-01-01T00:00:00.000Z"
-  },
-  membership: {
-    id: "member-1",
-    organisationId: "org-1",
-    userId: "user-1",
-    role: "owner",
-    status: "active"
-  },
-  businessProfile: {
-    id: "profile-1",
-    organisationId: "org-1",
-    businessName: "Akin & Co Creative Services",
-    email: "billing@akinco.test",
-    phone: "+2348012345678",
-    address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
-    logoFileId: null,
-    setupCompletedAt: "2026-01-01T00:00:00.000Z"
-  },
-  onboardingRequired: false,
-  onboardingStep: null,
-  selectionRequired: false
-} satisfies MeResponse;
+const multipleOrganisationResponse = {
+  organisations: [
+    { organisation: me.activeOrganisation, membership: me.membership },
+    {
+      organisation: { ...me.activeOrganisation, id: "org-2", name: "Second Workspace" },
+      membership: { ...me.membership, organisationId: "org-2" }
+    }
+  ],
+  activeOrganisationId: "org-1"
+};
 
 beforeEach(() => {
   __clearAppShellMeCacheForTests();
@@ -231,16 +208,7 @@ describe("app shell navigation components", () => {
         activeOrganisation: { ...me.activeOrganisation, id: "org-2", name: "Second Workspace" },
         membership: { ...me.membership, organisationId: "org-2" }
       });
-    vi.mocked(getOrganisations).mockResolvedValue({
-      organisations: [
-        { organisation: me.activeOrganisation, membership: me.membership },
-        {
-          organisation: { ...me.activeOrganisation, id: "org-2", name: "Second Workspace" },
-          membership: { ...me.membership, organisationId: "org-2" }
-        }
-      ],
-      activeOrganisationId: "org-1"
-    });
+    vi.mocked(getOrganisations).mockResolvedValue(multipleOrganisationResponse);
 
     render(<AppShell>{({ me: context }) => <p>{context.activeOrganisation.name}</p>}</AppShell>);
 
@@ -280,16 +248,7 @@ describe("app shell navigation components", () => {
 
   it("shows a chooser instead of silently defaulting when no workspace is stored", async () => {
     setStoredSession({ accessToken: "access-1" });
-    vi.mocked(getOrganisations).mockResolvedValue({
-      organisations: [
-        { organisation: me.activeOrganisation, membership: me.membership },
-        {
-          organisation: { ...me.activeOrganisation, id: "org-2", name: "Second Workspace" },
-          membership: { ...me.membership, organisationId: "org-2" }
-        }
-      ],
-      activeOrganisationId: "org-1"
-    });
+    vi.mocked(getOrganisations).mockResolvedValue(multipleOrganisationResponse);
 
     render(<AppShell>{({ me: context }) => <p>{context.activeOrganisation.name}</p>}</AppShell>);
 
@@ -304,7 +263,10 @@ describe("app shell navigation components", () => {
     setStoredSession({ accessToken: "access-1" });
     setStoredOrganisationId("org-stale");
     vi.mocked(getMe).mockRejectedValueOnce(new ApiRequestError("No access", 403));
-    vi.mocked(getOrganisations).mockResolvedValue({ organisations: [], activeOrganisationId: null });
+    vi.mocked(getOrganisations).mockResolvedValue({
+      organisations: [],
+      activeOrganisationId: null
+    });
 
     render(<AppShell>{() => <p>Workspace</p>}</AppShell>);
 

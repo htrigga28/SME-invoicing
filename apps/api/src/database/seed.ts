@@ -72,82 +72,92 @@ const demoInvitations = [
   }
 ] as const;
 
+function demoCustomer(
+  name: string,
+  email: string,
+  phone: string,
+  billingAddress: string,
+  archived = false
+) {
+  return { name, email, phone, billingAddress, archived };
+}
+
 const demoCustomers = [
-  {
-    name: "Lagos Bright Prints",
-    email: "accounts@lagosbrightprints.com",
-    phone: "+2348010000001",
-    billingAddress: "14 Allen Avenue, Ikeja, Lagos"
-  },
-  {
-    name: "Northstar Foods Ltd",
-    email: "finance@northstarfoods.com",
-    phone: "+2348010000002",
-    billingAddress: "22 Ahmadu Bello Way, Victoria Island, Lagos"
-  },
-  {
-    name: "Lekki Dental Studio",
-    email: "billing@lekkidental.com",
-    phone: "+2348010000003",
-    billingAddress: "8 Admiralty Road, Lekki Phase 1, Lagos"
-  },
-  {
-    name: "BluePeak Logistics",
-    email: "ops@bluepeaklogistics.com",
-    phone: "+2348010000004",
-    billingAddress: "31 Airport Road, Ikeja, Lagos"
-  },
-  {
-    name: "Abuja Creative Hub",
-    email: "admin@abujacreativehub.com",
-    phone: "+2348010000005",
-    billingAddress: "6 Gana Street, Maitama, Abuja"
-  },
-  {
-    name: "Prime Tutors Academy",
-    email: "bursar@primetutors.com",
-    phone: "+2348010000006",
-    billingAddress: "10 Toyin Street, Ikeja, Lagos"
-  },
-  {
-    name: "Mainland Events Co",
-    email: "payments@mainlandevents.com",
-    phone: "+2348010000007",
-    billingAddress: "44 Bode Thomas Street, Surulere, Lagos"
-  },
-  {
-    name: "Greenline Pharmacy",
-    email: "accounts@greenlinepharmacy.com",
-    phone: "+2348010000008",
-    billingAddress: "19 Herbert Macaulay Way, Yaba, Lagos"
-  },
-  {
-    name: "Coral Edge Consulting",
-    email: "finance@coraledge.com",
-    phone: "+2348010000009",
-    billingAddress: "2 Ligali Ayorinde Street, Victoria Island, Lagos"
-  },
-  {
-    name: "Swift Repairs NG",
-    email: "billing@swiftrepairs.com",
-    phone: "+2348010000010",
-    billingAddress: "15 Ikorodu Road, Maryland, Lagos"
-  },
-  {
-    name: "Archived Customer One",
-    email: "archived.one@example.com",
-    phone: "+2348010000011",
-    billingAddress: "1 Old Marina Road, Lagos",
-    archived: true
-  },
-  {
-    name: "Archived Customer Two",
-    email: "archived.two@example.com",
-    phone: "+2348010000012",
-    billingAddress: "2 Old Marina Road, Lagos",
-    archived: true
-  }
-] as const;
+  demoCustomer(
+    "Lagos Bright Prints",
+    "accounts@lagosbrightprints.com",
+    "+2348010000001",
+    "14 Allen Avenue, Ikeja, Lagos"
+  ),
+  demoCustomer(
+    "Northstar Foods Ltd",
+    "finance@northstarfoods.com",
+    "+2348010000002",
+    "22 Ahmadu Bello Way, Victoria Island, Lagos"
+  ),
+  demoCustomer(
+    "Lekki Dental Studio",
+    "billing@lekkidental.com",
+    "+2348010000003",
+    "8 Admiralty Road, Lekki Phase 1, Lagos"
+  ),
+  demoCustomer(
+    "BluePeak Logistics",
+    "ops@bluepeaklogistics.com",
+    "+2348010000004",
+    "31 Airport Road, Ikeja, Lagos"
+  ),
+  demoCustomer(
+    "Abuja Creative Hub",
+    "admin@abujacreativehub.com",
+    "+2348010000005",
+    "6 Gana Street, Maitama, Abuja"
+  ),
+  demoCustomer(
+    "Prime Tutors Academy",
+    "bursar@primetutors.com",
+    "+2348010000006",
+    "10 Toyin Street, Ikeja, Lagos"
+  ),
+  demoCustomer(
+    "Mainland Events Co",
+    "payments@mainlandevents.com",
+    "+2348010000007",
+    "44 Bode Thomas Street, Surulere, Lagos"
+  ),
+  demoCustomer(
+    "Greenline Pharmacy",
+    "accounts@greenlinepharmacy.com",
+    "+2348010000008",
+    "19 Herbert Macaulay Way, Yaba, Lagos"
+  ),
+  demoCustomer(
+    "Coral Edge Consulting",
+    "finance@coraledge.com",
+    "+2348010000009",
+    "2 Ligali Ayorinde Street, Victoria Island, Lagos"
+  ),
+  demoCustomer(
+    "Swift Repairs NG",
+    "billing@swiftrepairs.com",
+    "+2348010000010",
+    "15 Ikorodu Road, Maryland, Lagos"
+  ),
+  demoCustomer(
+    "Archived Customer One",
+    "archived.one@example.com",
+    "+2348010000011",
+    "1 Old Marina Road, Lagos",
+    true
+  ),
+  demoCustomer(
+    "Archived Customer Two",
+    "archived.two@example.com",
+    "+2348010000012",
+    "2 Old Marina Road, Lagos",
+    true
+  )
+];
 
 const invoiceStatuses = [
   ...Array.from({ length: 6 }, () => "draft" as const),
@@ -183,7 +193,8 @@ const demoHistoricalSubaccountCode = "ACCT_demo_historical";
 const demoCatalogueItems = [
   {
     name: "Brand strategy workshop",
-    description: "Full-day brand positioning workshop with stakeholder interviews and a strategy brief.",
+    description:
+      "Full-day brand positioning workshop with stakeholder interviews and a strategy brief.",
     defaultUnitPriceKobo: 180000
   },
   {
@@ -429,7 +440,7 @@ export async function seedDemo() {
       }
 
       for (const customer of demoCustomers) {
-        const archivedAt = "archived" in customer && customer.archived ? now : null;
+        const archivedAt = customer.archived ? now : null;
         const [existingCustomer] = await db
           .select()
           .from(customers)
@@ -520,7 +531,7 @@ export async function seedDemo() {
         activeCustomers.map((customer) => [customer.email, customer])
       );
       const activeCustomerEmails = demoCustomers
-        .filter((customer) => !("archived" in customer && customer.archived))
+        .filter((customer) => !customer.archived)
         .map((customer) => customer.email);
       const publicInvoiceUrls: string[] = [];
 
@@ -1206,7 +1217,6 @@ export async function seedDemo() {
 
       await seedInvoiceDeliveryActivity();
 
-
       async function seedInvoiceDeliveryActivity(): Promise<void> {
         if (!organisation) {
           throw new Error("Demo organisation was not found for delivery seed.");
@@ -1326,10 +1336,7 @@ export async function seedDemo() {
                 occurredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000)
               }
             ],
-            views: [
-              new Date(now.getTime() - 17 * dayMs),
-              new Date(now.getTime() - 16 * dayMs)
-            ]
+            views: [new Date(now.getTime() - 17 * dayMs), new Date(now.getTime() - 16 * dayMs)]
           },
           {
             invoiceNumber: "INV-000025",
@@ -1341,7 +1348,8 @@ export async function seedDemo() {
             status: "partially_failed",
             acceptedAt: new Date(now.getTime() - 1 * dayMs),
             failedAt: new Date(now.getTime() - 1 * dayMs + 10 * 60 * 1000),
-            failureReason: "1 of 2 recipients failed delivery. See the activity timeline for the affected addresses.",
+            failureReason:
+              "1 of 2 recipients failed delivery. See the activity timeline for the affected addresses.",
             events: [
               {
                 eventType: "email.sent",
@@ -1420,7 +1428,10 @@ export async function seedDemo() {
             continue;
           }
 
-          const recipientOutcomes = new Map<string, { status: "accepted" | "delivered" | "failed"; at: Date; failureReason: string | null }>();
+          const recipientOutcomes = new Map<
+            string,
+            { status: "accepted" | "delivered" | "failed"; at: Date; failureReason: string | null }
+          >();
 
           for (const event of scenario.events) {
             if (event.eventType === "email.sent") {
@@ -1435,7 +1446,10 @@ export async function seedDemo() {
             });
           }
 
-          for (const email of scenario.toRecipients) {
+          for (const { email, recipientType } of [
+            ...scenario.toRecipients.map((email) => ({ email, recipientType: "to" as const })),
+            ...scenario.ccRecipients.map((email) => ({ email, recipientType: "cc" as const }))
+          ]) {
             const outcome = recipientOutcomes.get(email) ?? {
               status: "accepted" as const,
               at: scenario.acceptedAt,
@@ -1447,31 +1461,7 @@ export async function seedDemo() {
               communicationId,
               invoiceId: invoice.id,
               email,
-              recipientType: "to",
-              status: outcome.status,
-              acceptedAt: scenario.acceptedAt,
-              deliveredAt: outcome.status === "delivered" ? outcome.at : null,
-              deferredAt: null,
-              failedAt: outcome.status === "failed" ? outcome.at : null,
-              failureReason: outcome.failureReason,
-              createdAt: scenario.acceptedAt,
-              updatedAt: now
-            });
-          }
-
-          for (const email of scenario.ccRecipients) {
-            const outcome = recipientOutcomes.get(email) ?? {
-              status: "accepted" as const,
-              at: scenario.acceptedAt,
-              failureReason: null
-            };
-
-            await db.insert(communicationRecipients).values({
-              organisationId: organisation.id,
-              communicationId,
-              invoiceId: invoice.id,
-              email,
-              recipientType: "cc",
+              recipientType,
               status: outcome.status,
               acceptedAt: scenario.acceptedAt,
               deliveredAt: outcome.status === "delivered" ? outcome.at : null,
