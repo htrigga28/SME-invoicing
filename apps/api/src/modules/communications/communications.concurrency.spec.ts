@@ -51,7 +51,12 @@ function communicationsService() {
 
 let resendEventSequence = 0;
 
-function resendInput(emailId: string, type: string, to: string[]) {
+function resendInput(
+  emailId: string,
+  type: string,
+  to: string[],
+  tags: Record<string, string> = { invoice_delivery: "invoice_delivery" }
+) {
   resendEventSequence += 1;
   const svixId = `msg_concurrency_${resendEventSequence}`;
   const payload = {
@@ -62,7 +67,7 @@ function resendInput(emailId: string, type: string, to: string[]) {
       from: "billing@lumina.example",
       to,
       subject: "Invoice INV-000184 from Adebayo Studio",
-      tags: [{ name: "invoice_delivery", value: "invoice_delivery" }]
+      tags
     }
   };
   const rawBody = JSON.stringify(payload);
@@ -335,6 +340,49 @@ describe("Resend webhook concurrency (real Postgres)", () => {
     ]);
     expect(await parentStatus(communication.id)).toBe("delivered");
     expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("maps a suppressed recipient to failed delivery truth", async () => {
+    const service = communicationsService();
+    const { communication, emailId } = await seedDeliveryFixture({
+      status: "accepted",
+      recipientEmails: ["accounts@northstar.example"]
+    });
+
+    const result = await service.processResendWebhook(
+      resendInput(emailId, "email.suppressed", ["accounts@northstar.example"])
+    );
+
+    expect(result).toEqual({ received: true });
+    expect(await recipientStates(communication.id)).toEqual([
+      { email: "accounts@northstar.example", status: "failed" }
+    ]);
+    expect(await parentStatus(communication.id)).toBe("failed");
+  });
+
+  it("recovers correlation from tags before the provider id is persisted", async () => {
+    const service = communicationsService();
+    const { communication } = await seedDeliveryFixture({
+      status: "accepted",
+      recipientEmails: ["accounts@northstar.example"]
+    });
+    await db
+      .update(communications)
+      .set({ providerMessageId: null })
+      .where(eq(communications.id, communication.id));
+
+    const result = await service.processResendWebhook(
+      resendInput("email-not-yet-stored", "email.delivered", ["accounts@northstar.example"], {
+        invoice_delivery: "invoice_delivery",
+        lumina_communication: communication.id
+      })
+    );
+
+    expect(result).toEqual({ received: true });
+    expect(await recipientStates(communication.id)).toEqual([
+      { email: "accounts@northstar.example", status: "delivered" }
+    ]);
+    expect(await parentStatus(communication.id)).toBe("delivered");
   });
 
   it("cannot mutate another communication through a foreign recipient address", async () => {

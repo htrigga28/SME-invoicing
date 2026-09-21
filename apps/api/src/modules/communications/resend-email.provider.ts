@@ -12,7 +12,7 @@ import type {
   SendEmailInput,
   SendEmailResult
 } from "./email-provider";
-import { EmailUncertainError } from "./email-provider";
+import { EmailIdempotencyConflictError, EmailUncertainError } from "./email-provider";
 
 /**
  * Resend tag carrying the Lumina communication id. Resend echoes tags on
@@ -24,6 +24,7 @@ export const RESEND_COMMUNICATION_TAG = "lumina_communication";
 
 type ResendSendError = {
   message?: unknown;
+  name?: unknown;
   statusCode?: unknown;
 };
 
@@ -93,6 +94,21 @@ export class ResendEmailProvider implements EmailProvider {
     if (error) {
       const rawStatus = (error as ResendSendError).statusCode;
       const statusCode = typeof rawStatus === "number" ? rawStatus : null;
+      const code = (error as ResendSendError).name;
+
+      if (statusCode === 409) {
+        // A concurrent identical request is explicitly retryable later.
+        if (code === "concurrent_idempotent_requests") {
+          throw new EmailUncertainError(
+            "The email provider is already processing this delivery. Retry later with the same key."
+          );
+        }
+
+        // Same key with a different payload is a local invariant violation.
+        // The original request may still deliver, so this is conflict, never
+        // proof of failure.
+        throw new EmailIdempotencyConflictError();
+      }
 
       // A 5xx from Resend cannot prove the email was not accepted.
       if (statusCode === null || statusCode >= 500) {

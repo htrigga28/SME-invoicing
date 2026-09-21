@@ -52,6 +52,20 @@ export class EmailUncertainError extends HttpException {
   }
 }
 
+/**
+ * The provider rejected a reused idempotency key because the payload did not
+ * match the original request. This is a local invariant violation, not proof
+ * the email failed: the original request may still deliver. Callers must keep
+ * the attempt unresolved and resolvable, never mark it failed.
+ */
+export class EmailIdempotencyConflictError extends HttpException {
+  constructor(
+    message = "The email provider rejected a reused delivery key with a different payload. The original email may still deliver."
+  ) {
+    super(message, HttpStatus.CONFLICT);
+  }
+}
+
 export type SendEmailResult = {
   providerMessageId: string;
 };

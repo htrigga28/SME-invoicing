@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsOptional,
   IsString,
   MaxLength
@@ -31,4 +32,12 @@ export class SendInvoiceEmailDto {
   @IsString()
   @MaxLength(200)
   subject?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Resend only: send another email even though a previous attempt is still unresolved. The forced attempt is audited with the superseded attempt id."
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }

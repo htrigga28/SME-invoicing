@@ -8,6 +8,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException
 } from "@nestjs/common";
@@ -32,7 +33,9 @@ import {
   buildInvoiceEmailHtml,
   buildInvoiceEmailText,
   defaultInvoiceEmailSubject,
+  EmailIdempotencyConflictError,
   EmailUncertainError,
+  type SendEmailInput,
   validateSendRecipients
 } from "./email-provider";
 
@@ -103,6 +106,13 @@ type ParsedResendWebhookEvent = {
   providerEventId: string | null;
 };
 
+/**
+ * Resend retains email idempotency keys for 24 hours. Same-attempt recovery
+ * retries are allowed only inside this window; afterwards only an explicit
+ * new attempt (new row, new key) may send.
+ */
+const RESEND_IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const STATUS_RANK: Record<CommunicationStatus, number> = {
   pending: 0,
   submission_uncertain: 1,
@@ -131,6 +141,7 @@ const FAILURE_REASONS: Record<string, string> = {
   "email.bounced": "The email address bounced. Check the recipient and try again.",
   "email.failed": "The email provider reported a delivery failure.",
   "email.complained": "The recipient marked the email as spam.",
+  "email.suppressed": "The email was not sent because the provider suppressed this recipient.",
   error: "The email provider reported an error."
 };
 
@@ -184,6 +195,7 @@ export function mapResendEventType(rawEvent: string): MappedResendEvent {
     case "email.bounced":
     case "email.failed":
     case "email.complained":
+    case "email.suppressed":
     case "failed":
       return { outcome: "failed", eventType: normalized };
     case "email.opened":
@@ -312,52 +324,103 @@ export class CommunicationsService {
       userId: string;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
-      content: SendInvoiceEmailInput;
+      content?: SendInvoiceEmailInput;
     },
-    options?: { communication?: Communication; claimToken?: string; idempotencyKey?: string }
-  ): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
-    let recipients: { to: string[]; cc: string[] };
-
-    try {
-      recipients = validateSendRecipients(input.content.to, input.content.cc ?? []);
-    } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : "Recipients are invalid."
-      );
+    options?: {
+      communication?: Communication;
+      claimToken?: string;
+      idempotencyKey?: string;
+      /** Replays a stored immutable provider request instead of building one. */
+      snapshot?: SendEmailInput;
     }
-
+  ): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
     if (!this.resendEmailProvider.isConfigured()) {
       throw new ServiceUnavailableException(
         "Email delivery is not configured. The invoice is issued and the public link can still be shared."
       );
     }
 
-    const subject =
-      input.content.subject?.trim() ||
-      defaultInvoiceEmailSubject(input.content.invoiceNumber, input.content.businessName);
-    const htmlContent = buildInvoiceEmailHtml({
-      businessName: input.content.businessName,
-      customerName: input.content.customerName,
-      invoiceNumber: input.content.invoiceNumber,
-      amountDueKobo: input.content.amountDueKobo,
-      currency: "NGN",
-      dueDate: input.content.dueDate,
-      publicUrl: input.content.publicUrl
-    });
-    const textContent = buildInvoiceEmailText({
-      businessName: input.content.businessName,
-      customerName: input.content.customerName,
-      invoiceNumber: input.content.invoiceNumber,
-      amountDueKobo: input.content.amountDueKobo,
-      currency: "NGN",
-      dueDate: input.content.dueDate,
-      publicUrl: input.content.publicUrl
-    });
+    let snapshot: SendEmailInput;
+    let recipients: { to: string[]; cc: string[] };
+
+    if (options?.snapshot) {
+      // Internal recovery replay: the exact stored provider request goes out
+      // verbatim. Caller content is ignored so a reused key can never meet a
+      // different payload.
+      snapshot = options.snapshot;
+      recipients = {
+        to: snapshot.to.map((recipient) => recipient.email),
+        cc: snapshot.cc.map((recipient) => recipient.email)
+      };
+    } else {
+      const content = input.content;
+
+      if (!content) {
+        throw new BadRequestException("Email content is required for a new send attempt.");
+      }
+
+      try {
+        recipients = validateSendRecipients(content.to, content.cc ?? []);
+      } catch (error) {
+        throw new BadRequestException(
+          error instanceof Error ? error.message : "Recipients are invalid."
+        );
+      }
+
+      const subject =
+        content.subject?.trim() ||
+        defaultInvoiceEmailSubject(content.invoiceNumber, content.businessName);
+      const htmlContent = buildInvoiceEmailHtml({
+        businessName: content.businessName,
+        customerName: content.customerName,
+        invoiceNumber: content.invoiceNumber,
+        amountDueKobo: content.amountDueKobo,
+        currency: "NGN",
+        dueDate: content.dueDate,
+        publicUrl: content.publicUrl
+      });
+      const textContent = buildInvoiceEmailText({
+        businessName: content.businessName,
+        customerName: content.customerName,
+        invoiceNumber: content.invoiceNumber,
+        amountDueKobo: content.amountDueKobo,
+        currency: "NGN",
+        dueDate: content.dueDate,
+        publicUrl: content.publicUrl
+      });
+      const customerName = content.customerName;
+      snapshot = {
+        fromEmail: this.resendEmailProvider.getFromEmail()!,
+        fromName: `${content.businessName} via Lumina`,
+        replyToEmail: content.businessEmail,
+        to: recipients.to.map((email) => ({
+          email,
+          name: email === recipients.to[0] ? customerName : null
+        })),
+        cc: recipients.cc.map((email) => ({ email })),
+        subject,
+        htmlContent,
+        textContent,
+        tags: ["invoice_delivery", content.invoiceNumber],
+        correlationId: options?.communication?.id ?? randomUUID()
+      };
+    }
+
     const claimToken = options?.claimToken ?? randomUUID();
     const idempotencyKey = options?.idempotencyKey ?? randomUUID();
+    const idempotencyExpiresAt = new Date(Date.now() + RESEND_IDEMPOTENCY_WINDOW_MS);
+    const communicationId = options?.communication?.id ?? randomUUID();
+    snapshot.correlationId = communicationId;
     const communication =
       options?.communication ??
-      (await this.createPendingCommunication(input, recipients, subject, idempotencyKey, claimToken));
+      (await this.createPendingCommunication(
+        input,
+        snapshot,
+        idempotencyKey,
+        idempotencyExpiresAt,
+        claimToken,
+        communicationId
+      ));
 
     // Provider boundary: only an explicit provider rejection may mark the
     // attempt failed. Anything ambiguous (transport/timeout/5xx/unreadable)
@@ -366,18 +429,7 @@ export class CommunicationsService {
 
     try {
       ({ providerMessageId } = await this.resendEmailProvider.sendEmail({
-        fromEmail: this.resendEmailProvider.getFromEmail()!,
-        fromName: `${input.content.businessName} via Lumina`,
-        replyToEmail: input.content.businessEmail,
-        to: recipients.to.map((email) => ({
-          email,
-          name: email === recipients.to[0] ? input.content.customerName : null
-        })),
-        cc: recipients.cc.map((email) => ({ email })),
-        subject,
-        htmlContent,
-        textContent,
-        tags: ["invoice_delivery", input.content.invoiceNumber],
+        ...snapshot,
         idempotencyKey,
         correlationId: communication.id
       }));
@@ -385,6 +437,22 @@ export class CommunicationsService {
       if (error instanceof EmailUncertainError) {
         const current = await this.completeUncertainAttempt(communication, claimToken, error.message);
         return { communication: current ?? communication, outcome: "uncertain" as const };
+      }
+
+      if (error instanceof EmailIdempotencyConflictError) {
+        await this.releaseClaimWithReason(communication, claimToken, error.message);
+        await this.auditSafely({
+          organisationId: input.organisationId,
+          actorUserId: input.userId,
+          action: "invoice_email_idempotency_conflict",
+          entityType: "invoice",
+          entityId: input.invoice.id,
+          metadataRedacted: {
+            invoiceNumber: input.invoice.invoiceNumber,
+            communicationId: communication.id
+          }
+        });
+        throw error;
       }
 
       const failed = await this.completeFailedAttempt(
@@ -403,7 +471,7 @@ export class CommunicationsService {
           entityType: "invoice",
           entityId: input.invoice.id,
           metadataRedacted: {
-            invoiceNumber: input.content.invoiceNumber,
+            invoiceNumber: input.invoice.invoiceNumber,
             communicationId: communication.id
           }
         });
@@ -452,8 +520,8 @@ export class CommunicationsService {
       action: "invoice_email_sent",
       entityType: "invoice",
       entityId: input.invoice.id,
-      metadataRedacted: {
-        invoiceNumber: input.content.invoiceNumber,
+        metadataRedacted: {
+        invoiceNumber: input.invoice.invoiceNumber,
         communicationId: communication.id,
         recipientCount: recipients.to.length + recipients.cc.length
       }
@@ -463,36 +531,116 @@ export class CommunicationsService {
   }
 
   /**
-   * Retries one unresolved logical attempt. Resolved attempts create a new
-   * communication so their delivery history remains intact.
+   * Explicit user resend. Always creates a NEW communication attempt with a
+   * new idempotency key; previous attempts stay immutable history. When the
+   * latest attempt is still unresolved, the resend is refused unless the
+   * caller explicitly forces another send, because the outstanding attempt
+   * may yet deliver and a second email would duplicate mail.
    */
-  async resendInvoiceEmail(input: {
+  async resendInvoiceEmail(
+    input: {
+      organisationId: string;
+      userId: string;
+      invoice: Pick<Invoice, "id" | "invoiceNumber">;
+      customerId: string;
+      content: SendInvoiceEmailInput;
+    },
+    options?: { force?: boolean }
+  ): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
+    const latest = await this.findLatestCommunication(input.organisationId, input.invoice.id);
+
+    if (latest && ["pending", "submission_uncertain"].includes(latest.status) && !options?.force) {
+      throw new ConflictException(
+        "A previous delivery attempt is still unresolved. Wait for its outcome, retry it, or resend explicitly."
+      );
+    }
+
+    if (options?.force && latest && ["pending", "submission_uncertain"].includes(latest.status)) {
+      await this.auditSafely({
+        organisationId: input.organisationId,
+        actorUserId: input.userId,
+        action: "invoice_email_force_resend",
+        entityType: "invoice",
+        entityId: input.invoice.id,
+        metadataRedacted: {
+          invoiceNumber: input.invoice.invoiceNumber,
+          supersededCommunicationId: latest.id
+        }
+      });
+    }
+
+    return this.sendInvoiceEmail(input);
+  }
+
+  /**
+   * Internal recovery retry of one unresolved logical attempt. Replays the
+   * stored immutable provider request with the original idempotency key, and
+   * only inside the provider's idempotency window. Late webhooks can still
+   * resolve the attempt afterwards; only explicit resends create new rows.
+   */
+  async retryUncertainAttempt(input: {
     organisationId: string;
     userId: string;
     invoice: Pick<Invoice, "id" | "invoiceNumber">;
-    customerId: string;
-    content: SendInvoiceEmailInput;
+    communicationId: string;
   }): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
-    const latest = await this.findLatestCommunication(input.organisationId, input.invoice.id);
-    if (!latest || !["pending", "submission_uncertain"].includes(latest.status)) {
-      return this.sendInvoiceEmail(input);
+    const [row] = await this.databaseService.db
+      .select()
+      .from(communications)
+      .where(
+        and(
+          eq(communications.id, input.communicationId),
+          eq(communications.organisationId, input.organisationId),
+          eq(communications.invoiceId, input.invoice.id)
+        )
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundException("Delivery attempt was not found.");
+    }
+
+    if (!["pending", "submission_uncertain"].includes(row.status)) {
+      throw new ConflictException("Only unresolved delivery attempts can be retried.");
+    }
+
+    if (!row.providerRequestSnapshot) {
+      throw new ConflictException(
+        "This attempt has no replayable provider request. Send a new email attempt instead."
+      );
+    }
+
+    if (row.idempotencyExpiresAt && row.idempotencyExpiresAt <= new Date()) {
+      throw new ConflictException(
+        "The provider idempotency window for this attempt has expired. Send a new email attempt instead."
+      );
     }
 
     const claimToken = randomUUID();
-    const claimed = await this.claimRetry(latest.id, claimToken);
+    const claimed = await this.claimRetry(row.id, claimToken);
 
-    if (!claimed) {
+    if (!claimed?.providerRequestSnapshot) {
       return {
-        communication: (await this.findLatestCommunication(input.organisationId, input.invoice.id)) ?? latest,
+        communication:
+          (await this.findLatestCommunication(input.organisationId, input.invoice.id)) ?? row,
         outcome: "uncertain"
       };
     }
 
-    return this.sendInvoiceEmail(input, {
-      communication: claimed,
-      claimToken,
-      idempotencyKey: claimed.providerIdempotencyKey
-    });
+    return this.sendInvoiceEmail(
+      {
+        organisationId: input.organisationId,
+        userId: input.userId,
+        invoice: input.invoice,
+        customerId: claimed.customerId
+      },
+      {
+        communication: claimed,
+        claimToken,
+        idempotencyKey: claimed.providerIdempotencyKey,
+        snapshot: claimed.providerRequestSnapshot
+      }
+    );
   }
 
   async findLatestCommunication(
@@ -520,29 +668,35 @@ export class CommunicationsService {
       userId: string;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
-      content: SendInvoiceEmailInput;
+      content?: SendInvoiceEmailInput;
     },
-    recipients: { to: string[]; cc: string[] },
-    subject: string,
+    snapshot: SendEmailInput,
     idempotencyKey: string,
-    claimToken: string
+    idempotencyExpiresAt: Date,
+    claimToken: string,
+    communicationId: string
   ): Promise<Communication> {
     const claimedAt = new Date();
+    const toEmails = snapshot.to.map((recipient) => recipient.email);
+    const ccEmails = snapshot.cc.map((recipient) => recipient.email);
 
     return this.databaseService.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(communications)
         .values({
+          id: communicationId,
           organisationId: input.organisationId,
           invoiceId: input.invoice.id,
           customerId: input.customerId,
           purpose: "invoice_delivery",
           channel: "email",
           provider: "resend",
-          subject,
-          toRecipients: recipients.to,
-          ccRecipients: recipients.cc,
+          subject: snapshot.subject,
+          toRecipients: toEmails,
+          ccRecipients: ccEmails,
           providerIdempotencyKey: idempotencyKey,
+          idempotencyExpiresAt,
+          providerRequestSnapshot: snapshot,
           retryClaimToken: claimToken,
           retryClaimedAt: claimedAt,
           status: "pending",
@@ -555,7 +709,7 @@ export class CommunicationsService {
       }
 
       await tx.insert(communicationRecipients).values([
-        ...recipients.to.map((email) => ({
+        ...toEmails.map((email) => ({
           organisationId: input.organisationId,
           communicationId: created.id,
           invoiceId: input.invoice.id,
@@ -563,7 +717,7 @@ export class CommunicationsService {
           recipientType: "to",
           status: "pending" as RecipientStatus
         })),
-        ...recipients.cc.map((email) => ({
+        ...ccEmails.map((email) => ({
           organisationId: input.organisationId,
           communicationId: created.id,
           invoiceId: input.invoice.id,
@@ -692,6 +846,37 @@ export class CommunicationsService {
         );
 
       return true;
+    });
+  }
+
+  /**
+   * Releases the retry claim with a diagnostic reason while keeping the
+   * attempt status unresolved. Used for idempotency invariant conflicts,
+   * where neither failure nor success is proven.
+   */
+  private async releaseClaimWithReason(
+    communication: Communication,
+    claimToken: string,
+    message: string
+  ): Promise<void> {
+    await this.databaseService.db.transaction(async (tx) => {
+      const current = await this.lockCommunication(tx, communication.id);
+
+      if (!current || current.retryClaimToken !== claimToken) {
+        return;
+      }
+
+      await tx
+        .update(communications)
+        .set({
+          failureReason: message.slice(0, 300),
+          retryClaimToken: null,
+          retryClaimedAt: null,
+          updatedAt: new Date()
+        })
+        .where(
+          and(eq(communications.id, current.id), eq(communications.retryClaimToken, claimToken))
+        );
     });
   }
 
@@ -1512,19 +1697,30 @@ export class CommunicationsService {
   private readResendCorrelation(data: ResendWebhookPayload["data"]): string | null {
     const tags = data?.tags;
 
-    if (!Array.isArray(tags)) {
+    // Resend webhook events expose tags as an object:
+    // { "lumina_communication": "<uuid>", ... }. The send API accepts an
+    // array shape instead, which is tolerated here for compatibility.
+    if (tags !== null && typeof tags === "object" && !Array.isArray(tags)) {
+      const value = (tags as Record<string, unknown>)[RESEND_COMMUNICATION_TAG];
+
+      if (typeof value === "string" && UUID_PATTERN.test(value)) {
+        return value;
+      }
+
       return null;
     }
 
-    for (const tag of tags) {
-      if (
-        typeof tag === "object" &&
-        tag !== null &&
-        (tag as { name?: unknown }).name === RESEND_COMMUNICATION_TAG &&
-        typeof (tag as { value?: unknown }).value === "string" &&
-        UUID_PATTERN.test((tag as { value: string }).value)
-      ) {
-        return (tag as { value: string }).value;
+    if (Array.isArray(tags)) {
+      for (const tag of tags) {
+        if (
+          typeof tag === "object" &&
+          tag !== null &&
+          (tag as { name?: unknown }).name === RESEND_COMMUNICATION_TAG &&
+          typeof (tag as { value?: unknown }).value === "string" &&
+          UUID_PATTERN.test((tag as { value: string }).value)
+        ) {
+          return (tag as { value: string }).value;
+        }
       }
     }
 
@@ -1563,20 +1759,5 @@ export class CommunicationsService {
     }
 
     return new Date();
-  }
-
-  private assertWebhookSecret(secretHeader: string | undefined): void {
-    const expected = this.configService.get<string>("RESEND_WEBHOOK_SECRET");
-
-    if (!expected) {
-      throw new UnauthorizedException("Email webhook is not configured.");
-    }
-
-    const received = Buffer.from(secretHeader ?? "");
-    const expectedBuffer = Buffer.from(expected);
-
-    if (received.length !== expectedBuffer.length || !timingSafeEqual(received, expectedBuffer)) {
-      throw new UnauthorizedException("Invalid webhook secret.");
-    }
   }
 }

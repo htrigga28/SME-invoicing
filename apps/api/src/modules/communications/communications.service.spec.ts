@@ -46,6 +46,8 @@ function createCommunication(overrides: Partial<Communication> = {}): Communicat
     ccRecipients: [],
     providerMessageId: "email-id-1",
     providerIdempotencyKey: "11111111-1111-4111-8111-111111111111",
+    idempotencyExpiresAt: null,
+    providerRequestSnapshot: null,
     retryClaimToken: null,
     retryClaimedAt: null,
     status: "accepted",
@@ -205,7 +207,8 @@ describe("mapResendEventType", () => {
     ["email.delivery_delayed", "deferred"],
     ["email.bounced", "failed"],
     ["email.failed", "failed"],
-    ["email.complained", "failed"]
+    ["email.complained", "failed"],
+    ["email.suppressed", "failed"]
   ])("maps %s to %s", (raw, outcome) => {
     expect(mapResendEventType(raw).outcome).toBe(outcome);
   });
@@ -418,60 +421,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("reuses the idempotency key when resending an uncertain attempt", async () => {
-    const uncertain = createCommunication({
-      status: "submission_uncertain",
-      providerIdempotencyKey: "reuse-key-1"
-    });
-    const accepted = createCommunication({ providerMessageId: "email-id-9" });
-    const sendInvoiceEmail = jest.fn(async () => ({
-      communication: accepted,
-      outcome: "accepted" as const
-    }));
-    const { service } = setup({
-      db: stubDb({
-        select: [[uncertain]],
-        update: [[{ ...uncertain, retryClaimToken: "test-claim-token" }]]
-      })
-    });
-    service.sendInvoiceEmail = sendInvoiceEmail;
-
-    const result = await service.resendInvoiceEmail(baseInput);
-
-    expect(result).toEqual({ communication: accepted, outcome: "accepted" });
-    expect(sendInvoiceEmail).toHaveBeenCalledWith(
-      baseInput,
-      expect.objectContaining({ idempotencyKey: "reuse-key-1" })
-    );
-  });
-
-  it("reuses the idempotency key when resending a pending attempt after a persistence failure", async () => {
-    const pending = createCommunication({
-      status: "pending",
-      providerIdempotencyKey: "reuse-pending-key"
-    });
-    const accepted = createCommunication({ providerMessageId: "email-id-9" });
-    const sendInvoiceEmail = jest.fn(async () => ({
-      communication: accepted,
-      outcome: "accepted" as const
-    }));
-    const { service } = setup({
-      db: stubDb({
-        select: [[pending]],
-        update: [[{ ...pending, retryClaimToken: "test-claim-token" }]]
-      })
-    });
-    service.sendInvoiceEmail = sendInvoiceEmail;
-
-    await service.resendInvoiceEmail(baseInput);
-
-    expect(sendInvoiceEmail).toHaveBeenCalledWith(
-      baseInput,
-      expect.objectContaining({ idempotencyKey: "reuse-pending-key" })
-    );
-  });
-
-  it("mints a fresh idempotency key when the latest attempt is not uncertain", async () => {
+  it("always creates a new attempt on explicit resend after a resolved attempt", async () => {
     const delivered = createCommunication({
       status: "delivered",
       providerIdempotencyKey: "old-key-1"
@@ -486,9 +436,166 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
     });
     service.sendInvoiceEmail = sendInvoiceEmail;
 
-    await service.resendInvoiceEmail(baseInput);
+    const result = await service.resendInvoiceEmail(baseInput);
 
+    expect(result).toEqual({ communication: accepted, outcome: "accepted" });
     expect(sendInvoiceEmail).toHaveBeenCalledWith(baseInput);
+  });
+
+  it("refuses explicit resend while an attempt is unresolved", async () => {
+    const uncertain = createCommunication({
+      status: "submission_uncertain",
+      providerIdempotencyKey: "reuse-key-1"
+    });
+    const sendInvoiceEmail = jest.fn();
+    const { service } = setup({
+      db: stubDb({ select: [[uncertain]] })
+    });
+    service.sendInvoiceEmail = sendInvoiceEmail;
+
+    await expect(service.resendInvoiceEmail(baseInput)).rejects.toThrow(
+      "still unresolved"
+    );
+    expect(sendInvoiceEmail).not.toHaveBeenCalled();
+  });
+
+  it("forces another send with audit when explicitly requested", async () => {
+    const uncertain = createCommunication({
+      status: "submission_uncertain",
+      providerIdempotencyKey: "reuse-key-1"
+    });
+    const accepted = createCommunication({ providerMessageId: "email-id-9" });
+    const sendInvoiceEmail = jest.fn(async () => ({
+      communication: accepted,
+      outcome: "accepted" as const
+    }));
+    const audit = { create: jest.fn(async () => ({})) };
+    const { service } = setup({
+      db: stubDb({ select: [[uncertain]] }),
+      audit
+    });
+    service.sendInvoiceEmail = sendInvoiceEmail;
+
+    const result = await service.resendInvoiceEmail(baseInput, { force: true });
+
+    expect(result).toEqual({ communication: accepted, outcome: "accepted" });
+    expect(sendInvoiceEmail).toHaveBeenCalledWith(baseInput);
+    expect(audit.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "invoice_email_force_resend" })
+    );
+  });
+});
+
+describe("CommunicationsService.retryUncertainAttempt", () => {
+  const snapshot = {
+    fromEmail: "billing@lumina.example",
+    fromName: "Adebayo Studio via Lumina",
+    replyToEmail: "billing@adebayo.example",
+    to: [{ email: "accounts@northstar.example", name: "Northstar Projects" }],
+    cc: [{ email: "finance@northstar.example" }],
+    subject: "Invoice INV-000184 from Adebayo Studio",
+    htmlContent: "<p>Invoice INV-000184</p>",
+    textContent: "Invoice INV-000184",
+    tags: ["invoice_delivery", "INV-000184"],
+    correlationId: "comm-1"
+  };
+
+  function uncertainRow(overrides: Record<string, unknown> = {}) {
+    return createCommunication({
+      status: "submission_uncertain",
+      providerMessageId: null,
+      providerIdempotencyKey: "reuse-key-1",
+      idempotencyExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      providerRequestSnapshot: snapshot,
+      ...overrides
+    });
+  }
+
+  const retryInput = {
+    organisationId: "org-1",
+    userId: "user-1",
+    invoice: { id: "invoice-1", invoiceNumber: "INV-000184" },
+    communicationId: "comm-1"
+  };
+
+  it("replays the stored snapshot with the original key inside the window", async () => {
+    const row = uncertainRow();
+    const claimed = { ...row, retryClaimToken: "test-claim-token" };
+    const accepted = createCommunication({
+      status: "accepted",
+      providerMessageId: "email-id-9",
+      retryClaimToken: null,
+      retryClaimedAt: null
+    });
+    const { resendEmailProvider, service } = setup({
+      db: stubDb({
+        select: [[row], [claimed], [], [accepted]],
+        update: [[claimed], [accepted], []]
+      })
+    });
+
+    const result = await service.retryUncertainAttempt(retryInput);
+
+    expect(result).toEqual({ communication: accepted, outcome: "accepted" });
+    expect(resendEmailProvider.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: snapshot.subject,
+        htmlContent: snapshot.htmlContent,
+        textContent: snapshot.textContent,
+        to: snapshot.to,
+        cc: snapshot.cc,
+        idempotencyKey: "reuse-key-1",
+        correlationId: "comm-1"
+      })
+    );
+  });
+
+  it("refuses retry after the 24-hour idempotency window", async () => {
+    const row = uncertainRow({ idempotencyExpiresAt: new Date(Date.now() - 1000) });
+    const { resendEmailProvider, service } = setup({
+      db: stubDb({ select: [[row]] })
+    });
+
+    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow(
+      "idempotency window"
+    );
+    expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses retry for resolved attempts", async () => {
+    const row = uncertainRow({ status: "delivered" });
+    const { resendEmailProvider, service } = setup({
+      db: stubDb({ select: [[row]] })
+    });
+
+    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow(
+      "Only unresolved"
+    );
+    expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("refuses retry without a stored snapshot", async () => {
+    const row = uncertainRow({ providerRequestSnapshot: null });
+    const { resendEmailProvider, service } = setup({
+      db: stubDb({ select: [[row]] })
+    });
+
+    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow(
+      "no replayable"
+    );
+    expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("returns uncertain when the retry claim is lost", async () => {
+    const row = uncertainRow();
+    const { resendEmailProvider, service } = setup({
+      db: stubDb({ select: [[row], [row]], update: [[]] })
+    });
+
+    const result = await service.retryUncertainAttempt(retryInput);
+
+    expect(result).toEqual({ communication: row, outcome: "uncertain" });
+    expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -499,7 +606,8 @@ describe("CommunicationsService.processResendWebhook", () => {
   function resendPayload(
     emailId: string | null,
     type: string,
-    to: string[]
+    to: string[],
+    tags: Record<string, string> = { invoice_delivery: "invoice_delivery" }
   ): ResendWebhookPayload {
     return {
       type,
@@ -510,7 +618,7 @@ describe("CommunicationsService.processResendWebhook", () => {
         from: "billing@lumina.example",
         to,
         subject: "Invoice INV-000184 from Adebayo Studio",
-        tags: [{ name: "invoice_delivery", value: "invoice_delivery" }]
+        tags
       }
     };
   }
@@ -704,6 +812,84 @@ describe("CommunicationsService.processResendWebhook", () => {
     expect(result).toEqual({ received: true });
     // Only the quarantine-resolution update runs. The delivered recipient
     // and parent keep their state when a late failure arrives.
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers correlation from tags before the provider id is persisted", async () => {
+    const communication = createCommunication({
+      id: "11111111-1111-4111-8111-111111111111",
+      status: "accepted",
+      providerMessageId: null
+    });
+    const recipient = createRecipient({ status: "accepted" });
+    const { db, result } = await runWebhook({
+      select: [
+        [],
+        [communication],
+        [communication],
+        [recipient],
+        [{ ...recipient, status: "delivered" }]
+      ],
+      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]],
+      payload: resendPayload("email-not-yet-stored", "email.delivered", [
+        "accounts@northstar.example"
+      ], {
+        invoice_delivery: "invoice_delivery",
+        lumina_communication: "11111111-1111-4111-8111-111111111111"
+      })
+    });
+
+    expect(result).toEqual({ received: true });
+    expect(db.update).toHaveBeenCalledTimes(3);
+  });
+
+  it("maps a suppressed recipient to failed delivery truth", async () => {
+    const communication = createCommunication({ status: "accepted" });
+    const recipient = createRecipient({ status: "accepted" });
+    const { db, result } = await runWebhook({
+      select: [[communication], [communication], [recipient], [{ ...recipient, status: "failed" }]],
+      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]],
+      payload: resendPayload("email-id-1", "email.suppressed", ["accounts@northstar.example"])
+    });
+
+    expect(result).toEqual({ received: true });
+    expect(db.update).toHaveBeenCalledTimes(3);
+  });
+
+  it("aggregates delivered plus suppressed recipients as partially failed", async () => {
+    const communication = createCommunication({ status: "accepted" });
+    const suppressedRecipient = createRecipient({
+      id: "recipient-suppressed",
+      email: "suppressed@example.com",
+      status: "accepted"
+    });
+    const { db, result } = await runWebhook({
+      select: [
+        [communication],
+        [communication],
+        [suppressedRecipient],
+        [createRecipient({ status: "delivered" }), { ...suppressedRecipient, status: "failed" }]
+      ],
+      insert: [[{ id: "event-suppressed" }]],
+      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-suppressed" }], [{ id: "comm-1" }]],
+      payload: resendPayload("email-id-1", "email.suppressed", ["suppressed@example.com"])
+    });
+
+    expect(result).toEqual({ received: true });
+    expect(db.update).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not regress a delivered recipient when a late suppressed event arrives", async () => {
+    const communication = createCommunication({ status: "delivered" });
+    const recipient = createRecipient({ status: "delivered" });
+    const { db, result } = await runWebhook({
+      select: [[communication], [communication], [recipient]],
+      insert: [[{ id: "event-suppressed-late" }]],
+      update: [[{ id: "quarantine-resolve" }]],
+      payload: resendPayload("email-id-1", "email.suppressed", ["accounts@northstar.example"])
+    });
+
+    expect(result).toEqual({ received: true });
     expect(db.update).toHaveBeenCalledTimes(1);
   });
 
