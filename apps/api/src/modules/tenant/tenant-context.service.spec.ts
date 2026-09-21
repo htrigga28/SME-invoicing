@@ -110,6 +110,25 @@ describe("TenantContextService", () => {
     expect(context.activeOrganisation.id).toBe(ORG_1);
   });
 
+  it("fails closed for mutations when no workspace is selected", async () => {
+    const { repository, service } = setup();
+
+    await expect(
+      service.resolveForUser("user-1", undefined, { requireExplicit: true })
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.getActiveContextForUser).not.toHaveBeenCalled();
+    expect(repository.getContextForUserAndOrg).not.toHaveBeenCalled();
+  });
+
+  it("still validates an explicit workspace when explicit selection is required", async () => {
+    const { repository, service } = setup();
+
+    const context = await service.resolveForUser("user-1", ORG_2, { requireExplicit: true });
+
+    expect(repository.getContextForUserAndOrg).toHaveBeenCalledWith("user-1", ORG_2);
+    expect(context.activeOrganisation.id).toBe(ORG_2);
+  });
+
   it("rejects when the user has no active membership", async () => {
     const { repository, service } = setup();
     repository.getActiveContextForUser.mockResolvedValueOnce(undefined);

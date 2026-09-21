@@ -19,7 +19,11 @@ export class TenantContextService {
 
   constructor(@Inject(AuthRepository) private readonly authRepository: AuthRepository) {}
 
-  async resolveForUser(userId: string, requestedOrganisationId?: unknown) {
+  async resolveForUser(
+    userId: string,
+    requestedOrganisationId?: unknown,
+    options?: { requireExplicit?: boolean }
+  ) {
     const normalised = this.normaliseHeader(requestedOrganisationId);
 
     if (normalised !== undefined) {
@@ -36,6 +40,16 @@ export class TenantContextService {
       }
 
       return context;
+    }
+
+    // Mutations must never silently choose an organisation: a client bug that
+    // omits the workspace header could otherwise write to the user's oldest
+    // organisation. Reads keep the logged compat default while clients
+    // migrate to the explicit header.
+    if (options?.requireExplicit) {
+      throw new BadRequestException(
+        "Select a workspace before changing business data."
+      );
     }
 
     const context = await this.authRepository.getActiveContextForUser(userId);

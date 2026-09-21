@@ -49,7 +49,7 @@ Required categories:
 - JWT secrets
 - Paystack secret, optional base URL, and webhook config
 - Frontend/backend URL and CORS origins
-- Later Brevo and Cloudflare R2 credentials
+- Resend credentials (API key, verified sender, webhook signing secret) and later Cloudflare R2 credentials
 
 Marketing notes:
 

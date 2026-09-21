@@ -32,7 +32,7 @@ Registration rules:
 - Raw refresh tokens must never be stored; only token hashes are persisted for refresh, rotation, and logout revocation.
 - Browser sessions use an HttpOnly refresh cookie on every session-issuing route (login, registration, refresh, legacy exchange, invitation acceptance). JavaScript keeps only the short-lived access token in memory and never persists credentials.
 - Refresh rotates the refresh token with a compare-and-swap update: one concurrent use wins and yields the single child token; the loser is rejected. The cookie path takes precedence when both cookie and legacy body tokens are present.
-- Pre-cookie browsers migrate once: the stored legacy refresh token is submitted through the compatibility body path, the API sets the cookie and returns the renewed access token, the browser publishes it to the active app context, and only then deletes legacy storage. A failed exchange retains legacy storage. The compatibility path lives behind `LEGACY_REFRESH_BODY_ENABLED` for a maximum 30-day window after the cookie release.
+- Pre-cookie browsers migrate once: the stored legacy refresh token is submitted through the compatibility body path, the API sets the cookie and returns the renewed access token, the browser publishes it to the active app context, and only then deletes legacy storage. A failed exchange retains legacy storage. The compatibility path lives behind `LEGACY_REFRESH_BODY_ENABLED`, which is disabled by default and may be enabled only temporarily while pre-cookie clients remain, with a removal date recorded at enablement.
 - Logout revokes the cookie token and any submitted legacy token once each, then clears the cookie with the exact set attributes.
 - Response must not return password hash.
 - `onboardingStep` is `business_profile` until profile and organisation onboarding timestamps are set, `payment_setup` until any organisation payment-account record exists, and `null` afterward.
@@ -237,11 +237,11 @@ Rules:
 - Invoice numbers are organisation-scoped and use the format `INV-000001`.
 - Created invoices start as private drafts. Sending a draft enables public access and returns the generated public URL for T007.
 - `POST /invoices/:id/send` accepts optional `{ to?, cc?, subject? }`. When `to` is omitted it defaults to the customer email. Recipients are normalized (trimmed, lower-cased, deduped); To/CC overlap is removed; at most 10 recipients; invalid addresses return `400` before the invoice is issued.
-- Sending issues the invoice first (`draft → sent`, public access enabled) using a compare-and-set update (`WHERE status = 'draft'`), then attempts Brevo email delivery. Concurrent sends race safely: exactly one request transitions the draft, and only the winner sends email; losers receive `409`. The response always includes `delivery: { state, message, attempts, lastCommunication }` with state `accepted`, `delivered`, `delayed`, `failed`, `sending`, `not_emailed`, `uncertain`, `in_progress`, or `partially_failed`.
+- Sending issues the invoice first (`draft → sent`, public access enabled) using a compare-and-set update (`WHERE status = 'draft'`), then attempts Resend email delivery. Concurrent sends race safely: exactly one request transitions the draft, and only the winner sends email; losers receive `409`. The response always includes `delivery: { state, message, attempts, lastCommunication }` with state `accepted`, `delivered`, `delayed`, `failed`, `sending`, `not_emailed`, `uncertain`, `in_progress`, or `partially_failed`.
 - Provider submission and post-submission persistence are separate error boundaries. A definite provider rejection marks the attempt failed; an ambiguous outcome (network/timeout/5xx/unreadable response) records `submission_uncertain` and never rewrites an accepted send as failed. Audit-log failures never change delivery state.
-- Each send attempt carries a deterministic `provider_idempotency_key` (sent to Brevo as `idempotencyKey`). Resending while the latest attempt is `submission_uncertain` reuses that key so provider-side retries cannot duplicate mail; all other resends mint a fresh key. Brevo calls are bounded by `BREVO_REQUEST_TIMEOUT_MS` (default 15000ms); timeouts are treated as ambiguous, never as definite failures.
+- Each send attempt carries a deterministic `provider_idempotency_key` (sent to Resend as the `Idempotency-Key` request option, retained 24 hours) with an identical payload on retry. Resending while the latest attempt is `submission_uncertain` reuses that key so provider-side retries cannot duplicate mail; a true user-requested resend creates a new communication row and a new key. Resend calls are bounded by `RESEND_REQUEST_TIMEOUT_MS` (default 15000ms); timeouts are treated as ambiguous, never as definite failures.
 - If email transmission fails after issuance, the invoice remains issued/public; the communication is marked failed and the response message reads `Invoice issued, but the email could not be sent. Copy the public link or try again.` Invoice status is never used to represent email failure.
-- If Brevo is not configured, issuance still succeeds and `delivery.state` is `not_emailed` with a configuration message. Delivery is never faked.
+- If Resend is not configured, issuance still succeeds and `delivery.state` is `not_emailed` with a configuration message. Delivery is never faked.
 - `POST /invoices/:id/resend` creates a NEW communication attempt for an issued invoice (`sent`, `viewed`, `overdue`, `partially_paid`, `paid` with public access enabled). Old attempts remain in history. Draft, cancelled, and void invoices return `422`.
 - `GET /invoices/:id/activity` aggregates status events, invoice edits, email delivery events (including per-recipient failures and `email_uncertain` items), view summary, payments, refunds, and receipts into reverse-chronological `{ id, type, occurredAt, title, detail?, tone?, actor?, metadata? }` items. Responses contain only safe display fields (no organisation IDs, tokens, subaccount codes, or raw provider payloads). Repeated public views collapse into one `invoice_viewed` item with count/first/last.
 - `GET /invoices/:id` also returns `delivery` (latest email delivery state) and `viewSummary` (`{ viewCount, firstViewedAt, lastViewedAt }`, null when never viewed). Detail invoices expose `lastViewedAt` and `viewCount`.
@@ -376,20 +376,20 @@ Public invoice `paymentSummary` examples:
 }
 ```
 
-## Brevo Transactional Email Webhook
+## Resend Email Webhooks
 
 | Endpoint | Auth | Role | Request | Response |
 | --- | --- | --- | --- | --- |
-| `POST /webhooks/brevo/transactional` | Webhook secret header | Provider | Brevo event payload | `{ received: true }` |
+| `POST /webhooks/resend` | Svix signature | Provider | Resend event payload | `{ received: true }` |
 
 Rules:
 
-- No user JWT auth. The request must carry the configured secret in the `x-brevo-webhook-secret` header (configure Brevo to send this custom header). Missing secret configuration, missing header, or mismatch returns `401`. The secret is never logged.
-- Organisation scope is resolved from the stored communication matched by provider `message-id`. Organisation IDs from the payload are never trusted.
-- Unknown message IDs and malformed payloads return `{ received: true }` without `500` errors.
-- Each event is persisted once keyed by a stable provider event key (`message-id::event::timestamp::recipient-email`); replays return `{ received: true, duplicate: true }` without touching delivery state. Same-second events for different recipients produce distinct rows.
-- Event mapping: `request`/`sent` → accepted; `delivered` → delivered; `deferred`/`soft_bounce` → deferred; `hard_bounce`/`blocked`/`invalid`/`invalid_email`/`error` → failed. Open/click/spam/unsubscribe events are stored without changing delivery state.
-- Webhook events resolve the recipient from `communication + payload email` and advance that recipient with an atomic conditional update (`WHERE id AND status = <previously read>`); concurrent deliveries cannot regress each other. The parent communication exposes the derived aggregate: all delivered → `delivered`; all failed → `failed`; any failed → `partially_failed`; any deferred → `deferred`; all accepted → `accepted`; otherwise → `in_progress`. Audit entries are written only when a transition (or aggregate change to a terminal state) actually applies.
+- No user JWT auth. Requests are verified with the Svix signature scheme against the raw request body using `RESEND_WEBHOOK_SECRET` (`svix-id`, `svix-timestamp`, `svix-signature` headers, 5-minute timestamp tolerance). Missing secret configuration returns `503`; missing/invalid signature or stale timestamps return `401`. The secret is never logged.
+- Organisation scope is resolved from the stored communication matched by Resend `email_id`, falling back to the validated `lumina_communication` tag UUID. Tenant claims in the payload are never trusted.
+- Unknown email IDs return `{ received: true, unknown: true }` and are quarantined durably; events without a valid Svix message id return `{ received: true, ignored: true }` without `500` errors.
+- Each event is persisted once keyed by `resend:<svix message id>`; replays return `{ received: true, duplicate: true }` without touching delivery state. Distinct events for one email produce distinct rows.
+- Event mapping: `email.sent` → accepted; `email.delivered` → delivered; `email.delivery_delayed` → deferred; `email.bounced`/`email.failed`/`email.complained` → failed. Open/click events are stored without changing delivery state.
+- Webhook events advance every listed recipient with an atomic conditional update (`WHERE id AND status = <previously read>`); concurrent deliveries cannot regress each other. The parent communication exposes the derived aggregate: all delivered → `delivered`; all failed → `failed`; any failed → `partially_failed`; any deferred → `deferred`; all accepted → `accepted`; otherwise → `in_progress`. Audit entries are written only when a transition (or aggregate change to a terminal state) actually applies.
 - Email open events never mark the invoice `viewed`. Public invoice viewing is the only source of view state.
 
 ## Payments

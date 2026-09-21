@@ -11,7 +11,7 @@ This runbook covers the three-project Vercel deployment for Lumina, Neon Postgre
 | API | Vercel | `https://api.lumina.akhigbe.xyz` | NestJS request/response API and Paystack webhook |
 | Database | Neon | Private connection only | Production PostgreSQL |
 | Payments | Paystack | Provider-hosted checkout | Test-mode portfolio payment flow until live-mode approval |
-| Email | Brevo, later | Not active | Future transactional email delivery |
+| Email | Resend | Active | Transactional invoice email delivery with signed webhooks |
 | DNS | Pxxl DNS | `akhigbe.xyz` zone | Apex and subdomain records |
 
 The persistent development environment is built from the Git `dev` branch:
@@ -98,7 +98,7 @@ Add variables through the Vercel dashboard. Production uses the three production
 | `NEXT_PUBLIC_API_URL` | No | API URL | Production and Preview configured separately |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | No | Approved public support address | Missing; current fallback is a placeholder |
 
-Only `NEXT_PUBLIC_*` public configuration belongs here. Do not add database, JWT, Paystack secret, or Brevo secret variables.
+Only `NEXT_PUBLIC_*` public configuration belongs here. Do not add database, JWT, Paystack secret, or Resend secret variables.
 
 ### Product app project
 
@@ -128,11 +128,11 @@ Do not put `PAYSTACK_SECRET_KEY` or any other server credential in this project.
 | `API_PUBLIC_URL` | No | Yes | Production and Preview configured separately |
 | `CORS_ORIGINS` | No | Yes | Production and Preview configured separately |
 | `TRUST_PROXY` | No | Yes | Configured |
-| `BREVO_API_KEY` | Conditional | Required when Brevo email is enabled; omit only when email is disabled | Configure on API project only |
-| `BREVO_FROM_EMAIL` | Conditional | Approved sender address when Brevo email is enabled | Must be a verified Brevo sender identity |
-| `BREVO_SENDER_EMAIL` | No | Legacy/documented sender name | Kept for compatibility; prefer `BREVO_FROM_EMAIL` |
-| `BREVO_WEBHOOK_SECRET` | Conditional | Required when Brevo webhooks are enabled | Used to authenticate transactional webhook callbacks |
-| `LEGACY_REFRESH_BODY_ENABLED` | No | Compatibility switch for pre-cookie browser sessions | Keep enabled for 30 days after the cookie-session deployment, then disable and remove |
+| `RESEND_API_KEY` | Conditional | Required when Resend email is enabled; omit only when email is disabled | Configure on API project only |
+| `RESEND_FROM_EMAIL` | Conditional | Approved sender address when Resend email is enabled | Must use a verified Resend sender identity or domain |
+| `RESEND_WEBHOOK_SECRET` | Conditional | Required when Resend sending is configured; startup validation fails without it | Svix signing secret for `POST /webhooks/resend` |
+| `RESEND_REQUEST_TIMEOUT_MS` | No | Bounds Resend send calls (default 15000) | Timeouts are recorded as uncertain, never as definite failures |
+| `LEGACY_REFRESH_BODY_ENABLED` | No | Compatibility switch for pre-cookie browser sessions | Disabled by default; enable temporarily only while pre-cookie clients remain, then remove the body-token flow |
 
 Paystack signs webhook payloads with the account secret key. The current code verifies `x-paystack-signature` with `PAYSTACK_SECRET_KEY`; Paystack does not issue a separate webhook signing secret for this flow. Keep `PAYSTACK_WEBHOOK_SECRET` unset unless the code is intentionally changed to use it and the value matches provider semantics.
 
@@ -266,20 +266,20 @@ Manual test:
 
 If delivery fails, inspect Paystack delivery history and Vercel function logs. Record only the HTTP status, event type, reference suffix where necessary, and safe error summary. Never weaken signature verification or copy a raw provider payload into a ticket.
 
-## Brevo
+## Resend
 
-Brevo transactional email is implemented. Email is optional at runtime: when `BREVO_API_KEY` is unset, sends fail closed with a controlled error; when set, the API validates the sender and webhook secret conditionally.
+Resend transactional email is implemented via the official `resend` SDK. Email is optional at runtime: when `RESEND_API_KEY` is unset, sends fail closed with a controlled error; when set, startup validation requires `RESEND_WEBHOOK_SECRET` so delivery events stay verifiable.
 
-1. Verify a sender identity or sending domain in Brevo.
-2. Configure `BREVO_API_KEY` only on the API project.
-3. Configure `BREVO_FROM_EMAIL` to the approved sender address.
-4. Configure `BREVO_WEBHOOK_SECRET` and register the transactional webhook URL on the API project.
-5. The API sends `X-Mailin-custom: lumina-communication:<communications.id>` before provider submission and deduplicates inbound events with the Brevo webhook `id` as `brevo:<id>`. A missing or invalid webhook `id` is quarantined and cannot mutate delivery state.
-6. Authenticated events that cannot yet be correlated are stored in `communication_event_quarantine` (migration `0015`) with normalized routing fields only — never raw payloads. When provider acceptance later stores the message ID, or a later webhook provides valid correlation, matching rows resolve through the idempotent event processor. Monitor unresolved quarantine counts in safe operational logs.
+1. Verify a sender identity or sending domain in Resend.
+2. Configure `RESEND_API_KEY` only on the API project.
+3. Configure `RESEND_FROM_EMAIL` to the approved sender address.
+4. Configure `RESEND_WEBHOOK_SECRET` (the Svix signing secret) and create a Resend webhook for `POST /webhooks/resend` subscribed to `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.failed`, and `email.complained`.
+5. The API tags every send with `lumina_communication:<communications.id>` and deduplicates inbound events on the Svix message id as `resend:<id>`. An event without a valid Svix identity is quarantined and cannot mutate delivery state.
+6. Authenticated events that cannot yet be correlated are stored in `communication_event_quarantine` (migration `0015`) with normalized routing fields only — never raw payloads. When provider acceptance later stores the email ID, or a later webhook provides valid correlation, matching rows resolve through the idempotent event processor. Monitor unresolved quarantine counts in safe operational logs.
 7. Send only to controlled test recipients during QA.
 8. Review Vercel logs for safe error summaries without message bodies or credentials.
 
-Uncertain sends keep `submission_uncertain` state and retry on the same communication row and idempotency key under an atomic expiring claim. A true resend after a resolved outcome creates a new communication row.
+Uncertain sends keep `submission_uncertain` state and retry on the same communication row and idempotency key under an atomic expiring claim. A true resend after a resolved outcome creates a new communication row with a new key.
 
 ## Vercel-hosted NestJS limitations
 
@@ -311,7 +311,7 @@ If those requirements appear, use a separate worker/service such as Fly.io, Koye
 - The observed Neon project allowed 10 branches and could scale only within its free compute range.
 - Paystack test mode does not prove live settlement readiness or compliance approval.
 - DNS and TLS issuance may take time after records change.
-- Free Brevo quotas and sender restrictions apply if email is later enabled.
+- Free Resend quotas and sender/domain verification apply to email delivery.
 
 Check current provider dashboards before a launch because free-tier limits are provider-controlled.
 
@@ -320,11 +320,11 @@ Check current provider dashboards before a launch because free-tier limits are p
 1. Merge validated repository changes.
 2. Confirm all required API secrets are present in Vercel.
 3. Confirm DNS is valid and TLS is issued.
-4. Run `pnpm db:migrate` with the direct Neon migration URL. This includes delivery-tracking migrations `0013`/`0014` and the quarantine plus retry-claim migration `0015` (`communication_event_quarantine`, `communications.retry_claim_token`, `communications.retry_claimed_at`).
+4. Run `pnpm db:migrate` with the direct Neon migration URL. This includes delivery-tracking migrations `0013`/`0014`, the quarantine plus retry-claim migration `0015` (`communication_event_quarantine`, `communications.retry_claim_token`, `communications.retry_claimed_at`), and the Resend provider migration `0016` (provider defaults to `resend`, existing `brevo` rows backfilled).
 5. Redeploy the API and verify liveness (`GET /health`), readiness (`GET /health/ready`, which fails when PostgreSQL is unavailable), CORS, and logs.
 6. Redeploy the product and marketing projects.
 7. Verify canonical URLs and that no production page targets localhost.
-8. Configure the Paystack test webhook.
+8. Configure the Paystack test webhook and the Resend webhook (`POST /webhooks/resend` with the signing secret).
 9. Run the smoke test in [deployment-smoke-test.md](./deployment-smoke-test.md).
 10. Run reconciliation/backfill only if existing records require them.
 

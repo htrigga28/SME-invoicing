@@ -47,4 +47,4 @@ DemoPass123!
 
 If live Paystack test checkout is unavailable, use a safe webhook simulation in development and explain that production webhook handling still verifies Paystack signatures.
 
-If email delivery is not implemented, copy the public invoice URL directly during the demo and note that Brevo email delivery is planned later.
+If Resend email delivery is not configured, copy the public invoice URL directly during the demo and note that email delivery needs `RESEND_API_KEY` plus a verified sender.

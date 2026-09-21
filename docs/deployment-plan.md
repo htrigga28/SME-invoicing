@@ -26,16 +26,17 @@ The deployment should prioritize reliable demo access over complex infrastructur
 | Backend API URL | `NEXT_PUBLIC_API_URL`, `BACKEND_API_URL` |
 | CORS origins | `CORS_ORIGINS` |
 | R2 credentials, later | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
-| Brevo transactional email | `BREVO_API_KEY`, `BREVO_FROM_EMAIL` (verified sender), optional `BREVO_SENDER_EMAIL` (legacy), optional `BREVO_BASE_URL`, `BREVO_WEBHOOK_SECRET`, optional `BREVO_REQUEST_TIMEOUT_MS` (default 15000) |
+| Resend transactional email | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (verified sender/domain), `RESEND_WEBHOOK_SECRET` (Svix signing secret), optional `RESEND_REQUEST_TIMEOUT_MS` (default 15000) |
 
 Secrets must not be committed. Production and preview environments should use separate Paystack and database configuration where practical.
 
-Brevo email notes (T021):
+Resend email notes (T021):
 
-- `BREVO_FROM_EMAIL` must be a verified Brevo sender; the display name is sent as `{businessName} via Lumina`.
-- Without `BREVO_API_KEY`, invoice issuance and public links keep working; email delivery returns a controlled not-configured result and delivery is never faked.
-- Configure a Brevo transactional webhook to `POST /webhooks/brevo/transactional` with a custom `x-brevo-webhook-secret` header matching `BREVO_WEBHOOK_SECRET`. Webhook secret validation happens before any payload processing.
-- Brevo sends carry a per-attempt `idempotencyKey`; resends of `submission_uncertain` attempts reuse the same key. Provider calls abort after `BREVO_REQUEST_TIMEOUT_MS`; timeouts are recorded as uncertain, never as definite failures.
+- `RESEND_FROM_EMAIL` must use a verified Resend sender identity or domain; the display name is sent as `{businessName} via Lumina`.
+- Without `RESEND_API_KEY`, invoice issuance and public links keep working; email delivery returns a controlled not-configured result and delivery is never faked.
+- Without `RESEND_WEBHOOK_SECRET`, sending is rejected at startup validation, because delivery events would otherwise be unverifiable and silently lost.
+- Create a Resend webhook for `POST /webhooks/resend` subscribed to `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.failed`, and `email.complained`. Signature verification uses the raw request body and the Svix headers.
+- Resend sends carry a per-attempt `Idempotency-Key` (retained 24 hours) with an identical payload on retry; resends of `submission_uncertain` attempts reuse the same key. Provider calls race a `RESEND_REQUEST_TIMEOUT_MS` timer; timeouts are recorded as uncertain, never as definite failures.
 - Run migrations before deploying code that depends on the `communications`, `communication_events`, `communication_recipients`, and `invoice_view_events` tables.
 
 Payment Setup and Paystack subaccount notes:
@@ -69,7 +70,7 @@ Payment Setup and Paystack subaccount notes:
 4. Run migrations.
 5. Configure Paystack test webhook URL.
 6. Verify Payment Setup bank resolution and subaccount creation flows in the deployed backend.
-7. Configure the Brevo transactional webhook URL and secret header.
+7. Configure the Resend webhook URL, event subscriptions, and signing secret.
 7. Deploy frontend with API URL and Paystack public key.
 8. Run seed data only in the intended demo environment.
 9. Smoke test login, dashboard, Payment Setup, public invoice, payment initialization, webhook processing, receipt, and export.

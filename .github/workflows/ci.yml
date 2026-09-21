@@ -46,6 +46,16 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Coverage (API, LCOV for SonarCloud)
+        run: pnpm --filter @sme-invoicing/api test:coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage-lcov
+          path: apps/api/coverage/lcov.info
+          if-no-files-found: error
+
       - name: Build
         run: pnpm build
         env:

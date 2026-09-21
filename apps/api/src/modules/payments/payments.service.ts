@@ -725,6 +725,71 @@ export class PaymentsService {
       throw error;
     }
 
+    // The provider response is untrusted input until it proves it describes
+    // exactly the refund Lumina requested. A mismatched reference, amount,
+    // currency, or missing refund identity keeps the reservation in
+    // needs_attention: capacity stays reserved and no financial balance moves.
+    const responseMismatch =
+      !providerRefund.providerRefundId ||
+      providerRefund.transactionReference !== payment.providerReference ||
+      providerRefund.amountKobo !== input.amountKobo ||
+      providerRefund.currency !== payment.currency;
+
+    if (responseMismatch) {
+      const now = new Date();
+      const mismatched = await this.databaseService.db.transaction(async (tx) => {
+        await this.lockInvoiceFinancialState(tx as AppDatabase, payment.invoiceId);
+        const [refund] = await tx
+          .update(paymentRefunds)
+          .set({
+            status: "needs_attention",
+            needsAttentionAt: now,
+            providerMetadataRedacted: {
+              providerRefundId: providerRefund.providerRefundId,
+              providerStatus: providerRefund.status,
+              transactionReference: providerRefund.transactionReference,
+              amountKobo: providerRefund.amountKobo,
+              currency: providerRefund.currency,
+              responseMismatch: true,
+              expectedTransactionReference: payment.providerReference,
+              expectedAmountKobo: input.amountKobo,
+              expectedCurrency: payment.currency
+            },
+            updatedAt: now
+          })
+          .where(eq(paymentRefunds.id, pendingRefund.id))
+          .returning();
+
+        if (!refund) {
+          throw new Error("Refund could not be updated.");
+        }
+
+        const recalculated = await this.calculateInvoiceFinancialSummaryForId(
+          tx as AppDatabase,
+          payment.invoiceId
+        );
+
+        await this.createAuditLog(tx as AppDatabase, {
+          organisationId: payment.organisationId,
+          actorUserId: user.userId,
+          action: "payment_refund_response_mismatch",
+          entityType: "payment_refund",
+          entityId: refund.id,
+          metadataRedacted: {
+            paymentId: payment.id,
+            amountKobo: input.amountKobo
+          }
+        });
+
+        return { refund, financialSummary: recalculated.financialSummary };
+      });
+
+      return {
+        refund: this.toSafeRefund(mismatched.refund),
+        financialSummary: mismatched.financialSummary
+      };
+    }
+
     const refundStatus = this.toRefundStatus(providerRefund.status);
 
     const result = await this.databaseService.db.transaction(async (tx) => {

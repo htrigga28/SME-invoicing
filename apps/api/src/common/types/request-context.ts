@@ -23,6 +23,8 @@ export type AuthenticatedRequest = {
     authorization?: string;
     "x-organisation-id"?: string | string[] | undefined;
   };
+  /** HTTP verb; mutations without an explicit workspace header fail closed. */
+  method?: string;
   authUser?: AuthenticatedUser;
   tenant?: ActiveOrganisationContext;
 };
