@@ -727,13 +727,18 @@ export class PaymentsService {
 
     // The provider response is untrusted input until it proves it describes
     // exactly the refund Lumina requested. A mismatched reference, amount,
-    // currency, or missing refund identity keeps the reservation in
-    // needs_attention: capacity stays reserved and no financial balance moves.
+    // currency, merchant note, or missing refund identity keeps the
+    // reservation in needs_attention: capacity stays reserved and no
+    // financial balance moves. Uses the same evidence validator as the
+    // reconciliation path.
     const responseMismatch =
       !providerRefund.providerRefundId ||
-      providerRefund.transactionReference !== payment.providerReference ||
-      providerRefund.amountKobo !== input.amountKobo ||
-      providerRefund.currency !== payment.currency;
+      !providerRefund.status ||
+      !this.refundEvidenceMatches(
+        { providerReference: payment.providerReference },
+        { id: refundId, amountKobo: input.amountKobo, currency: payment.currency },
+        providerRefund
+      );
 
     if (responseMismatch) {
       const now = new Date();
@@ -790,7 +795,9 @@ export class PaymentsService {
       };
     }
 
-    const refundStatus = this.toRefundStatus(providerRefund.status);
+    // The mismatch gate above returns early on a missing status, so this
+    // fallback is unreachable in practice and only satisfies the type system.
+    const refundStatus = this.toRefundStatus(providerRefund.status ?? "unknown");
 
     const result = await this.databaseService.db.transaction(async (tx) => {
       const locked = await this.lockInvoiceFinancialState(tx as AppDatabase, payment.invoiceId);
@@ -1278,6 +1285,25 @@ export class PaymentsService {
     payment: Payment,
     refund: PaymentRefund,
     providerRefund: PaystackRefundResponse
+  ) {
+    return this.refundEvidenceMatches(payment, refund, providerRefund);
+  }
+
+  /**
+   * Shared identity check for both the immediate create-refund response and
+   * later reconciliation: stable merchant-note token, provider transaction
+   * reference, amount, and currency must all match exactly. Missing provider
+   * evidence never matches.
+   */
+  private refundEvidenceMatches(
+    payment: { providerReference: string },
+    refund: { id: string; amountKobo: number; currency: string },
+    providerRefund: {
+      merchantNote: string | null;
+      transactionReference: string | null;
+      amountKobo: number | null;
+      currency: string | null;
+    }
   ) {
     return (
       providerRefund.merchantNote === this.refundMerchantNote(refund.id) &&

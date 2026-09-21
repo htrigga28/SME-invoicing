@@ -73,11 +73,12 @@ type PaystackCreateRefundInput = {
 };
 
 export type PaystackCreateRefundResponse = {
-  amountKobo: number;
-  currency: string;
+  amountKobo: number | null;
+  currency: string | null;
   providerRefundId: string | null;
-  status: string;
+  status: string | null;
   transactionReference: string | null;
+  merchantNote: string | null;
 };
 
 export type PaystackRefundResponse = {
@@ -100,6 +101,7 @@ type PaystackCreateRefundApiResponse = {
     transaction?: {
       reference?: unknown;
     };
+    merchant_note?: unknown;
   };
 };
 
@@ -289,13 +291,16 @@ export class PaystackService {
       throw this.toPaystackException(response.status, this.safeProviderMessage(payload?.message));
     }
 
+    // Strict evidence: missing provider fields stay missing. Callers must
+    // validate this response against the requested refund before applying it
+    // to financial state; request values are never substituted here.
     return {
       providerRefundId: this.safeString(payload.data.id, 120),
-      status: this.safeString(payload.data.status, 80) ?? "pending",
-      amountKobo: this.numberValue(payload.data.amount),
-      currency: this.safeString(payload.data.currency, 3) ?? input.currency,
-      transactionReference:
-        this.safeString(payload.data.transaction?.reference, 120) ?? input.transactionReference
+      status: this.safeString(payload.data.status, 80),
+      amountKobo: this.strictKobo(payload.data.amount),
+      currency: this.safeString(payload.data.currency, 3),
+      transactionReference: this.safeString(payload.data.transaction?.reference, 120),
+      merchantNote: this.safeString(payload.data.merchant_note, 240)
     };
   }
 
@@ -441,5 +446,24 @@ export class PaystackService {
     }
 
     return 0;
+  }
+
+  /**
+   * Strict kobo parsing for refund evidence: only a safe non-negative
+   * integer counts. Anything else stays null so callers can distinguish
+   * "Paystack returned zero" from "Paystack returned no usable amount".
+   */
+  private strictKobo(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    const parsed = typeof value === "number" ? value : Number(value);
+
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      return null;
+    }
+
+    return parsed;
   }
 }

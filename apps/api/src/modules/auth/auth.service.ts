@@ -8,7 +8,11 @@ import { AuthRepository } from "./auth.repository";
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
 import { TenantContextService } from "../tenant/tenant-context.service";
-import type { ActiveOrganisationContext } from "../../common/types/request-context";
+import type {
+  ActiveOrganisationContext,
+  SafeUser
+} from "../../common/types/request-context";
+import type { Organisation, OrganisationMember } from "../../database/schema";
 
 type AuthSessionResponse = ActiveOrganisationContext & {
   accessToken: string;
@@ -16,6 +20,18 @@ type AuthSessionResponse = ActiveOrganisationContext & {
   onboardingRequired: boolean;
   onboardingStep: OnboardingStep;
 };
+
+export type WorkspaceSelectionRequired = {
+  user: SafeUser;
+  selectionRequired: true;
+  organisations: Array<{ organisation: Organisation; membership: OrganisationMember }>;
+  accessToken: string;
+  refreshToken: string;
+};
+
+export type LoginResponse =
+  | (AuthSessionResponse & { selectionRequired: false })
+  | WorkspaceSelectionRequired;
 
 export type OnboardingStep = "business_profile" | "payment_setup" | null;
 
@@ -59,7 +75,7 @@ export class AuthService {
     };
   }
 
-  async login(input: LoginDto): Promise<AuthSessionResponse> {
+  async login(input: LoginDto): Promise<LoginResponse> {
     const email = this.normalizeEmail(input.email);
     const user = await this.authRepository.findUserByEmail(email);
 
@@ -73,26 +89,46 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password.");
     }
 
-    const context = await this.authRepository.getActiveContextForUser(user.id);
+    const contexts = await this.authRepository.listContextsForUser(user.id);
 
-    if (!context) {
+    if (contexts.length === 0) {
       throw new UnauthorizedException("No active organisation membership was found.");
     }
 
-    const onboardingStep = await this.getOnboardingStep(context);
     const rawRefreshToken = this.tokenService.generateRefreshToken();
     await this.authRepository.createRefreshToken(
       user.id,
       this.tokenService.hashRefreshToken(rawRefreshToken),
       this.tokenService.getRefreshTokenExpiry()
     );
+    const accessToken = this.tokenService.signAccessToken(user.id);
+
+    // Multiple active workspaces require an explicit choice. The session is
+    // valid, but no workspace is selected silently: the client must call
+    // POST /session/organisation before any tenant data loads.
+    if (contexts.length > 1) {
+      return {
+        user: contexts[0]!.user,
+        selectionRequired: true as const,
+        organisations: contexts.map((context) => ({
+          organisation: context.activeOrganisation,
+          membership: context.membership
+        })),
+        accessToken,
+        refreshToken: rawRefreshToken
+      };
+    }
+
+    const context = contexts[0]!;
+    const onboardingStep = await this.getOnboardingStep(context);
 
     return {
       ...context,
-      accessToken: this.tokenService.signAccessToken(user.id),
+      accessToken,
       refreshToken: rawRefreshToken,
       onboardingRequired: onboardingStep !== null,
-      onboardingStep
+      onboardingStep,
+      selectionRequired: false as const
     };
   }
 

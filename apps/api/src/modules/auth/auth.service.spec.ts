@@ -177,8 +177,7 @@ describe("AuthService", () => {
 
     expect(result.accessToken).toBe("access-user-1");
     expect(result.refreshToken).toBe("refresh-token");
-    expect(result.onboardingRequired).toBe(true);
-    expect(result.onboardingStep).toBe("business_profile");
+    expect(result).toMatchObject({ onboardingRequired: true, onboardingStep: "business_profile" });
     expect(repository.hasPaymentAccountHistory).not.toHaveBeenCalled();
   });
 
@@ -189,23 +188,59 @@ describe("AuthService", () => {
       ...context.user,
       passwordHash: "hashed-password"
     });
-    repository.getActiveContextForUser.mockResolvedValue({
-      ...context,
-      activeOrganisation: {
-        ...context.activeOrganisation,
-        onboardingCompletedAt: completedAt
-      },
-      businessProfile: {
-        ...context.businessProfile,
-        setupCompletedAt: completedAt
+    repository.listContextsForUser.mockResolvedValue([
+      {
+        ...context,
+        activeOrganisation: {
+          ...context.activeOrganisation,
+          onboardingCompletedAt: completedAt
+        },
+        businessProfile: {
+          ...context.businessProfile,
+          setupCompletedAt: completedAt
+        }
       }
+    ]);
+
+    const result = await service.login({ email: "owner@example.com", password: "password123" });
+
+    expect(result).toMatchObject({ onboardingRequired: true, onboardingStep: "payment_setup" });
+    expect(repository.hasPaymentAccountHistory).toHaveBeenCalledWith("org-1");
+  });
+
+  it("requires workspace selection instead of silently selecting for multi-workspace login", async () => {
+    const { context, repository, service } = setup();
+    repository.findUserByEmail.mockResolvedValue({
+      ...context.user,
+      passwordHash: "hashed-password"
+    });
+    const second = {
+      ...context,
+      activeOrganisation: { ...context.activeOrganisation, id: "org-2", name: "Second" },
+      membership: { ...context.membership, id: "member-2", organisationId: "org-2" }
+    };
+    repository.listContextsForUser.mockResolvedValue([context, second]);
+
+    const result = await service.login({ email: "owner@example.com", password: "password123" });
+
+    expect(result).toMatchObject({ selectionRequired: true });
+    expect("organisations" in result && result.organisations).toHaveLength(2);
+    expect("activeOrganisation" in result).toBe(false);
+  });
+
+  it("auto-selects the sole workspace on single-membership login", async () => {
+    const { context, repository, service } = setup();
+    repository.findUserByEmail.mockResolvedValue({
+      ...context.user,
+      passwordHash: "hashed-password"
     });
 
     const result = await service.login({ email: "owner@example.com", password: "password123" });
 
-    expect(result.onboardingRequired).toBe(true);
-    expect(result.onboardingStep).toBe("payment_setup");
-    expect(repository.hasPaymentAccountHistory).toHaveBeenCalledWith("org-1");
+    expect(result).toMatchObject({ selectionRequired: false });
+    expect("activeOrganisation" in result && result.activeOrganisation).toMatchObject({
+      id: "org-1"
+    });
   });
 
   it("completes onboarding when the organisation has submitted any payment account", async () => {

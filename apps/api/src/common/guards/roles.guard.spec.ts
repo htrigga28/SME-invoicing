@@ -169,7 +169,7 @@ describe("RolesGuard", () => {
     );
 
     expect(tenantContextService.resolveForUser).toHaveBeenCalledWith("user-1", "org-2", {
-      requireExplicit: false
+      requireExplicit: true
     });
   });
 

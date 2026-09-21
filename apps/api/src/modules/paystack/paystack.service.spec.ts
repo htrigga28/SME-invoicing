@@ -228,7 +228,8 @@ describe("PaystackService", () => {
       status: "pending",
       amountKobo: 170000,
       currency: "NGN",
-      transactionReference: "SME-INV000001-ABC123"
+      transactionReference: "SME-INV000001-ABC123",
+      merchantNote: null
     });
 
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -246,6 +247,43 @@ describe("PaystackService", () => {
       currency: "NGN",
       customer_note: "Duplicate payment",
       merchant_note: "Duplicate payment"
+    });
+  });
+
+  it("keeps missing provider evidence missing instead of filling request values", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        status: true,
+        message: "Refund has been queued",
+        data: {
+          id: "refund-456",
+          status: "pending"
+        }
+      })
+    });
+    (global as { fetch?: unknown }).fetch = fetchMock;
+    const service = new PaystackService({
+      get: jest.fn((key: string) =>
+        key === "PAYSTACK_SECRET_KEY" ? "sk_test_secret" : "https://api.paystack.co"
+      )
+    } as never);
+
+    await expect(
+      service.createRefund({
+        transactionReference: "SME-INV000001-ABC123",
+        amountKobo: 170000,
+        currency: "NGN",
+        merchantNote: "lumina-refund:refund-1"
+      })
+    ).resolves.toEqual({
+      providerRefundId: "refund-456",
+      status: "pending",
+      amountKobo: null,
+      currency: null,
+      transactionReference: null,
+      merchantNote: null
     });
   });
 });
