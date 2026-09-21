@@ -1297,13 +1297,22 @@ describe("PaymentsService refunds", () => {
     expect(JSON.stringify(response)).not.toContain("sk_test");
   });
 
-  it("keeps ambiguous provider failures as needs_attention so capacity stays reserved", async () => {
+  it.each([
+    [
+      "keeps ambiguous provider failures as needs_attention so capacity stays reserved",
+      new ServiceUnavailableException("Paystack is temporarily unavailable."),
+      "needs_attention"
+    ],
+    [
+      "marks definite provider rejections as failed so capacity is released",
+      new UnprocessableEntityException("Paystack could not validate this payment request."),
+      "failed"
+    ]
+  ])("%s", async (_case, providerError, expectedStatus) => {
     const { paystackService, service, transaction } = setup();
     const refundTx = createRefundTx();
     transaction.mockImplementation(async (callback) => callback(refundTx.tx));
-    paystackService.createRefund.mockRejectedValue(
-      new ServiceUnavailableException("Paystack is temporarily unavailable.")
-    );
+    paystackService.createRefund.mockRejectedValue(providerError);
     const internals = service as unknown as {
       createAuditLog: jest.Mock;
       getRefundablePaymentState: jest.Mock;
@@ -1334,51 +1343,10 @@ describe("PaymentsService refunds", () => {
         amountKobo: 170000,
         reason: "Duplicate payment"
       })
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    ).rejects.toBeInstanceOf(providerError.constructor);
     expect(refundTx.updateSet).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "needs_attention" })
+      expect.objectContaining({ status: expectedStatus })
     );
-  });
-
-  it("marks definite provider rejections as failed so capacity is released", async () => {
-    const { paystackService, service, transaction } = setup();
-    const refundTx = createRefundTx();
-    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
-    paystackService.createRefund.mockRejectedValue(
-      new UnprocessableEntityException("Paystack could not validate this payment request.")
-    );
-    const internals = service as unknown as {
-      createAuditLog: jest.Mock;
-      getRefundablePaymentState: jest.Mock;
-      lockInvoiceFinancialState: jest.Mock;
-    };
-    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
-      payment: createPayment({ status: "successful", amountKobo: 170000 }),
-      financialSummary: { overpaymentKobo: 170000 },
-      remainingRefundableKobo: 170000
-    });
-    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
-    internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
-      invoice: createInvoice({
-        amountPaidKobo: 340000,
-        balanceDueKobo: 0,
-        status: "paid",
-        totalKobo: 170000
-      }),
-      payments: [
-        createPayment({ status: "successful", amountKobo: 170000 }),
-        createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
-      ],
-      refunds: []
-    });
-
-    await expect(
-      service.createPaymentRefund(context as never, { userId: "user-1" } as never, "payment-1", {
-        amountKobo: 170000,
-        reason: "Duplicate payment"
-      })
-    ).rejects.toBeInstanceOf(UnprocessableEntityException);
-    expect(refundTx.updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
   });
 
   it.each([
