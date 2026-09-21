@@ -8,6 +8,12 @@ const candidate: ProviderTransactionIdRepairCandidate = {
   amountKobo: 50000,
   currency: "NGN",
   id: "payment-1",
+  providerReference: "SME-INV000011-4F3A90LX"
+};
+
+const demoCandidate: ProviderTransactionIdRepairCandidate = {
+  ...candidate,
+  id: "payment-demo-1",
   providerReference: "PAYSTACK_DEMO_INV000011_SUCCESSFUL"
 };
 
@@ -38,7 +44,62 @@ describe("backfillProviderTransactionIds", () => {
       verifyTransaction: jest.fn(async () => createVerification())
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 1, skipped: 0, failed: 0 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 1,
+      skipped: 0,
+      failed: 0
+    });
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith("payment-1", "1004723697");
+  });
+
+  it("excludes deterministic synthetic/demo payments from verification", async () => {
+    const verifyTransaction = jest.fn(async () => createVerification());
+    const persist = jest.fn(async () => true);
+
+    const summary = await backfillProviderTransactionIds({
+      listMissing: jest.fn(async () => [demoCandidate]),
+      log: jest.fn(),
+      persist,
+      verifyTransaction
+    });
+
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 0,
+      excludedDemo: 1,
+      repaired: 0,
+      skipped: 0,
+      failed: 0
+    });
+    expect(verifyTransaction).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes demo data from genuine unresolved legacy payments", async () => {
+    const verifyTransaction = jest.fn(async () => createVerification());
+    const persist = jest.fn(async () => true);
+
+    const summary = await backfillProviderTransactionIds({
+      listMissing: jest.fn(async () => [demoCandidate, candidate]),
+      log: jest.fn(),
+      persist,
+      verifyTransaction
+    });
+
+    expect(summary).toEqual({
+      scanned: 2,
+      genuineCandidates: 1,
+      excludedDemo: 1,
+      repaired: 1,
+      skipped: 0,
+      failed: 0
+    });
+    expect(verifyTransaction).toHaveBeenCalledTimes(1);
+    expect(verifyTransaction).toHaveBeenCalledWith(candidate.providerReference);
     expect(persist).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledWith("payment-1", "1004723697");
   });
@@ -53,7 +114,14 @@ describe("backfillProviderTransactionIds", () => {
       verifyTransaction: jest.fn(async () => createVerification({ reference: "OTHER-REFERENCE" }))
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 1, failed: 0 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 1,
+      failed: 0
+    });
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -69,7 +137,14 @@ describe("backfillProviderTransactionIds", () => {
       )
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 1, failed: 0 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 1,
+      failed: 0
+    });
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -83,7 +158,14 @@ describe("backfillProviderTransactionIds", () => {
       verifyTransaction: jest.fn(async () => createVerification({ currency: "USD" }))
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 1, failed: 0 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 1,
+      failed: 0
+    });
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -99,7 +181,14 @@ describe("backfillProviderTransactionIds", () => {
         verifyTransaction: jest.fn(async () => createVerification({ status }))
       });
 
-      expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 1, failed: 0 });
+      expect(summary).toEqual({
+        scanned: 1,
+        genuineCandidates: 1,
+        excludedDemo: 0,
+        repaired: 0,
+        skipped: 1,
+        failed: 0
+      });
       expect(persist).not.toHaveBeenCalled();
     }
   );
@@ -114,7 +203,14 @@ describe("backfillProviderTransactionIds", () => {
       verifyTransaction: jest.fn(async () => createVerification({ providerTransactionId: null }))
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 1, failed: 0 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 1,
+      failed: 0
+    });
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -128,7 +224,14 @@ describe("backfillProviderTransactionIds", () => {
       verifyTransaction: jest.fn(async () => createVerification())
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 1, failed: 0 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 1,
+      failed: 0
+    });
     expect(persist).toHaveBeenCalledTimes(1);
   });
 
@@ -144,7 +247,14 @@ describe("backfillProviderTransactionIds", () => {
       })
     });
 
-    expect(summary).toEqual({ scanned: 1, repaired: 0, skipped: 0, failed: 1 });
+    expect(summary).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 0,
+      failed: 1
+    });
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -170,8 +280,22 @@ describe("backfillProviderTransactionIds", () => {
     const first = await backfillProviderTransactionIds(deps);
     const second = await backfillProviderTransactionIds(deps);
 
-    expect(first).toEqual({ scanned: 1, repaired: 1, skipped: 0, failed: 0 });
-    expect(second).toEqual({ scanned: 0, repaired: 0, skipped: 0, failed: 0 });
+    expect(first).toEqual({
+      scanned: 1,
+      genuineCandidates: 1,
+      excludedDemo: 0,
+      repaired: 1,
+      skipped: 0,
+      failed: 0
+    });
+    expect(second).toEqual({
+      scanned: 0,
+      genuineCandidates: 0,
+      excludedDemo: 0,
+      repaired: 0,
+      skipped: 0,
+      failed: 0
+    });
     expect(persist).toHaveBeenCalledTimes(1);
     expect(storedTransactionIds.get(candidate.id)).toBe("1004723697");
   });

@@ -13,6 +13,16 @@ import {
 } from "../modules/paystack/paystack.service";
 
 const paystackProvider = "paystack";
+const syntheticDemoReferencePrefix = "PAYSTACK_DEMO_";
+
+/**
+ * Seed/demo payments carry deterministic `PAYSTACK_DEMO_*` references that
+ * never existed at Paystack. They are intentionally unrepairable and must never
+ * be sent to Paystack verification or be mistaken for genuine legacy rows.
+ */
+function isDeterministicSyntheticPayment(providerReference: string): boolean {
+  return providerReference.startsWith(syntheticDemoReferencePrefix);
+}
 
 export type ProviderTransactionIdRepairCandidate = {
   amountKobo: number;
@@ -29,7 +39,9 @@ export type ProviderTransactionIdRepairDeps = {
 };
 
 export type ProviderTransactionIdRepairSummary = {
+  excludedDemo: number;
   failed: number;
+  genuineCandidates: number;
   repaired: number;
   scanned: number;
   skipped: number;
@@ -39,23 +51,37 @@ export type ProviderTransactionIdRepairSummary = {
  * One-time repair for successful Paystack payments that predate
  * `payments.provider_transaction_id` (migration 0018).
  *
- * Rows are only repaired from exact Paystack Verify Transaction evidence:
- * matching reference, successful provider status, matching amount and currency,
- * and a valid provider transaction ID. Rows without exact evidence are left
- * unchanged, and rows with an existing transaction ID are never overwritten.
+ * Deterministic synthetic/demo payments are excluded from the candidate set and
+ * reported separately, so the result always distinguishes genuine unresolved
+ * legacy payments from intentionally unrepairable demo data.
+ *
+ * Genuine rows are only repaired from exact Paystack Verify Transaction
+ * evidence: matching reference, successful provider status, matching amount and
+ * currency, and a valid provider transaction ID. Rows without exact evidence
+ * are left unchanged, and rows with an existing transaction ID are never
+ * overwritten.
  */
 export async function backfillProviderTransactionIds(
   deps: ProviderTransactionIdRepairDeps
 ): Promise<ProviderTransactionIdRepairSummary> {
   const candidates = await deps.listMissing();
   const summary: ProviderTransactionIdRepairSummary = {
+    excludedDemo: 0,
     failed: 0,
+    genuineCandidates: 0,
     repaired: 0,
     scanned: candidates.length,
     skipped: 0
   };
 
   for (const candidate of candidates) {
+    if (isDeterministicSyntheticPayment(candidate.providerReference)) {
+      summary.excludedDemo += 1;
+      continue;
+    }
+
+    summary.genuineCandidates += 1;
+
     let verification: PaystackVerifyResponse;
 
     try {
@@ -136,10 +162,14 @@ async function main() {
     });
 
     console.log("Provider transaction ID backfill complete.");
-    console.log(`Scanned: ${summary.scanned}`);
+    console.log(`Successful Paystack rows missing a transaction ID: ${summary.scanned}`);
+    console.log(`Genuine legacy repair candidates: ${summary.genuineCandidates}`);
+    console.log(
+      `Synthetic/demo payments excluded (not sent to Paystack): ${summary.excludedDemo}`
+    );
     console.log(`Repaired: ${summary.repaired}`);
-    console.log(`Skipped: ${summary.skipped}`);
-    console.log(`Failed: ${summary.failed}`);
+    console.log(`Skipped without exact evidence: ${summary.skipped}`);
+    console.log(`Failed verification (left unchanged): ${summary.failed}`);
   } finally {
     await pool.end();
   }
