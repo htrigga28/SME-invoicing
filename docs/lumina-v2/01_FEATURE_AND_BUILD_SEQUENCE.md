@@ -18,11 +18,13 @@
 
 T020 shipped in PR #21, the light authenticated-app overhaul shipped in PR #22, and **MKT-01 — Marketing Site Editorial Receivables Evolution shipped in PR #23**.
 
-The product sequence now resumes at **T021 — Invoice Delivery, View Tracking and Unified Activity**.
+**T021 — Invoice Delivery, View Tracking and Unified Activity shipped in PR #27.** It established the Resend communications/event foundation, delivery tracking, repeated public-view telemetry, and unified invoice activity.
 
-Execution prompt: `docs/lumina-v2/14_T021_INVOICE_DELIVERY_ACTIVITY_CODEX_PROMPT.md`.
+The product sequence now continues at **T022 — Recurring Billing, Scheduled Sends and Reminder Automation**.
 
-T021 should be implemented before T022 so the communications/event foundation can be reused by recurring billing and reminder automation without duplicating delivery history.
+Execution prompt: `docs/lumina-v2/15_T022_RECURRING_REMINDER_AUTOMATION_CODEX_PROMPT.md`.
+
+T022 must reuse T021 rather than creating another email pipeline. After T022, continue to T023 Customer 360 / Statements / Portal.
 
 ## T020 — Invoice Experience 2.0 — DONE
 
@@ -64,7 +66,7 @@ A user can create a realistic professional invoice substantially faster than in 
 
 ---
 
-## T021 — Invoice Delivery, View Tracking and Unified Activity
+## T021 — Invoice Delivery, View Tracking and Unified Activity — DONE
 
 ### Goal
 
