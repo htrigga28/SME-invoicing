@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -91,6 +91,19 @@ export class InvoicesController {
     @Body() body: SendInvoiceEmailDto
   ) {
     return this.invoicesService.resendInvoiceEmail(context, id, body);
+  }
+
+  @Post(":id/delivery-attempts/:attemptId/retry")
+  @Roles("owner", "admin", "accountant")
+  @ApiOperation({
+    summary: "Retry one unresolved delivery attempt with its original provider request"
+  })
+  retryUncertainDelivery(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string,
+    @Param("attemptId") attemptId: string
+  ) {
+    return this.invoicesService.retryUncertainDelivery(context, id, attemptId);
   }
 
   @Post(":id/duplicate")

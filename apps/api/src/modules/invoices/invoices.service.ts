@@ -36,6 +36,7 @@ import {
   customers,
   invoiceLineItems,
   invoiceStatusEvents,
+  invoiceViewEvents,
   invoices,
   organisationPaymentAccounts,
   organisations,
@@ -936,27 +937,76 @@ export class InvoicesService {
     const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email, true);
     const businessProfile = context.businessProfile;
 
-    const { outcome } = await this.communicationsService.resendInvoiceEmail({
+    const { outcome } = await this.communicationsService.resendInvoiceEmail(
+      {
+        organisationId: context.activeOrganisation.id,
+        userId: context.user.id,
+        invoice: {
+          id: invoiceWithCustomer.invoice.id,
+          invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber
+        },
+        customerId: invoiceWithCustomer.customer.id,
+        content: {
+          customerEmail: invoiceWithCustomer.customer.email,
+          customerName: invoiceWithCustomer.customer.name,
+          businessName: businessProfile?.businessName ?? context.activeOrganisation.name,
+          businessEmail: businessProfile?.email ?? null,
+          invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+          amountDueKobo: invoiceWithCustomer.invoice.balanceDueKobo,
+          dueDate: this.formatDueDate(invoiceWithCustomer.invoice.dueDate),
+          publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken),
+          to: recipients.to,
+          cc: recipients.cc,
+          subject: email?.subject
+        }
+      },
+      { force: email?.force === true }
+    );
+
+    const delivery = await this.communicationsService.getDeliverySummary(
+      context.activeOrganisation.id,
+      invoiceWithCustomer.invoice.id
+    );
+
+    if (outcome === "uncertain") {
+      return {
+        delivery: this.toDeliveryResponse(
+          delivery,
+          "The email may have been sent, but confirmation was not received. Check the activity timeline before resending again."
+        )
+      };
+    }
+
+    return { delivery: this.toDeliveryResponse(delivery) };
+  }
+
+  /**
+   * Internal recovery retry of one unresolved delivery attempt. Replays the
+   * stored immutable provider request with the original idempotency key while
+   * the 24-hour provider window holds. Never creates a new attempt.
+   */
+  async retryUncertainDelivery(
+    context: ActiveOrganisationContext,
+    invoiceId: string,
+    communicationId: string
+  ) {
+    const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+
+    if (
+      !invoiceWithCustomer.invoice.publicAccessEnabled ||
+      ["draft", "cancelled", "void"].includes(invoiceWithCustomer.invoice.status)
+    ) {
+      throw new UnprocessableEntityException("Only issued invoices can be emailed.");
+    }
+
+    const { outcome } = await this.communicationsService.retryUncertainAttempt({
       organisationId: context.activeOrganisation.id,
       userId: context.user.id,
       invoice: {
         id: invoiceWithCustomer.invoice.id,
         invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber
       },
-      customerId: invoiceWithCustomer.customer.id,
-      content: {
-        customerEmail: invoiceWithCustomer.customer.email,
-        customerName: invoiceWithCustomer.customer.name,
-        businessName: businessProfile?.businessName ?? context.activeOrganisation.name,
-        businessEmail: businessProfile?.email ?? null,
-        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
-        amountDueKobo: invoiceWithCustomer.invoice.balanceDueKobo,
-        dueDate: this.formatDueDate(invoiceWithCustomer.invoice.dueDate),
-        publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken),
-        to: recipients.to,
-        cc: recipients.cc,
-        subject: email?.subject
-      }
+      communicationId
     });
 
     const delivery = await this.communicationsService.getDeliverySummary(
@@ -1204,68 +1254,91 @@ export class InvoicesService {
   }
 
   async markPublicInvoiceViewed(publicToken: string) {
-    const publicInvoice = await this.requirePublicInvoice(publicToken);
-    const displayStatus = this.displayStatus(publicInvoice.invoice);
+    const occurredAt = new Date();
 
-    // View timestamps are owned by recordInvoiceViewEvent (COALESCE keeps the
-    // earliest). This lifecycle step must only flip status, never rewrite
-    // viewedAt, so concurrent first views cannot replace the true timestamp.
-    const { occurredAt, viewCount, firstViewedAt, lastViewedAt } =
-      await this.communicationsService.recordInvoiceViewEvent(
-        publicInvoice.invoice.organisationId,
-        publicInvoice.invoice.id
-      );
+    // One transaction owns the whole first-view operation. The invoice row is
+    // locked first and public availability (public access plus non-terminal
+    // status) is rechecked under that lock, so a concurrent cancel/void that
+    // commits after request start cannot leave view telemetry on a revoked
+    // invoice. Timestamps keep earliest-wins semantics (COALESCE) and the
+    // lifecycle flip only moves sent (non-overdue) to viewed, so concurrent
+    // first views cannot replace the true timestamp or duplicate the
+    // transition event.
+    const summary = await this.databaseService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM invoices WHERE public_token = ${publicToken} FOR UPDATE`);
+      const [invoice] = await tx
+        .select()
+        .from(invoices)
+        .where(eq(invoices.publicToken, publicToken))
+        .limit(1);
 
-    if (publicInvoice.invoice.status !== "sent" || displayStatus === "overdue") {
-      return {
-        success: true,
-        viewCount,
-        firstViewedAt,
-        lastViewedAt
-      };
-    }
+      if (!invoice || !this.isPublicInvoiceAvailable(invoice)) {
+        throw new NotFoundException("Invoice is not available.");
+      }
 
-    await this.databaseService.db.transaction(async (tx) => {
+      await tx.insert(invoiceViewEvents).values({
+        organisationId: invoice.organisationId,
+        invoiceId: invoice.id,
+        occurredAt,
+        source: "public_invoice_page"
+      });
+
+      const shouldFlip = invoice.status === "sent" && this.displayStatus(invoice) !== "overdue";
       const [updated] = await tx
         .update(invoices)
         .set({
-          status: "viewed",
+          ...(shouldFlip ? { status: "viewed" as const } : {}),
+          lastViewedAt: occurredAt,
+          viewCount: sql`${invoices.viewCount} + 1`,
+          viewedAt: sql`COALESCE(${invoices.viewedAt}, ${occurredAt})`,
           updatedAt: occurredAt
         })
-        .where(and(eq(invoices.id, publicInvoice.invoice.id), eq(invoices.status, "sent")))
-        .returning();
+        .where(eq(invoices.id, invoice.id))
+        .returning({
+          viewCount: invoices.viewCount,
+          firstViewedAt: invoices.viewedAt,
+          lastViewedAt: invoices.lastViewedAt
+        });
 
       if (!updated) {
-        return;
+        throw new Error("Invoice view summary could not be updated.");
       }
 
-      await tx.insert(invoiceStatusEvents).values({
-        organisationId: publicInvoice.invoice.organisationId,
-        invoiceId: publicInvoice.invoice.id,
-        fromStatus: "sent",
-        toStatus: "viewed",
-        reason: "invoice_viewed",
-        actorUserId: null,
-        metadataRedacted: {
-          invoiceNumber: publicInvoice.invoice.invoiceNumber,
-          source: "public_invoice_page"
-        }
-      });
+      if (shouldFlip) {
+        await tx.insert(invoiceStatusEvents).values({
+          organisationId: invoice.organisationId,
+          invoiceId: invoice.id,
+          fromStatus: "sent",
+          toStatus: "viewed",
+          reason: "invoice_viewed",
+          actorUserId: null,
+          metadataRedacted: {
+            invoiceNumber: invoice.invoiceNumber,
+            source: "public_invoice_page"
+          }
+        });
 
-      await tx.insert(auditLogs).values({
-        organisationId: publicInvoice.invoice.organisationId,
-        actorUserId: null,
-        action: "invoice_viewed",
-        entityType: "invoice",
-        entityId: publicInvoice.invoice.id,
-        metadataRedacted: {
-          invoiceNumber: publicInvoice.invoice.invoiceNumber,
-          source: "public_invoice_page"
-        }
-      });
+        await tx.insert(auditLogs).values({
+          organisationId: invoice.organisationId,
+          actorUserId: null,
+          action: "invoice_viewed",
+          entityType: "invoice",
+          entityId: invoice.id,
+          metadataRedacted: {
+            invoiceNumber: invoice.invoiceNumber,
+            source: "public_invoice_page"
+          }
+        });
+      }
+
+      return {
+        viewCount: updated.viewCount,
+        firstViewedAt: updated.firstViewedAt ?? occurredAt,
+        lastViewedAt: updated.lastViewedAt ?? occurredAt
+      };
     });
 
-    return { success: true, viewCount, firstViewedAt, lastViewedAt };
+    return { success: true, ...summary };
   }
 
   async initializePublicInvoicePayment(publicToken: string) {

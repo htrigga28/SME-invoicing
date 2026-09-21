@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { and, eq } from "drizzle-orm";
 
@@ -344,5 +344,62 @@ describe("concurrent public views (real Postgres)", () => {
         )
       );
     expect(transitions).toHaveLength(1);
+  });
+
+  it("records no telemetry when cancel commits before the view", async () => {
+    const service = new InvoicesService(
+      databaseService(),
+      { create: jest.fn() } as unknown as AuditLogService,
+      stubConfig({ FRONTEND_APP_URL: "http://localhost:3000" }),
+      {} as never,
+      { getInvoiceFinancialSummary: jest.fn() } as never,
+      {
+        getDeliverySummary: jest.fn(async () => ({
+          state: "not_emailed",
+          attempts: 0,
+          lastCommunication: null
+        }))
+      } as unknown as CommunicationsService
+    );
+
+    const { context, customer, organisation } = await seedOrgFixture();
+    const invoice = await seedDraftInvoice(organisation.id, customer.id, context.user.id);
+    await db
+      .update(invoices)
+      .set({ status: "sent", publicAccessEnabled: true, sentAt: new Date() })
+      .where(eq(invoices.id, invoice.id));
+
+    await service.cancelInvoice(context as never, invoice.id, "Customer asked to cancel");
+
+    const [stored] = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.id, invoice.id))
+      .limit(1);
+
+    if (!stored) {
+      throw new Error("Seed invoice was not found.");
+    }
+
+    await expect(service.markPublicInvoiceViewed(stored.publicToken)).rejects.toBeInstanceOf(
+      NotFoundException
+    );
+
+    const viewRows = await db
+      .select({ id: invoiceViewEvents.id })
+      .from(invoiceViewEvents)
+      .where(eq(invoiceViewEvents.invoiceId, invoice.id));
+    expect(viewRows).toHaveLength(0);
+
+    const finalInvoice = requiredRow(
+      await db
+        .select({ status: invoices.status, viewCount: invoices.viewCount })
+        .from(invoices)
+        .where(eq(invoices.id, invoice.id))
+        .limit(1),
+      "invoice"
+    );
+    expect(finalInvoice.status).toBe("cancelled");
+    expect(finalInvoice.viewCount).toBe(0);
   });
 });

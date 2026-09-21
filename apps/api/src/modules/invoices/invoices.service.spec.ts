@@ -683,51 +683,54 @@ describe("InvoicesService public payment initialization", () => {
 });
 
 describe("InvoicesService public view tracking", () => {
-  function createTransactionDb(updateRows: Invoice[] = [createInvoice({ status: "viewed" })]) {
+  function createViewDb(
+    invoiceRow: Invoice | null = createInvoice(),
+    counterRow = { viewCount: 1, firstViewedAt: now, lastViewedAt: now }
+  ) {
     const insertValues = jest.fn().mockResolvedValue(undefined);
+    const updateSet = jest.fn();
     const tx = {
-      update: jest.fn(() => ({
-        set: jest.fn(() => ({
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
           where: jest.fn(() => ({
-            returning: jest.fn().mockResolvedValue(updateRows)
+            limit: jest.fn().mockResolvedValue(invoiceRow ? [invoiceRow] : [])
           }))
         }))
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn((values: unknown) => {
+          updateSet(values);
+          return {
+            where: jest.fn(() => ({
+              returning: jest.fn().mockResolvedValue([counterRow])
+            }))
+          };
+        })
       })),
       insert: jest.fn(() => ({
         values: insertValues
       }))
     };
     const db = {
-      transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<void>) =>
+      transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
         callback(tx)
       )
     };
 
-    return { db, insertValues, tx };
+    return { db, insertValues, updateSet, tx };
   }
 
   it("moves a sent invoice to viewed and writes one status event and audit log", async () => {
-    const { db, insertValues } = createTransactionDb();
-    const recordInvoiceViewEvent = jest.fn().mockResolvedValue({
-      occurredAt: now,
-      viewCount: 1,
-      firstViewedAt: now,
-      lastViewedAt: now
-    });
-    const service = setup(
-      { db },
-      {},
-      undefined,
-      { getDeliverySummary: jest.fn(), recordInvoiceViewEvent }
-    );
-    service.findPublicInvoice = jest.fn().mockResolvedValue(createPublicInvoiceRow());
+    const { db, insertValues, updateSet } = createViewDb();
+    const service = setup({ db }, {}, undefined, { getDeliverySummary: jest.fn() });
 
     await expect(
       (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
     ).resolves.toEqual({ success: true, viewCount: 1, firstViewedAt: now, lastViewedAt: now });
 
-    expect(recordInvoiceViewEvent).toHaveBeenCalledWith("org-1", "invoice-1");
     expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "viewed" }));
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({
         actorUserId: null,
@@ -746,57 +749,51 @@ describe("InvoicesService public view tracking", () => {
   });
 
   it("does not duplicate viewed transitions for repeated views", async () => {
-    const { db } = createTransactionDb();
-    const recordInvoiceViewEvent = jest.fn().mockResolvedValue({
-      occurredAt: now,
-      viewCount: 4,
-      firstViewedAt: now,
-      lastViewedAt: now
-    });
-    const service = setup(
-      { db },
-      {},
-      undefined,
-      { getDeliverySummary: jest.fn(), recordInvoiceViewEvent }
+    const { db, insertValues, updateSet } = createViewDb(
+      createInvoice({ status: "viewed", viewedAt: now }),
+      { viewCount: 4, firstViewedAt: now, lastViewedAt: now }
     );
-    service.findPublicInvoice = jest
-      .fn()
-      .mockResolvedValue(
-        createPublicInvoiceRow(createInvoice({ status: "viewed", viewedAt: now }))
-      );
+    const service = setup({ db }, {}, undefined, { getDeliverySummary: jest.fn() });
 
     await expect(
       (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
     ).resolves.toEqual(expect.objectContaining({ success: true, viewCount: 4 }));
 
-    expect(recordInvoiceViewEvent).toHaveBeenCalledWith("org-1", "invoice-1");
-    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ status: "viewed" }));
+    expect(insertValues).not.toHaveBeenCalledWith(
+      expect.objectContaining({ toStatus: "viewed" })
+    );
   });
 
   it("does not move overdue invoices back to viewed", async () => {
-    const { db } = createTransactionDb();
-    const recordInvoiceViewEvent = jest.fn().mockResolvedValue({
-      occurredAt: now,
-      viewCount: 2,
-      firstViewedAt: now,
-      lastViewedAt: now
-    });
-    const service = setup(
-      { db },
-      {},
-      undefined,
-      { getDeliverySummary: jest.fn(), recordInvoiceViewEvent }
+    const { db, insertValues, updateSet } = createViewDb(
+      createInvoice({ dueDate: "2026-01-01" }),
+      { viewCount: 2, firstViewedAt: now, lastViewedAt: now }
     );
-    service.findPublicInvoice = jest
-      .fn()
-      .mockResolvedValue(createPublicInvoiceRow(createInvoice({ dueDate: "2026-01-01" })));
+    const service = setup({ db }, {}, undefined, { getDeliverySummary: jest.fn() });
 
     await expect(
       (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
     ).resolves.toEqual(expect.objectContaining({ success: true, viewCount: 2 }));
 
-    expect(recordInvoiceViewEvent).toHaveBeenCalledWith("org-1", "invoice-1");
-    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ status: "viewed" }));
+    expect(insertValues).not.toHaveBeenCalledWith(
+      expect.objectContaining({ toStatus: "viewed" })
+    );
+  });
+
+  it("rejects views after public access is revoked without recording telemetry", async () => {
+    const { db, insertValues } = createViewDb(
+      createInvoice({ status: "cancelled", publicAccessEnabled: false })
+    );
+    const service = setup({ db }, {}, undefined, { getDeliverySummary: jest.fn() });
+
+    await expect(
+      (service as unknown as InvoicesService).markPublicInvoiceViewed("public-token")
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(insertValues).not.toHaveBeenCalled();
   });
 });
 
