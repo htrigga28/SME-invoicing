@@ -226,6 +226,32 @@ function createPaymentRelation(
   };
 }
 
+function createReviewRequiredRelations() {
+  return [
+    createPaymentRelation({ payment: { id: "payment-1", status: "successful" } }),
+    createPaymentRelation({
+      payment: {
+        id: "payment-2",
+        invoiceId: "invoice-2",
+        amountKobo: 870000,
+        initializedAt: new Date()
+      },
+      invoice: { id: "invoice-2", totalKobo: 870000, balanceDueKobo: 870000 },
+      events: [
+        createPaymentEvent({
+          id: "event-2",
+          paymentId: "payment-2",
+          errorMessage: "Payment amount did not match the pending payment.",
+          payloadRedacted: {
+            event: "charge.success",
+            data: { amount: 860000, currency: "NGN" }
+          }
+        })
+      ]
+    })
+  ];
+}
+
 function setup() {
   const transaction = jest.fn(async (callback: (tx: unknown) => Promise<void>) => callback({}));
   const paystackService = {
@@ -457,38 +483,7 @@ describe("PaymentsService read APIs", () => {
     const internals = service as unknown as {
       findPaymentsWithRelations: jest.Mock;
     };
-    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
-      createPaymentRelation({
-        payment: { id: "payment-1", status: "successful" }
-      }),
-      createPaymentRelation({
-        payment: {
-          id: "payment-2",
-          invoiceId: "invoice-2",
-          amountKobo: 870000,
-          initializedAt: new Date()
-        },
-        invoice: {
-          id: "invoice-2",
-          totalKobo: 870000,
-          balanceDueKobo: 870000
-        },
-        events: [
-          createPaymentEvent({
-            id: "event-2",
-            paymentId: "payment-2",
-            errorMessage: "Payment amount did not match the pending payment.",
-            payloadRedacted: {
-              event: "charge.success",
-              data: {
-                amount: 860000,
-                currency: "NGN"
-              }
-            }
-          })
-        ]
-      })
-    ]);
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue(createReviewRequiredRelations());
 
     const response = await service.listPayments(context as never, {
       reconciliationState: "review_required"
@@ -850,38 +845,7 @@ describe("PaymentsService read APIs", () => {
     const internals = service as unknown as {
       findPaymentsWithRelations: jest.Mock;
     };
-    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
-      createPaymentRelation({
-        payment: { id: "payment-1", status: "successful" }
-      }),
-      createPaymentRelation({
-        payment: {
-          id: "payment-2",
-          invoiceId: "invoice-2",
-          amountKobo: 870000,
-          initializedAt: new Date()
-        },
-        invoice: {
-          id: "invoice-2",
-          totalKobo: 870000,
-          balanceDueKobo: 870000
-        },
-        events: [
-          createPaymentEvent({
-            id: "event-2",
-            paymentId: "payment-2",
-            errorMessage: "Payment amount did not match the pending payment.",
-            payloadRedacted: {
-              event: "charge.success",
-              data: {
-                amount: 860000,
-                currency: "NGN"
-              }
-            }
-          })
-        ]
-      })
-    ]);
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue(createReviewRequiredRelations());
 
     const response = await service.listPayments(context as never, { view: "review_required" });
 
