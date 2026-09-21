@@ -147,6 +147,7 @@ function createPayment(overrides: Partial<Payment> = {}): Payment {
     customerId: "customer-1",
     provider: "paystack",
     providerReference: "SME-INV000001-ABC123",
+    providerTransactionId: null,
     providerSubaccountCode: "ACCT_test_subaccount",
     providerAccessCode: null,
     providerAuthorizationUrl: null,
@@ -184,13 +185,7 @@ function setup(
     )
   },
   communicationsService: unknown = {
-    getDeliverySummary: jest.fn(),
-    recordInvoiceViewEvent: jest.fn().mockResolvedValue({
-      occurredAt: now,
-      viewCount: 1,
-      firstViewedAt: now,
-      lastViewedAt: now
-    })
+    getDeliverySummary: jest.fn()
   }
 ) {
   const service = new InvoicesService(
@@ -761,16 +756,15 @@ describe("InvoicesService public view tracking", () => {
 
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ status: "viewed" }));
-    expect(insertValues).not.toHaveBeenCalledWith(
-      expect.objectContaining({ toStatus: "viewed" })
-    );
+    expect(insertValues).not.toHaveBeenCalledWith(expect.objectContaining({ toStatus: "viewed" }));
   });
 
   it("does not move overdue invoices back to viewed", async () => {
-    const { db, insertValues, updateSet } = createViewDb(
-      createInvoice({ dueDate: "2026-01-01" }),
-      { viewCount: 2, firstViewedAt: now, lastViewedAt: now }
-    );
+    const { db, insertValues, updateSet } = createViewDb(createInvoice({ dueDate: "2026-01-01" }), {
+      viewCount: 2,
+      firstViewedAt: now,
+      lastViewedAt: now
+    });
     const service = setup({ db }, {}, undefined, { getDeliverySummary: jest.fn() });
 
     await expect(
@@ -779,9 +773,7 @@ describe("InvoicesService public view tracking", () => {
 
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ status: "viewed" }));
-    expect(insertValues).not.toHaveBeenCalledWith(
-      expect.objectContaining({ toStatus: "viewed" })
-    );
+    expect(insertValues).not.toHaveBeenCalledWith(expect.objectContaining({ toStatus: "viewed" }));
   });
 
   it("rejects views after public access is revoked without recording telemetry", async () => {
@@ -807,12 +799,14 @@ describe("InvoicesService T021 send and resend", () => {
       balanceDueKobo: 7840000
     });
 
-  function setupSend(overrides: {
-    invoice?: ReturnType<typeof createInvoice>;
-    sendInvoiceEmail?: jest.Mock;
-    resendInvoiceEmail?: jest.Mock;
-    deliverySummary?: unknown;
-  } = {}) {
+  function setupSend(
+    overrides: {
+      invoice?: ReturnType<typeof createInvoice>;
+      sendInvoiceEmail?: jest.Mock;
+      resendInvoiceEmail?: jest.Mock;
+      deliverySummary?: unknown;
+    } = {}
+  ) {
     const service = setup();
     const invoice = overrides.invoice ?? draftRow();
     service.requireInvoice = jest.fn().mockResolvedValue({ invoice, customer: createCustomer() });
@@ -826,15 +820,13 @@ describe("InvoicesService T021 send and resend", () => {
     const resendInvoiceEmail =
       overrides.resendInvoiceEmail ??
       jest.fn().mockResolvedValue({ communication: { id: "comm-2" }, outcome: "accepted" });
-    const getDeliverySummary = jest
-      .fn()
-      .mockResolvedValue(
-        overrides.deliverySummary ?? {
-          state: "accepted",
-          attempts: 1,
-          lastCommunication: { id: "comm-1", status: "accepted" }
-        }
-      );
+    const getDeliverySummary = jest.fn().mockResolvedValue(
+      overrides.deliverySummary ?? {
+        state: "accepted",
+        attempts: 1,
+        lastCommunication: { id: "comm-1", status: "accepted" }
+      }
+    );
     (service as unknown as { communicationsService: unknown }).communicationsService = {
       sendInvoiceEmail,
       resendInvoiceEmail,
@@ -947,8 +939,9 @@ describe("InvoicesService T021 send and resend", () => {
       communication: { id: "comm-2" },
       outcome: "accepted"
     });
-    (service as unknown as { communicationsService: Record<string, unknown> }).communicationsService
-      .resendInvoiceEmail = resendInvoiceEmail;
+    (
+      service as unknown as { communicationsService: Record<string, unknown> }
+    ).communicationsService.resendInvoiceEmail = resendInvoiceEmail;
 
     const result = await (service as unknown as InvoicesService).resendInvoiceEmail(
       context,
@@ -972,8 +965,9 @@ describe("InvoicesService T021 send and resend", () => {
       })
     });
     const resendInvoiceEmail = jest.fn();
-    (service as unknown as { communicationsService: Record<string, unknown> }).communicationsService
-      .resendInvoiceEmail = resendInvoiceEmail;
+    (
+      service as unknown as { communicationsService: Record<string, unknown> }
+    ).communicationsService.resendInvoiceEmail = resendInvoiceEmail;
 
     await expect(
       (service as unknown as InvoicesService).resendInvoiceEmail(context, "invoice-1", {

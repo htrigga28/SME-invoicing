@@ -21,7 +21,6 @@ import {
   communicationEvents,
   communicationRecipients,
   communications,
-  invoices,
   invoiceViewEvents,
   type Communication,
   type CommunicationRecipient,
@@ -219,7 +218,11 @@ const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 300;
  */
 export function verifySvixSignature(
   secret: string,
-  headers: { svixId?: string | undefined; svixTimestamp?: string | undefined; svixSignature?: string | undefined },
+  headers: {
+    svixId?: string | undefined;
+    svixTimestamp?: string | undefined;
+    svixSignature?: string | undefined;
+  },
   rawBody: string,
   nowSeconds = Math.floor(Date.now() / 1000)
 ): boolean {
@@ -233,7 +236,10 @@ export function verifySvixSignature(
 
   const timestamp = Number(svixTimestamp);
 
-  if (!Number.isFinite(timestamp) || Math.abs(nowSeconds - timestamp) > SVIX_TIMESTAMP_TOLERANCE_SECONDS) {
+  if (
+    !Number.isFinite(timestamp) ||
+    Math.abs(nowSeconds - timestamp) > SVIX_TIMESTAMP_TOLERANCE_SECONDS
+  ) {
     return false;
   }
 
@@ -250,7 +256,9 @@ export function verifySvixSignature(
     return false;
   }
 
-  const expected = createHmac("sha256", key).update(`${svixId}.${svixTimestamp}.${rawBody}`).digest();
+  const expected = createHmac("sha256", key)
+    .update(`${svixId}.${svixTimestamp}.${rawBody}`)
+    .digest();
   const candidates = svixSignature.split(" ");
 
   for (const candidate of candidates) {
@@ -435,7 +443,11 @@ export class CommunicationsService {
       }));
     } catch (error) {
       if (error instanceof EmailUncertainError) {
-        const current = await this.completeUncertainAttempt(communication, claimToken, error.message);
+        const current = await this.completeUncertainAttempt(
+          communication,
+          claimToken,
+          error.message
+        );
         return { communication: current ?? communication, outcome: "uncertain" as const };
       }
 
@@ -520,7 +532,7 @@ export class CommunicationsService {
       action: "invoice_email_sent",
       entityType: "invoice",
       entityId: input.invoice.id,
-        metadataRedacted: {
+      metadataRedacted: {
         invoiceNumber: input.invoice.invoiceNumber,
         communicationId: communication.id,
         recipientCount: recipients.to.length + recipients.cc.length
@@ -736,7 +748,10 @@ export class CommunicationsService {
     return Math.max(1000, timeout) + 5000;
   }
 
-  private async claimRetry(communicationId: string, claimToken: string): Promise<Communication | null> {
+  private async claimRetry(
+    communicationId: string,
+    claimToken: string
+  ): Promise<Communication | null> {
     const claimedAt = new Date();
     const expiredBefore = new Date(claimedAt.getTime() - this.retryClaimLeaseMs());
     const [claimed] = await this.databaseService.db
@@ -821,7 +836,8 @@ export class CommunicationsService {
         .set({
           status: current.status === "pending" ? "failed" : current.status,
           failedAt: current.status === "pending" ? now : current.failedAt,
-          failureReason: current.status === "pending" ? message.slice(0, 300) : current.failureReason,
+          failureReason:
+            current.status === "pending" ? message.slice(0, 300) : current.failureReason,
           retryClaimToken: null,
           retryClaimedAt: null,
           updatedAt: now
@@ -946,9 +962,7 @@ export class CommunicationsService {
     });
   }
 
-  private async auditSafely(
-    input: Parameters<AuditLogService["create"]>[0]
-  ): Promise<void> {
+  private async auditSafely(input: Parameters<AuditLogService["create"]>[0]): Promise<void> {
     try {
       await this.auditLogService.create(input);
     } catch {
@@ -956,54 +970,6 @@ export class CommunicationsService {
       // must not change delivery state or fail the request.
       this.logger.warn({ action: input.action, event: "communication_audit_write_failed" });
     }
-  }
-
-  async recordInvoiceViewEvent(
-    organisationId: string,
-    invoiceId: string
-  ): Promise<{ occurredAt: Date; viewCount: number; firstViewedAt: Date; lastViewedAt: Date }> {
-    const occurredAt = new Date();
-
-    const summary = await this.databaseService.db.transaction(async (tx) => {
-      await tx.insert(invoiceViewEvents).values({
-        organisationId,
-        invoiceId,
-        occurredAt,
-        source: "public_invoice_page"
-      });
-
-      const [updated] = await tx
-        .update(invoices)
-        .set({
-          lastViewedAt: occurredAt,
-          viewCount: sql`${invoices.viewCount} + 1`,
-          viewedAt: sql`COALESCE(${invoices.viewedAt}, ${occurredAt})`,
-          updatedAt: occurredAt
-        })
-        .where(and(eq(invoices.id, invoiceId), eq(invoices.organisationId, organisationId)))
-        .returning({
-          viewCount: invoices.viewCount,
-          firstViewedAt: invoices.viewedAt,
-          lastViewedAt: invoices.lastViewedAt
-        });
-
-      if (!updated) {
-        throw new Error("Invoice view summary could not be updated.");
-      }
-
-      return {
-        viewCount: updated.viewCount,
-        firstViewedAt: updated.firstViewedAt ?? occurredAt,
-        lastViewedAt: updated.lastViewedAt ?? occurredAt
-      };
-    });
-
-    return {
-      occurredAt,
-      viewCount: summary.viewCount,
-      firstViewedAt: summary.firstViewedAt,
-      lastViewedAt: summary.lastViewedAt
-    };
   }
 
   async processResendWebhook(input: {
@@ -1178,13 +1144,21 @@ export class CommunicationsService {
       if (recipients.length === 0) {
         return {
           response: { received: true } as const,
-          audit: await this.tryAdvanceCommunication(tx, communication, event.eventType, event.occurredAt)
+          audit: await this.tryAdvanceCommunication(
+            tx,
+            communication,
+            event.eventType,
+            event.occurredAt
+          )
         };
       }
 
       // A known communication with recipient rows must not let an unknown or
       // absent recipient event change parent delivery truth.
-      this.logger.warn({ communicationId: communication.id, event: "resend_webhook_unknown_recipient" });
+      this.logger.warn({
+        communicationId: communication.id,
+        event: "resend_webhook_unknown_recipient"
+      });
       return { response: { received: true } as const, audit: null };
     });
 
@@ -1312,10 +1286,7 @@ export class CommunicationsService {
     };
   }
 
-  toSafeCommunication(
-    communication: Communication,
-    recipients: CommunicationRecipient[] = []
-  ) {
+  toSafeCommunication(communication: Communication, recipients: CommunicationRecipient[] = []) {
     return {
       id: communication.id,
       purpose: communication.purpose,
@@ -1472,11 +1443,7 @@ export class CommunicationsService {
       })
       .where(eq(communications.id, communication.id));
 
-    if (
-      aggregate !== "delivered" &&
-      aggregate !== "failed" &&
-      aggregate !== "partially_failed"
-    ) {
+    if (aggregate !== "delivered" && aggregate !== "failed" && aggregate !== "partially_failed") {
       return null;
     }
 
@@ -1512,9 +1479,7 @@ export class CommunicationsService {
     tx: DatabaseTransaction,
     communication: Communication
   ): Promise<void> {
-    const matches = [
-      eq(communicationEventQuarantine.correlationCommunicationId, communication.id)
-    ];
+    const matches = [eq(communicationEventQuarantine.correlationCommunicationId, communication.id)];
 
     if (communication.providerMessageId) {
       matches.push(
@@ -1525,12 +1490,7 @@ export class CommunicationsService {
     const quarantined = await tx
       .select()
       .from(communicationEventQuarantine)
-      .where(
-        and(
-          isNull(communicationEventQuarantine.resolvedAt),
-          or(...matches)
-        )
-      );
+      .where(and(isNull(communicationEventQuarantine.resolvedAt), or(...matches)));
 
     let recipientChanged = false;
 

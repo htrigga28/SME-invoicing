@@ -419,6 +419,7 @@ Rows in `payments` represent Paystack checkout/payment attempts. They are not de
 | customer_id | References customers. |
 | provider | `paystack`. |
 | provider_reference | Paystack reference. |
+| provider_transaction_id | Nullable Paystack transaction ID captured on confirmation and used for refund reconciliation. |
 | provider_subaccount_code | Nullable subaccount used during initialization for historical traceability. |
 | provider_access_code | Paystack checkout access code returned at initialization. |
 | provider_authorization_url | Paystack checkout URL returned at initialization. |

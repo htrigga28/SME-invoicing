@@ -53,6 +53,7 @@ function createPayment(overrides: Partial<Payment> = {}): Payment {
     customerId: "customer-1",
     provider: "paystack",
     providerReference: "PAYSTACK_REF",
+    providerTransactionId: null,
     providerSubaccountCode: "ACCT_do_not_expose",
     providerAccessCode: "access",
     providerAuthorizationUrl: "https://checkout.paystack.test",

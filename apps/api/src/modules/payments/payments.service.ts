@@ -185,6 +185,7 @@ type NormalizedSuccessfulPaystackPayment = {
   gatewayResponse: string | null;
   paidAt: Date;
   providerStatus: string | null;
+  providerTransactionId: string | null;
   reference: string;
   source: "verification" | "webhook";
 };
@@ -623,7 +624,9 @@ export class PaymentsService {
         );
       }
 
-      const currentRefunds = locked.refunds.filter((refund) => refund.paymentId === currentPayment.id);
+      const currentRefunds = locked.refunds.filter(
+        (refund) => refund.paymentId === currentPayment.id
+      );
       const currentRemaining = Math.max(
         currentPayment.amountKobo - this.requestedRefundedKobo(currentRefunds),
         0
@@ -735,7 +738,10 @@ export class PaymentsService {
       !providerRefund.providerRefundId ||
       !providerRefund.status ||
       !this.refundEvidenceMatches(
-        { providerReference: payment.providerReference },
+        {
+          providerReference: payment.providerReference,
+          providerTransactionId: payment.providerTransactionId
+        },
         { id: refundId, amountKobo: input.amountKobo, currency: payment.currency },
         providerRefund
       );
@@ -752,6 +758,7 @@ export class PaymentsService {
             providerMetadataRedacted: {
               providerRefundId: providerRefund.providerRefundId,
               providerStatus: providerRefund.status,
+              providerTransactionId: providerRefund.providerTransactionId,
               transactionReference: providerRefund.transactionReference,
               amountKobo: providerRefund.amountKobo,
               currency: providerRefund.currency,
@@ -818,6 +825,7 @@ export class PaymentsService {
           providerMetadataRedacted: {
             providerRefundId: providerRefund.providerRefundId,
             providerStatus: providerRefund.status,
+            providerTransactionId: providerRefund.providerTransactionId,
             transactionReference: providerRefund.transactionReference,
             amountKobo: providerRefund.amountKobo,
             currency: providerRefund.currency
@@ -897,7 +905,9 @@ export class PaymentsService {
     try {
       providerRefunds = current.refund.providerRefundId
         ? [await this.paystackService.fetchRefund(current.refund.providerRefundId)]
-        : await this.paystackService.listRefunds(current.payment.providerReference);
+        : current.payment.providerTransactionId
+          ? await this.paystackService.listRefunds(current.payment.providerTransactionId)
+          : [];
     } catch {
       return unresolved("Paystack refund evidence is unavailable.");
     }
@@ -932,7 +942,11 @@ export class PaymentsService {
         return {
           refund: this.toSafeRefund(refund),
           reconciliation: { reason: "Refund is already terminal.", status: "unchanged" as const },
-          financialSummary: this.buildFinancialSummary(locked.invoice, locked.payments, locked.refunds)
+          financialSummary: this.buildFinancialSummary(
+            locked.invoice,
+            locked.payments,
+            locked.refunds
+          )
         };
       }
 
@@ -954,6 +968,7 @@ export class PaymentsService {
             currency: providerRefund.currency,
             providerRefundId: providerRefund.providerRefundId,
             providerStatus: providerRefund.status,
+            providerTransactionId: providerRefund.providerTransactionId,
             transactionReference: providerRefund.transactionReference
           },
           updatedAt: now
@@ -1048,6 +1063,7 @@ export class PaymentsService {
           gatewayResponse: verification.gatewayResponse,
           paidAt: this.dateValue(verification.paidAt) ?? new Date(),
           providerStatus: verification.status,
+          providerTransactionId: verification.providerTransactionId,
           reference: normalizedReference,
           source: "verification"
         })
@@ -1292,14 +1308,15 @@ export class PaymentsService {
   /**
    * Shared identity check for both the immediate create-refund response and
    * later reconciliation: stable merchant-note token, provider transaction
-   * reference, amount, and currency must all match exactly. Missing provider
+   * identity, amount, and currency must all match exactly. Missing provider
    * evidence never matches.
    */
   private refundEvidenceMatches(
-    payment: { providerReference: string },
+    payment: { providerReference: string; providerTransactionId?: string | null },
     refund: { id: string; amountKobo: number; currency: string },
     providerRefund: {
       merchantNote: string | null;
+      providerTransactionId?: string | null;
       transactionReference: string | null;
       amountKobo: number | null;
       currency: string | null;
@@ -1307,7 +1324,9 @@ export class PaymentsService {
   ) {
     return (
       providerRefund.merchantNote === this.refundMerchantNote(refund.id) &&
-      providerRefund.transactionReference === payment.providerReference &&
+      (payment.providerTransactionId && providerRefund.providerTransactionId
+        ? providerRefund.providerTransactionId === payment.providerTransactionId
+        : providerRefund.transactionReference === payment.providerReference) &&
       providerRefund.amountKobo === refund.amountKobo &&
       providerRefund.currency === refund.currency
     );
@@ -2423,6 +2442,7 @@ export class PaymentsService {
       gatewayResponse: this.safeString(webhook.payload.data?.gateway_response, 500),
       paidAt: this.dateValue(webhook.payload.data?.paid_at) ?? new Date(),
       providerStatus: this.safeString(webhook.payload.data?.status, 80),
+      providerTransactionId: this.safeString(webhook.payload.data?.id, 120),
       reference: webhook.providerReference,
       source: "webhook"
     });
@@ -2435,7 +2455,11 @@ export class PaymentsService {
   ) {
     const providerRefundId = this.safeString(webhook.payload.data?.id, 120);
     const providerReference = webhook.providerReference;
-    const candidateRefund = await this.findRefundForWebhook(tx, providerRefundId, providerReference);
+    const candidateRefund = await this.findRefundForWebhook(
+      tx,
+      providerRefundId,
+      providerReference
+    );
 
     if (!candidateRefund) {
       await this.markEventProcessed(tx, event.id, {
@@ -2651,6 +2675,13 @@ export class PaymentsService {
     }
 
     if (payment.status === "successful") {
+      if (!payment.providerTransactionId && input.providerTransactionId) {
+        await tx
+          .update(payments)
+          .set({ providerTransactionId: input.providerTransactionId, updatedAt: new Date() })
+          .where(eq(payments.id, payment.id));
+      }
+
       await this.recalculateInvoiceFinancialState(tx, invoice.id, {
         eventId: event?.id ?? null,
         paymentId: payment.id,
@@ -2860,6 +2891,7 @@ export class PaymentsService {
         paidAt: input.paidAt,
         channel: input.channel,
         gatewayResponse: input.gatewayResponse,
+        providerTransactionId: input.providerTransactionId ?? payment.providerTransactionId,
         metadataRedacted: metadata,
         updatedAt: new Date()
       })

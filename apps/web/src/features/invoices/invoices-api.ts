@@ -66,7 +66,11 @@ export type SendInvoiceEmailInput = {
   subject?: string;
 };
 
-export function sendInvoice(accessToken: string, invoiceId: string, input: SendInvoiceEmailInput = {}) {
+export function sendInvoice(
+  accessToken: string,
+  invoiceId: string,
+  input: SendInvoiceEmailInput = {}
+) {
   return apiRequest<InvoiceDetailResponse>(`/invoices/${encodeURIComponent(invoiceId)}/send`, {
     method: "POST",
     accessToken,
@@ -89,6 +93,17 @@ export function resendInvoiceEmail(
   );
 }
 
+export function retryInvoiceEmailAttempt(
+  accessToken: string,
+  invoiceId: string,
+  attemptId: string
+) {
+  return apiRequest<{ delivery: InvoiceDetailResponse["delivery"] }>(
+    `/invoices/${encodeURIComponent(invoiceId)}/delivery-attempts/${encodeURIComponent(attemptId)}/retry`,
+    { method: "POST", accessToken }
+  );
+}
+
 export function getInvoiceActivity(accessToken: string, invoiceId: string) {
   return apiGet<InvoiceActivityResponse>(`/invoices/${encodeURIComponent(invoiceId)}/activity`, {
     accessToken
@@ -96,13 +111,10 @@ export function getInvoiceActivity(accessToken: string, invoiceId: string) {
 }
 
 export function duplicateInvoice(accessToken: string, invoiceId: string) {
-  return apiRequest<InvoiceDetailResponse>(
-    `/invoices/${encodeURIComponent(invoiceId)}/duplicate`,
-    {
-      method: "POST",
-      accessToken
-    }
-  );
+  return apiRequest<InvoiceDetailResponse>(`/invoices/${encodeURIComponent(invoiceId)}/duplicate`, {
+    method: "POST",
+    accessToken
+  });
 }
 
 export function cancelInvoice(accessToken: string, invoiceId: string, reason: string) {

@@ -449,6 +449,7 @@ export const payments = pgTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     provider: varchar("provider", { length: 40 }).notNull(),
     providerReference: varchar("provider_reference", { length: 120 }).notNull(),
+    providerTransactionId: varchar("provider_transaction_id", { length: 120 }),
     providerSubaccountCode: varchar("provider_subaccount_code", { length: 120 }),
     providerAccessCode: text("provider_access_code"),
     providerAuthorizationUrl: text("provider_authorization_url"),
@@ -995,9 +996,9 @@ export const communicationEventQuarantine = pgTable(
     unresolvedMessageIndex: index("communication_event_quarantine_unresolved_message_idx").on(
       table.providerMessageId
     ),
-    unresolvedCorrelationIndex: index("communication_event_quarantine_unresolved_correlation_idx").on(
-      table.correlationCommunicationId
-    )
+    unresolvedCorrelationIndex: index(
+      "communication_event_quarantine_unresolved_correlation_idx"
+    ).on(table.correlationCommunicationId)
   })
 );
 

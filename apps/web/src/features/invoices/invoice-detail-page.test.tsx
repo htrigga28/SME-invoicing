@@ -3,7 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InvoiceDetailContent } from "./invoice-detail-page";
-import { getInvoice, getInvoiceActivity, resendInvoiceEmail, sendInvoice } from "./invoices-api";
+import {
+  getInvoice,
+  getInvoiceActivity,
+  resendInvoiceEmail,
+  retryInvoiceEmailAttempt,
+  sendInvoice
+} from "./invoices-api";
 import type { InvoiceActivityItem, InvoiceDetailResponse } from "./types";
 
 vi.mock("./invoices-api", () => ({
@@ -12,6 +18,7 @@ vi.mock("./invoices-api", () => ({
   getInvoice: vi.fn(),
   getInvoiceActivity: vi.fn(),
   resendInvoiceEmail: vi.fn(),
+  retryInvoiceEmailAttempt: vi.fn(),
   sendInvoice: vi.fn(),
   voidInvoice: vi.fn()
 }));
@@ -288,7 +295,11 @@ describe("InvoiceDetailContent delivery", () => {
           tone: "success"
         }
       ],
-      viewSummary: { viewCount: 4, firstViewedAt: "2026-09-18T10:12:00.000Z", lastViewedAt: "2026-09-19T08:44:00.000Z" }
+      viewSummary: {
+        viewCount: 4,
+        firstViewedAt: "2026-09-18T10:12:00.000Z",
+        lastViewedAt: "2026-09-19T08:44:00.000Z"
+      }
     });
 
     render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
@@ -360,7 +371,8 @@ describe("InvoiceDetailContent delivery", () => {
       delivery: {
         ...draftResponse.delivery,
         state: "failed" as const,
-        message: "Invoice issued, but the email could not be sent. Copy the public link or try again."
+        message:
+          "Invoice issued, but the email could not be sent. Copy the public link or try again."
       }
     });
     vi.mocked(resendInvoiceEmail).mockResolvedValue({
@@ -373,7 +385,9 @@ describe("InvoiceDetailContent delivery", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Send invoice" }));
 
-    expect(await screen.findByText(/Invoice issued, but the email could not be sent/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Invoice issued, but the email could not be sent/)
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Copy public link" }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       "http://localhost:3000/invoice/public-token"
@@ -390,6 +404,36 @@ describe("InvoiceDetailContent delivery", () => {
         subject: "Invoice INV-000007"
       })
     );
+  });
+
+  it("retries an uncertain delivery attempt instead of opening ordinary resend", async () => {
+    vi.mocked(getInvoice).mockResolvedValueOnce({
+      ...invoiceResponse,
+      delivery: {
+        ...invoiceResponse.delivery,
+        state: "uncertain",
+        message: "Delivery confirmation is uncertain.",
+        lastCommunication: {
+          ...invoiceResponse.delivery.lastCommunication!,
+          status: "submission_uncertain"
+        }
+      }
+    });
+    vi.mocked(retryInvoiceEmailAttempt).mockResolvedValue({
+      delivery: { ...invoiceResponse.delivery, state: "accepted" }
+    });
+
+    render(<InvoiceDetailContent accessToken="token" invoiceId="invoice-1" role="owner" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "More invoice actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Resend email" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Retry delivery" }));
+
+    await waitFor(() =>
+      expect(retryInvoiceEmailAttempt).toHaveBeenCalledWith("token", "invoice-1", "comm-1")
+    );
+    expect(await screen.findByText("Invoice emailed.")).toBeInTheDocument();
+    expect(resendInvoiceEmail).not.toHaveBeenCalled();
   });
 
   it("auto-opens the send dialog from the save-and-send flow", async () => {
@@ -421,7 +465,8 @@ describe("InvoiceDetailContent delivery", () => {
       delivery: {
         ...invoiceResponse.delivery,
         state: "partially_failed",
-        message: "Email delivery partially failed. See the activity timeline for the affected addresses."
+        message:
+          "Email delivery partially failed. See the activity timeline for the affected addresses."
       }
     });
     vi.mocked(getInvoiceActivity).mockResolvedValueOnce({

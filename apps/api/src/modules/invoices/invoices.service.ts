@@ -60,7 +60,10 @@ import {
   type DeliveryState
 } from "../communications/communications.service";
 import { validateSendRecipients } from "../communications/email-provider";
-import type { SendInvoiceEmailDto } from "../communications/dto/send-invoice-email.dto";
+import type {
+  ResendInvoiceEmailDto,
+  SendInvoiceEmailDto
+} from "../communications/dto/send-invoice-email.dto";
 import { PaymentsService } from "../payments/payments.service";
 import { PaystackService } from "../paystack/paystack.service";
 import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
@@ -215,7 +218,12 @@ export class InvoicesService {
         : await this.databaseService.db
             .select()
             .from(paymentRefunds)
-            .where(inArray(paymentRefunds.paymentId, invoicePayments.map((item) => item.id)))
+            .where(
+              inArray(
+                paymentRefunds.paymentId,
+                invoicePayments.map((item) => item.id)
+              )
+            )
             .orderBy(desc(paymentRefunds.createdAt));
 
     const items: InvoiceActivityItem[] = [];
@@ -311,7 +319,9 @@ export class InvoicesService {
           id: `email-${communication.id}-accepted`,
           type: "email_accepted",
           occurredAt: new Date(communication.acceptedAt).toISOString(),
-          title: resent ? `Invoice email resent to ${recipientLabel}` : `Invoice emailed to ${recipientLabel}`,
+          title: resent
+            ? `Invoice email resent to ${recipientLabel}`
+            : `Invoice emailed to ${recipientLabel}`,
           detail: "Accepted by the email provider.",
           tone: "info",
           actor: null,
@@ -414,7 +424,11 @@ export class InvoicesService {
         type: "invoice_viewed",
         occurredAt: new Date(lastViewed ?? Date.now()).toISOString(),
         title: "Invoice viewed",
-        detail: this.formatViewSummaryDetail(viewSummary.viewCount, viewSummary.firstViewedAt, viewSummary.lastViewedAt),
+        detail: this.formatViewSummaryDetail(
+          viewSummary.viewCount,
+          viewSummary.firstViewedAt,
+          viewSummary.lastViewedAt
+        ),
         tone: "info",
         actor: null,
         metadata: {
@@ -521,7 +535,8 @@ export class InvoicesService {
             refund.status === "pending" || refund.status === "processing"
               ? `${this.formatKobo(refund.amountKobo)} refund in progress.`
               : `${this.formatKobo(refund.amountKobo)} refund needs attention.`,
-          tone: refund.status === "pending" || refund.status === "processing" ? "warning" : "danger",
+          tone:
+            refund.status === "pending" || refund.status === "processing" ? "warning" : "danger",
           actor: null,
           metadata
         });
@@ -923,7 +938,7 @@ export class InvoicesService {
   async resendInvoiceEmail(
     context: ActiveOrganisationContext,
     invoiceId: string,
-    email: SendInvoiceEmailDto
+    email: ResendInvoiceEmailDto
   ) {
     const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
 
@@ -1062,8 +1077,7 @@ export class InvoicesService {
         content: {
           customerEmail: input.customer.email,
           customerName: input.customer.name,
-          businessName:
-            businessProfile?.businessName ?? input.context.activeOrganisation.name,
+          businessName: businessProfile?.businessName ?? input.context.activeOrganisation.name,
           businessEmail: businessProfile?.email ?? null,
           invoiceNumber: input.invoice.invoiceNumber,
           amountDueKobo: input.invoice.balanceDueKobo,
@@ -1134,7 +1148,8 @@ export class InvoicesService {
       uncertain:
         "Email send status is uncertain. It may still have been sent — check the activity timeline before resending.",
       in_progress: "Email delivery is in progress.",
-      partially_failed: "Email delivery partially failed. See the activity timeline for the affected addresses."
+      partially_failed:
+        "Email delivery partially failed. See the activity timeline for the affected addresses."
     };
 
     return {

@@ -46,6 +46,7 @@ export type PaystackVerifyResponse = {
   currency: string;
   gatewayResponse: string | null;
   paidAt: string | null;
+  providerTransactionId: string | null;
   reference: string;
   status: string;
 };
@@ -58,6 +59,7 @@ type PaystackVerifyApiResponse = {
     channel?: unknown;
     currency?: unknown;
     gateway_response?: unknown;
+    id?: unknown;
     paid_at?: unknown;
     reference?: unknown;
     status?: unknown;
@@ -76,6 +78,7 @@ export type PaystackCreateRefundResponse = {
   amountKobo: number | null;
   currency: string | null;
   providerRefundId: string | null;
+  providerTransactionId: string | null;
   status: string | null;
   transactionReference: string | null;
   merchantNote: string | null;
@@ -86,6 +89,7 @@ export type PaystackRefundResponse = {
   currency: string;
   merchantNote: string | null;
   providerRefundId: string | null;
+  providerTransactionId: string | null;
   status: string;
   transactionReference: string | null;
 };
@@ -99,6 +103,7 @@ type PaystackCreateRefundApiResponse = {
     currency?: unknown;
     status?: unknown;
     transaction?: {
+      id?: unknown;
       reference?: unknown;
     };
     merchant_note?: unknown;
@@ -115,7 +120,7 @@ type PaystackRefundApiResponse = {
         id?: unknown;
         merchant_note?: unknown;
         status?: unknown;
-        transaction?: { reference?: unknown };
+        transaction?: unknown;
       }
     | Array<{
         amount?: unknown;
@@ -123,7 +128,7 @@ type PaystackRefundApiResponse = {
         id?: unknown;
         merchant_note?: unknown;
         status?: unknown;
-        transaction?: { reference?: unknown };
+        transaction?: unknown;
       }>;
 };
 
@@ -239,6 +244,7 @@ export class PaystackService {
       amountKobo: this.numberValue(payload.data.amount),
       currency: this.safeString(payload.data.currency, 3) ?? "",
       paidAt: this.safeString(payload.data.paid_at, 80),
+      providerTransactionId: this.safeString(payload.data.id, 120),
       channel: this.safeString(payload.data.channel, 80),
       gatewayResponse: this.safeString(payload.data.gateway_response, 500)
     };
@@ -296,6 +302,7 @@ export class PaystackService {
     // to financial state; request values are never substituted here.
     return {
       providerRefundId: this.safeString(payload.data.id, 120),
+      providerTransactionId: this.safeString(payload.data.transaction?.id, 120),
       status: this.safeString(payload.data.status, 80),
       amountKobo: this.strictKobo(payload.data.amount),
       currency: this.safeString(payload.data.currency, 3),
@@ -314,8 +321,8 @@ export class PaystackService {
     return refund;
   }
 
-  async listRefunds(transactionReference: string): Promise<PaystackRefundResponse[]> {
-    return this.getRefunds(`/refund?transaction=${encodeURIComponent(transactionReference)}`);
+  async listRefunds(providerTransactionId: string): Promise<PaystackRefundResponse[]> {
+    return this.getRefunds(`/refund?transaction=${encodeURIComponent(providerTransactionId)}`);
   }
 
   private async getRefunds(path: string): Promise<PaystackRefundResponse[]> {
@@ -354,14 +361,29 @@ export class PaystackService {
     }
 
     const rows = Array.isArray(payload.data) ? payload.data : [payload.data];
-    return rows.map((refund) => ({
-      amountKobo: this.numberValue(refund.amount),
-      currency: this.safeString(refund.currency, 3) ?? "",
-      merchantNote: this.safeString(refund.merchant_note, 240),
-      providerRefundId: this.safeString(refund.id, 120),
-      status: this.safeString(refund.status, 80) ?? "unknown",
-      transactionReference: this.safeString(refund.transaction?.reference, 120)
-    }));
+    return rows.map((refund) => {
+      const transaction = refund.transaction;
+
+      return {
+        amountKobo: this.numberValue(refund.amount),
+        currency: this.safeString(refund.currency, 3) ?? "",
+        merchantNote: this.safeString(refund.merchant_note, 240),
+        providerRefundId: this.safeString(refund.id, 120),
+        providerTransactionId: this.safeString(
+          typeof transaction === "object" && transaction !== null && "id" in transaction
+            ? transaction.id
+            : transaction,
+          120
+        ),
+        status: this.safeString(refund.status, 80) ?? "unknown",
+        transactionReference: this.safeString(
+          typeof transaction === "object" && transaction !== null && "reference" in transaction
+            ? transaction.reference
+            : null,
+          120
+        )
+      };
+    });
   }
 
   private toPaystackException(responseStatus: number, providerMessage: string | null) {

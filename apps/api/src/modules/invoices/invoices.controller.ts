@@ -16,7 +16,10 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
-import { SendInvoiceEmailDto } from "../communications/dto/send-invoice-email.dto";
+import {
+  ResendInvoiceEmailDto,
+  SendInvoiceEmailDto
+} from "../communications/dto/send-invoice-email.dto";
 import { CreateInvoiceDto } from "./dto/create-invoice.dto";
 import { InvoiceReasonDto } from "./dto/invoice-reason.dto";
 import { ListInvoicesQueryDto } from "./dto/list-invoices-query.dto";
@@ -88,7 +91,7 @@ export class InvoicesController {
   resendInvoiceEmail(
     @CurrentOrganisation() context: ActiveOrganisationContext,
     @Param("id") id: string,
-    @Body() body: SendInvoiceEmailDto
+    @Body() body: ResendInvoiceEmailDto
   ) {
     return this.invoicesService.resendInvoiceEmail(context, id, body);
   }

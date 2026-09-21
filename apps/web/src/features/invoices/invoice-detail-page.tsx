@@ -24,6 +24,7 @@ import {
   getInvoice,
   getInvoiceActivity,
   resendInvoiceEmail,
+  retryInvoiceEmailAttempt,
   sendInvoice,
   voidInvoice,
   type SendInvoiceEmailInput
@@ -43,6 +44,7 @@ type DeliveryNotice = {
   message: string;
   showCopyLink: boolean;
   showResend: boolean;
+  showRetry: boolean;
 };
 
 export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
@@ -102,7 +104,11 @@ export function InvoiceDetailContent({
     if (params.get("send") === "1" && canManage && invoice.status === "draft") {
       params.delete("send");
       const nextQuery = params.toString();
-      window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`
+      );
       setSendDialogMode("send");
     }
   }, [state, invoice, canManage]);
@@ -206,6 +212,33 @@ export function InvoiceDetailContent({
     }
   }
 
+  async function handleRetryDelivery() {
+    const attemptId = response?.delivery.lastCommunication?.id;
+
+    if (!invoice || !attemptId) {
+      return;
+    }
+
+    setIsSending(true);
+    setError(null);
+    setSuccess(null);
+    setDeliveryNotice(null);
+
+    try {
+      const retryResponse = await retryInvoiceEmailAttempt(accessToken, invoice.id, attemptId);
+      setResponse((current) =>
+        current ? { ...current, delivery: retryResponse.delivery } : current
+      );
+      handleDeliveryResult(retryResponse.delivery);
+      void loadActivity();
+    } catch (retryError) {
+      handleAuthError(retryError);
+      setError(retryError instanceof Error ? retryError.message : "Could not retry delivery.");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   function handleDeliveryResult(delivery: DeliverySummary, firstRecipient?: string) {
     const recipientSuffix = firstRecipient ? ` to ${firstRecipient}` : "";
 
@@ -217,10 +250,8 @@ export function InvoiceDetailContent({
     setDeliveryNotice({
       message: delivery.message,
       showCopyLink: true,
-      showResend:
-        delivery.state === "failed" ||
-        delivery.state === "uncertain" ||
-        delivery.state === "partially_failed"
+      showResend: delivery.state === "failed" || delivery.state === "partially_failed",
+      showRetry: delivery.state === "uncertain" && Boolean(delivery.lastCommunication)
     });
   }
 
@@ -301,10 +332,24 @@ export function InvoiceDetailContent({
     response.publicUrl &&
     invoice.publicAccessEnabled &&
     ["sent", "viewed", "overdue", "partially_paid", "paid"].includes(invoice.status);
+  const canRetryDelivery =
+    canResend &&
+    response.delivery.state === "uncertain" &&
+    Boolean(response.delivery.lastCommunication);
 
   const overflowItems = [
     ...(canEdit ? [{ label: "Edit", href: `/invoices/${invoice.id}/edit` }] : []),
-    ...(canResend ? [{ label: "Resend email", onSelect: () => setSendDialogMode("resend") }] : []),
+    ...(canRetryDelivery
+      ? [
+          {
+            label: isSending ? "Retrying delivery…" : "Retry delivery",
+            onSelect: () => void handleRetryDelivery(),
+            disabled: isSending
+          }
+        ]
+      : canResend
+        ? [{ label: "Resend email", onSelect: () => setSendDialogMode("resend") }]
+        : []),
     ...(canDuplicate
       ? [
           {
@@ -424,6 +469,16 @@ export function InvoiceDetailContent({
               {deliveryNotice.showResend && canResend ? (
                 <Button onClick={() => setSendDialogMode("resend")} size="sm" type="button">
                   Resend email
+                </Button>
+              ) : null}
+              {deliveryNotice.showRetry && canRetryDelivery ? (
+                <Button
+                  disabled={isSending}
+                  onClick={() => void handleRetryDelivery()}
+                  size="sm"
+                  type="button"
+                >
+                  {isSending ? "Retrying…" : "Retry delivery"}
                 </Button>
               ) : null}
             </span>

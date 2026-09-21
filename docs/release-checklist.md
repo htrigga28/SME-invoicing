@@ -5,7 +5,7 @@ names, not secret values.
 
 ## Database
 
-- [ ] `pnpm db:migrate` applied in order through `0017` on the target database.
+- [ ] `pnpm db:migrate` applied in order through `0018` on the target database.
 - [ ] `communication_event_quarantine` exists and is empty of unresolved rows
   older than the current deploy (`resolved_at IS NULL` reviewed or empty).
 - [ ] No `communications` rows remain with `provider = 'brevo'` (migration
@@ -27,7 +27,7 @@ names, not secret values.
   https://api.lumina.akhigbe.xyz/webhooks/resend`.
 - [ ] Subscribed events: `email.sent`, `email.delivered`,
   `email.delivery_delayed`, `email.bounced`, `email.failed`,
-  `email.complained`.
+  `email.complained`, `email.suppressed`.
 - [ ] `GET /health` returns 200; `GET /health/ready` returns 200 with the
   database reachable.
 

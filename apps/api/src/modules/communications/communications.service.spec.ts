@@ -1,4 +1,8 @@
-import { BadGatewayException, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
+import {
+  BadGatewayException,
+  ServiceUnavailableException,
+  UnauthorizedException
+} from "@nestjs/common";
 
 import type { Communication } from "../../database/schema";
 
@@ -63,11 +67,13 @@ function createCommunication(overrides: Partial<Communication> = {}): Communicat
   };
 }
 
-function stubDb(queues: {
-  select?: unknown[][];
-  insert?: unknown[][];
-  update?: unknown[][];
-} = {}) {
+function stubDb(
+  queues: {
+    select?: unknown[][];
+    insert?: unknown[][];
+    update?: unknown[][];
+  } = {}
+) {
   const selectQueue = [...(queues.select ?? [])];
   const insertQueue = [...(queues.insert ?? [])];
   const updateQueue = [...(queues.update ?? [])];
@@ -107,12 +113,14 @@ function stubDb(queues: {
   return db;
 }
 
-function setup(input: {
-  db?: ReturnType<typeof stubDb>;
-  config?: Record<string, string | undefined>;
-  resend?: Partial<ResendEmailProvider>;
-  audit?: { create: jest.Mock };
-} = {}) {
+function setup(
+  input: {
+    db?: ReturnType<typeof stubDb>;
+    config?: Record<string, string | undefined>;
+    resend?: Partial<ResendEmailProvider>;
+    audit?: { create: jest.Mock };
+  } = {}
+) {
   mockRandomUUID.mockReset();
   mockRandomUUID.mockReturnValue("test-claim-token");
   const db = input.db ?? stubDb();
@@ -137,10 +145,9 @@ function setup(input: {
 
 describe("email recipient helpers", () => {
   it("normalizes, lowercases, and dedupes recipients", () => {
-    expect(normalizeRecipients(["  A@Example.com ", "a@example.com", "b@example.com", ""])).toEqual([
-      "a@example.com",
-      "b@example.com"
-    ]);
+    expect(normalizeRecipients(["  A@Example.com ", "a@example.com", "b@example.com", ""])).toEqual(
+      ["a@example.com", "b@example.com"]
+    );
   });
 
   it("dedupes To against CC and rejects invalid addresses", () => {
@@ -151,7 +158,10 @@ describe("email recipient helpers", () => {
     expect(() => validateSendRecipients([], [])).toThrow("At least one To recipient");
     expect(() => validateSendRecipients(["not-an-email"], [])).toThrow("valid email");
     expect(() =>
-      validateSendRecipients(Array.from({ length: 11 }, (_, index) => `u${index}@example.com`), [])
+      validateSendRecipients(
+        Array.from({ length: 11 }, (_, index) => `u${index}@example.com`),
+        []
+      )
     ).toThrow("No more than 10 recipients");
   });
 
@@ -377,9 +387,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
     await expect(service.sendInvoiceEmail(baseInput)).rejects.toThrow(
       "could not save the confirmation"
     );
-    const setMock = (
-      db.update.mock.results[0]?.value as unknown as { set: jest.Mock }
-    ).set;
+    const setMock = (db.update.mock.results[0]?.value as unknown as { set: jest.Mock }).set;
     expect(setMock).toHaveBeenCalledWith(expect.objectContaining({ status: "accepted" }));
     for (const setCall of setMock.mock.calls) {
       expect(setCall[0]).not.toMatchObject({ status: "failed" });
@@ -393,7 +401,11 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       retryClaimToken: "test-claim-token"
     });
     const accepted = createCommunication({ providerMessageId: "email-id-9" });
-    const audit = { create: jest.fn(async () => { throw new Error("audit down"); }) };
+    const audit = {
+      create: jest.fn(async () => {
+        throw new Error("audit down");
+      })
+    };
     const { service } = setup({
       db: stubDb({
         insert: [[claimedPending]],
@@ -453,9 +465,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
     });
     service.sendInvoiceEmail = sendInvoiceEmail;
 
-    await expect(service.resendInvoiceEmail(baseInput)).rejects.toThrow(
-      "still unresolved"
-    );
+    await expect(service.resendInvoiceEmail(baseInput)).rejects.toThrow("still unresolved");
     expect(sendInvoiceEmail).not.toHaveBeenCalled();
   });
 
@@ -556,9 +566,7 @@ describe("CommunicationsService.retryUncertainAttempt", () => {
       db: stubDb({ select: [[row]] })
     });
 
-    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow(
-      "idempotency window"
-    );
+    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow("idempotency window");
     expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
   });
 
@@ -568,9 +576,7 @@ describe("CommunicationsService.retryUncertainAttempt", () => {
       db: stubDb({ select: [[row]] })
     });
 
-    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow(
-      "Only unresolved"
-    );
+    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow("Only unresolved");
     expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
   });
 
@@ -580,9 +586,7 @@ describe("CommunicationsService.retryUncertainAttempt", () => {
       db: stubDb({ select: [[row]] })
     });
 
-    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow(
-      "no replayable"
-    );
+    await expect(service.retryUncertainAttempt(retryInput)).rejects.toThrow("no replayable");
     expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
   });
 
@@ -701,7 +705,10 @@ describe("CommunicationsService.processResendWebhook", () => {
     await expect(
       secured.processResendWebhook({
         ...forged,
-        headers: { ...forged.headers, svixSignature: "v1,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" }
+        headers: {
+          ...forged.headers,
+          svixSignature: "v1,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        }
       })
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
@@ -714,7 +721,9 @@ describe("CommunicationsService.processResendWebhook", () => {
 
     await expect(
       service.processResendWebhook(
-        signedInput(resendPayload("email-unknown", "email.delivered", ["accounts@northstar.example"]))
+        signedInput(
+          resendPayload("email-unknown", "email.delivered", ["accounts@northstar.example"])
+        )
       )
     ).resolves.toEqual({ received: true, unknown: true });
 
@@ -790,7 +799,12 @@ describe("CommunicationsService.processResendWebhook", () => {
     const communication = createCommunication({ status: "accepted" });
     const recipient = createRecipient({ status: "accepted" });
     const { db, result } = await runWebhook({
-      select: [[communication], [communication], [recipient], [{ ...recipient, status: "delivered" }]],
+      select: [
+        [communication],
+        [communication],
+        [recipient],
+        [{ ...recipient, status: "delivered" }]
+      ],
       update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]],
       payload: resendPayload("email-id-1", "email.delivered", ["accounts@northstar.example"])
     });
@@ -831,12 +845,15 @@ describe("CommunicationsService.processResendWebhook", () => {
         [{ ...recipient, status: "delivered" }]
       ],
       update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]],
-      payload: resendPayload("email-not-yet-stored", "email.delivered", [
-        "accounts@northstar.example"
-      ], {
-        invoice_delivery: "invoice_delivery",
-        lumina_communication: "11111111-1111-4111-8111-111111111111"
-      })
+      payload: resendPayload(
+        "email-not-yet-stored",
+        "email.delivered",
+        ["accounts@northstar.example"],
+        {
+          invoice_delivery: "invoice_delivery",
+          lumina_communication: "11111111-1111-4111-8111-111111111111"
+        }
+      )
     });
 
     expect(result).toEqual({ received: true });
@@ -871,7 +888,11 @@ describe("CommunicationsService.processResendWebhook", () => {
         [createRecipient({ status: "delivered" }), { ...suppressedRecipient, status: "failed" }]
       ],
       insert: [[{ id: "event-suppressed" }]],
-      update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-suppressed" }], [{ id: "comm-1" }]],
+      update: [
+        [{ id: "quarantine-resolve" }],
+        [{ id: "recipient-suppressed" }],
+        [{ id: "comm-1" }]
+      ],
       payload: resendPayload("email-id-1", "email.suppressed", ["suppressed@example.com"])
     });
 
@@ -914,22 +935,5 @@ describe("CommunicationsService.processResendWebhook", () => {
 
     expect(result).toEqual({ received: true });
     expect(db.update).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe("CommunicationsService.recordInvoiceViewEvent", () => {
-  it("inserts a view event and increments the invoice view summary", async () => {
-    const { db, service } = setup({
-      db: stubDb({
-        insert: [[{ id: "view-1" }]],
-        update: [[{ viewCount: 4, firstViewedAt: new Date(), lastViewedAt: new Date() }]]
-      })
-    });
-
-    await expect(service.recordInvoiceViewEvent("org-1", "invoice-1")).resolves.toEqual(
-      expect.objectContaining({ viewCount: 4 })
-    );
-    expect(db.insert).toHaveBeenCalledTimes(1);
-    expect(db.update).toHaveBeenCalledTimes(1);
   });
 });
