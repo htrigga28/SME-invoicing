@@ -6,10 +6,20 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 
 import { LinkButton } from "@/components/ui/button";
 import { Alert, ErrorState } from "@/components/ui/feedback";
-import { getMe, logout } from "@/features/auth/auth-api";
+import { getMe, getOrganisations, logout, refresh } from "@/features/auth/auth-api";
 import { getOnboardingPath } from "@/features/auth/onboarding";
-import { clearStoredSession, getStoredSession } from "@/features/auth/session";
-import type { MeResponse, Membership } from "@/features/auth/types";
+import {
+  clearStoredSession,
+  clearStoredOrganisationId,
+  getLegacyStoredSession,
+  getStoredOrganisationId,
+  getStoredSession,
+  scrubLegacyStoredSession,
+  setStoredOrganisationId,
+  setStoredSession,
+  subscribeToStoredSession
+} from "@/features/auth/session";
+import type { MeResponse, Membership, OrganisationMembership } from "@/features/auth/types";
 import { OnboardingProgress } from "@/features/onboarding/onboarding-progress";
 import { getApiErrorMessage, isApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -28,11 +38,15 @@ type AppShellProps = {
   requiredRoles?: readonly Membership["role"][];
 };
 
-type ShellState = "loading" | "ready" | "denied" | "error";
+type ShellState = "loading" | "ready" | "denied" | "error" | "workspace_choice";
 const SIDEBAR_STORAGE_KEY = "sme-invoicing.sidebar-expanded";
 const ME_CACHE_TTL_MS = 30_000;
 
 const meCache = new Map<string, { loadedAt: number; response: MeResponse }>();
+
+export function __clearAppShellMeCacheForTests() {
+  meCache.clear();
+}
 
 const AppShellContextProvider = createContext<AppShellContext | null>(null);
 
@@ -80,38 +94,92 @@ function WorkspaceShell({
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [workspaceChoices, setWorkspaceChoices] = useState<OrganisationMembership[]>([]);
 
   useEffect(() => {
     setSidebarExpanded(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true");
   }, []);
 
+  useEffect(
+    () =>
+      subscribeToStoredSession((session) => {
+        if (session) {
+          setContext((current) =>
+            current ? { ...current, accessToken: session.accessToken } : current
+          );
+        }
+      }),
+    []
+  );
+
   useEffect(() => {
-    const session = getStoredSession();
+    async function boot() {
+      let session = getStoredSession();
+      const legacySession = getLegacyStoredSession();
 
-    if (!session) {
-      router.replace("/login");
-      return;
-    }
+      if (!session) {
+        try {
+          // The API gives a valid refresh cookie priority over the legacy body
+          // token. This first boot can therefore migrate an old browser or use
+          // a cookie set by an earlier, interrupted migration.
+          const refreshed = await refresh(legacySession?.refreshToken);
+          setStoredSession({ accessToken: refreshed.accessToken });
+          session = getStoredSession();
+        } catch (refreshError) {
+          if (legacySession) {
+            setError(
+              getApiErrorMessage(
+                refreshError,
+                "Your previous session could not be upgraded. Please try again or log in."
+              )
+            );
+            setState("error");
+            return;
+          }
+          router.replace("/login");
+          return;
+        }
+      }
 
-    const sessionContext = {
-      accessToken: session.accessToken,
-      refreshToken: session.refreshToken
-    };
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
 
-    const cached = meCache.get(sessionContext.accessToken);
-    if (cached && Date.now() - cached.loadedAt < ME_CACHE_TTL_MS) {
-      applyWorkspaceResponse(cached.response);
-      return;
-    }
+      const accessToken = session.accessToken;
+      const storedOrganisationId = getStoredOrganisationId() ?? undefined;
 
-    getMe(sessionContext.accessToken)
-      .then((response) => {
-        meCache.set(sessionContext.accessToken, { loadedAt: Date.now(), response });
-        applyWorkspaceResponse(response);
-      })
-      .catch((loadError) => {
+      // No silent workspace default: without a stored selection the shell
+      // resolves memberships explicitly (single auto-select, otherwise an
+      // explicit chooser) instead of rendering the oldest workspace.
+      if (!storedOrganisationId) {
+        await recoverStaleWorkspace(accessToken, Boolean(legacySession));
+        return;
+      }
+
+      const cacheKey = `${accessToken}:${storedOrganisationId ?? ""}`;
+      const cached = meCache.get(cacheKey);
+      if (cached && Date.now() - cached.loadedAt < ME_CACHE_TTL_MS) {
+        applyWorkspaceResponse(accessToken, cached.response, Boolean(legacySession));
+        return;
+      }
+
+      try {
+        const response = await getMe(accessToken, storedOrganisationId);
+        meCache.set(cacheKey, { loadedAt: Date.now(), response });
+        applyWorkspaceResponse(accessToken, response, Boolean(legacySession));
+      } catch (loadError) {
+        if (
+          isApiRequestError(loadError) &&
+          loadError.status === 403 &&
+          storedOrganisationId
+        ) {
+          await recoverStaleWorkspace(accessToken, Boolean(legacySession));
+          return;
+        }
+
         if (isApiRequestError(loadError) && loadError.status === 401) {
-          meCache.delete(sessionContext.accessToken);
+          meCache.delete(cacheKey);
           clearStoredSession();
           router.replace("/login");
           return;
@@ -119,9 +187,23 @@ function WorkspaceShell({
 
         setError(getApiErrorMessage(loadError, "Could not load workspace."));
         setState("error");
-      });
+      }
+    }
 
-    function applyWorkspaceResponse(response: MeResponse) {
+    void boot();
+
+    function applyWorkspaceResponse(
+      accessToken: string,
+      response: MeResponse,
+      migratedLegacySession = false
+    ) {
+      setContext({ accessToken, me: response });
+      if (migratedLegacySession) {
+        // Keep the old storage until the cookie exchange and this active
+        // application context both exist.
+        scrubLegacyStoredSession();
+      }
+
       const isAllowedPaymentSetupRoute =
         response.onboardingStep === "payment_setup" && pathname === "/settings/payment-setup";
 
@@ -130,8 +212,6 @@ function WorkspaceShell({
         return;
       }
 
-      setContext({ accessToken: sessionContext.accessToken, me: response });
-
       if (requiredRoles?.length && !requiredRoles.includes(response.membership.role)) {
         setState("denied");
         return;
@@ -139,18 +219,64 @@ function WorkspaceShell({
 
       setState("ready");
     }
+
+    async function recoverStaleWorkspace(accessToken: string, migratedLegacySession = false) {
+      meCache.clear();
+
+      try {
+        // This request deliberately omits x-organisation-id. The stale value
+        // must not participate in membership recovery.
+        const { organisations } = await getOrganisations(accessToken, null);
+
+        if (organisations.length === 0) {
+          clearStoredOrganisationId();
+          clearStoredSession();
+          router.replace("/login");
+          return;
+        }
+
+        if (organisations.length === 1) {
+          const first = organisations[0];
+          if (!first) {
+            clearStoredOrganisationId();
+            clearStoredSession();
+            router.replace("/login");
+            return;
+          }
+          const organisationId = first.organisation.id;
+          setStoredOrganisationId(organisationId);
+          const response = await getMe(accessToken, organisationId);
+          meCache.set(`${accessToken}:${organisationId}`, { loadedAt: Date.now(), response });
+          applyWorkspaceResponse(accessToken, response, migratedLegacySession);
+          return;
+        }
+
+        clearStoredOrganisationId();
+        setWorkspaceChoices(organisations);
+        setState("workspace_choice");
+      } catch (recoveryError) {
+        setError(getApiErrorMessage(recoveryError, "Could not recover your workspace selection."));
+        setState("error");
+      }
+    }
   }, [pathname, requiredRoles, retryCount, router]);
 
   async function handleLogout() {
-    const session = getStoredSession();
-
-    if (session) {
-      await logout(session.refreshToken).catch(() => undefined);
-    }
+    // Cookie-authenticated: the server clears the refresh cookie and revokes
+    // the session. Local state is cleared regardless for consistent UX.
+    await logout().catch(() => undefined);
 
     clearStoredSession();
-    meCache.delete(session?.accessToken ?? "");
+    meCache.clear();
     router.push("/login");
+  }
+
+  function handleWorkspaceChoice(organisationId: string) {
+    setStoredOrganisationId(organisationId);
+    setWorkspaceChoices([]);
+    setError(null);
+    setState("loading");
+    setRetryCount((current) => current + 1);
   }
 
   if (state === "loading") {
@@ -158,6 +284,15 @@ function WorkspaceShell({
   }
 
   if (!context) {
+    if (state === "workspace_choice") {
+      return (
+        <WorkspaceChooser
+          onSelect={handleWorkspaceChoice}
+          organisations={workspaceChoices}
+        />
+      );
+    }
+
     return (
       <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
         <ErrorState
@@ -209,7 +344,12 @@ function WorkspaceShell({
       />
       <AppShellContextProvider.Provider value={context}>
         <div className="min-w-0 flex-1">
-          <Topbar activePath={pathname} me={context.me} onLogout={handleLogout} />
+          <Topbar
+            accessToken={context.accessToken}
+            activePath={pathname}
+            me={context.me}
+            onLogout={handleLogout}
+          />
           <div className="mx-auto w-full max-w-[1280px] px-4 py-6 pb-24 md:px-6 lg:px-8">
             {state === "denied" ? (
               <StatusPanel
@@ -225,6 +365,40 @@ function WorkspaceShell({
           <CreateInvoiceQuickAction pathname={pathname} role={context.me.membership.role} />
         </div>
       </AppShellContextProvider.Provider>
+    </main>
+  );
+}
+
+function WorkspaceChooser({
+  onSelect,
+  organisations
+}: {
+  onSelect: (organisationId: string) => void;
+  organisations: OrganisationMembership[];
+}) {
+  return (
+    <main className="min-h-screen bg-[var(--background)] p-6 text-[var(--text-primary)]">
+      <section className="mx-auto mt-16 w-full max-w-lg rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-card)] p-6 shadow-[var(--shadow-document)]">
+        <h1 className="text-xl font-semibold">Choose a workspace</h1>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          Your previous workspace is no longer available. Choose an active workspace to continue.
+        </p>
+        <div className="mt-5 space-y-2">
+          {organisations.map(({ membership, organisation }) => (
+            <button
+              className="w-full rounded-[var(--radius-control)] border border-[var(--border-default)] px-4 py-3 text-left hover:bg-[var(--surface-raised)]"
+              key={organisation.id}
+              onClick={() => onSelect(organisation.id)}
+              type="button"
+            >
+              <span className="block font-medium">{organisation.name}</span>
+              <span className="block text-sm capitalize text-[var(--text-muted)]">
+                {membership.role}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

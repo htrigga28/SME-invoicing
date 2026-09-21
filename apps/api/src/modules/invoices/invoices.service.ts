@@ -7,6 +7,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnprocessableEntityException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -35,12 +36,15 @@ import {
   customers,
   invoiceLineItems,
   invoiceStatusEvents,
+  invoiceViewEvents,
   invoices,
   organisationPaymentAccounts,
   organisations,
   paymentEvents,
+  paymentRefunds,
   payments,
   receipts,
+  users,
   type BusinessProfile,
   type Customer,
   type Invoice,
@@ -51,6 +55,15 @@ import {
   type Receipt
 } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import {
+  CommunicationsService,
+  type DeliveryState
+} from "../communications/communications.service";
+import { validateSendRecipients } from "../communications/email-provider";
+import type {
+  ResendInvoiceEmailDto,
+  SendInvoiceEmailDto
+} from "../communications/dto/send-invoice-email.dto";
 import { PaymentsService } from "../payments/payments.service";
 import { PaystackService } from "../paystack/paystack.service";
 import type { CreateInvoiceDto } from "./dto/create-invoice.dto";
@@ -144,6 +157,39 @@ function formatInvoiceNumber(sequenceNumber: number) {
   return `INV-${sequenceNumber.toString().padStart(6, "0")}`;
 }
 
+export type InvoiceActivityTone = "neutral" | "success" | "warning" | "danger" | "info";
+
+export type InvoiceActivityType =
+  | "invoice_created"
+  | "invoice_edited"
+  | "invoice_sent"
+  | "email_accepted"
+  | "email_delivered"
+  | "email_deferred"
+  | "email_failed"
+  | "email_uncertain"
+  | "invoice_viewed"
+  | "payment_started"
+  | "payment_confirmed"
+  | "reconciliation_matched"
+  | "reconciliation_review"
+  | "refund_requested"
+  | "refund_processed"
+  | "receipt_issued"
+  | "invoice_cancelled"
+  | "invoice_voided";
+
+export type InvoiceActivityItem = {
+  id: string;
+  type: InvoiceActivityType;
+  occurredAt: string;
+  title: string;
+  detail?: string;
+  tone?: InvoiceActivityTone;
+  actor?: { name?: string } | null;
+  metadata?: Record<string, string | number | null>;
+};
+
 @Injectable()
 export class InvoicesService {
   constructor(
@@ -151,8 +197,407 @@ export class InvoicesService {
     @Inject(AuditLogService) private readonly auditLogService: AuditLogService,
     @Inject(ConfigService) private readonly configService: ConfigService,
     @Inject(PaystackService) private readonly paystackService: PaystackService,
-    @Inject(PaymentsService) private readonly paymentsService: PaymentsService
+    @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(CommunicationsService) private readonly communicationsService: CommunicationsService
   ) {}
+
+  async getInvoiceActivity(context: ActiveOrganisationContext, invoiceId: string) {
+    const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+    const organisationId = context.activeOrganisation.id;
+
+    const [statusEvents, auditRows, delivery, invoicePayments] = await Promise.all([
+      this.findStatusEvents(organisationId, invoiceId),
+      this.findInvoiceAuditRows(organisationId, invoiceId),
+      this.communicationsService.listCommunicationsForInvoice(organisationId, invoiceId),
+      this.findPaymentsForInvoice(organisationId, invoiceId)
+    ]);
+
+    const refunds =
+      invoicePayments.length === 0
+        ? []
+        : await this.databaseService.db
+            .select()
+            .from(paymentRefunds)
+            .where(
+              inArray(
+                paymentRefunds.paymentId,
+                invoicePayments.map((item) => item.id)
+              )
+            )
+            .orderBy(desc(paymentRefunds.createdAt));
+
+    const items: InvoiceActivityItem[] = [];
+    const push = (item: Omit<InvoiceActivityItem, "id"> & { id: string }) => {
+      items.push({ ...item, metadata: item.metadata ?? {} });
+    };
+
+    for (const event of statusEvents) {
+      if (event.toStatus === "draft" && event.reason === "invoice_created") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_created",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice created",
+          detail: `Draft ${invoiceWithCustomer.invoice.invoiceNumber} created.`,
+          tone: "info",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      } else if (event.toStatus === "sent" && event.reason === "invoice_sent") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_sent",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice sent",
+          detail: "Invoice issued and public access enabled.",
+          tone: "success",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      } else if (event.toStatus === "cancelled") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_cancelled",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice cancelled",
+          tone: "warning",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      } else if (event.toStatus === "void") {
+        push({
+          id: `status-${event.id}`,
+          type: "invoice_voided",
+          occurredAt: event.createdAt.toISOString(),
+          title: "Invoice voided",
+          tone: "danger",
+          actor: null,
+          metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+        });
+      }
+    }
+
+    for (const row of auditRows) {
+      if (row.auditLog.action !== "invoice_updated") {
+        continue;
+      }
+
+      push({
+        id: `audit-${row.auditLog.id}`,
+        type: "invoice_edited",
+        occurredAt: row.auditLog.createdAt.toISOString(),
+        title: "Invoice edited",
+        detail: "Draft details updated before sending.",
+        tone: "info",
+        actor: row.actor ? { name: row.actor.name } : null,
+        metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber }
+      });
+    }
+
+    const orderedCommunications = [...delivery.communications].reverse();
+
+    orderedCommunications.forEach((communication, index) => {
+      const recipients = communication.recipients ?? [];
+      const legacyRecipients = [
+        ...(communication.toRecipients ?? []),
+        ...(communication.ccRecipients ?? [])
+      ];
+      const recipientEmails =
+        recipients.length > 0 ? recipients.map((row) => row.email) : legacyRecipients;
+      const recipientLabel =
+        recipientEmails.length > 1
+          ? `${recipientEmails[0]} +${recipientEmails.length - 1} more`
+          : (recipientEmails[0] ?? "customer");
+      const resent = index > 0;
+      const metadata = {
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        communicationId: communication.id
+      };
+
+      if (communication.acceptedAt) {
+        push({
+          id: `email-${communication.id}-accepted`,
+          type: "email_accepted",
+          occurredAt: new Date(communication.acceptedAt).toISOString(),
+          title: resent
+            ? `Invoice email resent to ${recipientLabel}`
+            : `Invoice emailed to ${recipientLabel}`,
+          detail: "Accepted by the email provider.",
+          tone: "info",
+          actor: null,
+          metadata
+        });
+      }
+
+      if (communication.status === "submission_uncertain") {
+        push({
+          id: `email-${communication.id}-uncertain`,
+          type: "email_uncertain",
+          occurredAt: new Date(communication.updatedAt).toISOString(),
+          title: "Email send status uncertain",
+          detail:
+            communication.failureReason ??
+            "The provider did not confirm receipt. It may still have been sent.",
+          tone: "warning",
+          actor: null,
+          metadata
+        });
+      }
+
+      if (communication.deliveredAt && communication.status === "delivered") {
+        push({
+          id: `email-${communication.id}-delivered`,
+          type: "email_delivered",
+          occurredAt: new Date(communication.deliveredAt).toISOString(),
+          title: "Email delivered",
+          detail:
+            recipients.length > 1
+              ? `Delivered to all ${recipients.length} recipients.`
+              : `Delivered to ${recipientLabel}.`,
+          tone: "success",
+          actor: null,
+          metadata
+        });
+      }
+
+      if (recipients.length > 1) {
+        for (const recipient of recipients) {
+          if (recipient.status === "failed" && recipient.failedAt) {
+            push({
+              id: `email-${communication.id}-recipient-${recipient.id}-failed`,
+              type: "email_failed",
+              occurredAt: new Date(recipient.failedAt).toISOString(),
+              title: `Email to ${recipient.email} failed`,
+              detail: recipient.failureReason ?? "The email could not be delivered.",
+              tone: "danger",
+              actor: null,
+              metadata
+            });
+          } else if (recipient.status === "deferred" && recipient.deferredAt) {
+            push({
+              id: `email-${communication.id}-recipient-${recipient.id}-deferred`,
+              type: "email_deferred",
+              occurredAt: new Date(recipient.deferredAt).toISOString(),
+              title: `Email to ${recipient.email} delayed`,
+              detail: "The provider deferred delivery. It may still arrive.",
+              tone: "warning",
+              actor: null,
+              metadata
+            });
+          }
+        }
+      } else {
+        if (communication.deferredAt && communication.status === "deferred") {
+          push({
+            id: `email-${communication.id}-deferred`,
+            type: "email_deferred",
+            occurredAt: new Date(communication.deferredAt).toISOString(),
+            title: "Email delivery delayed",
+            detail: "The provider deferred delivery. It may still arrive.",
+            tone: "warning",
+            actor: null,
+            metadata
+          });
+        }
+
+        if (communication.failedAt) {
+          push({
+            id: `email-${communication.id}-failed`,
+            type: "email_failed",
+            occurredAt: new Date(communication.failedAt).toISOString(),
+            title: "Email delivery failed",
+            detail: communication.failureReason ?? "The email could not be delivered.",
+            tone: "danger",
+            actor: null,
+            metadata
+          });
+        }
+      }
+    });
+
+    const viewSummary = this.toViewSummary(invoiceWithCustomer.invoice);
+
+    if (viewSummary && viewSummary.viewCount > 0) {
+      const lastViewed = viewSummary.lastViewedAt ?? viewSummary.firstViewedAt;
+      push({
+        id: "view-summary",
+        type: "invoice_viewed",
+        occurredAt: new Date(lastViewed ?? Date.now()).toISOString(),
+        title: "Invoice viewed",
+        detail: this.formatViewSummaryDetail(
+          viewSummary.viewCount,
+          viewSummary.firstViewedAt,
+          viewSummary.lastViewedAt
+        ),
+        tone: "info",
+        actor: null,
+        metadata: {
+          invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+          viewCount: viewSummary.viewCount
+        }
+      });
+    }
+
+    for (const payment of invoicePayments) {
+      const amountLabel = this.formatKobo(payment.amountKobo);
+      const paymentMetadata = {
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        providerReference: payment.providerReference,
+        amountKobo: payment.amountKobo
+      };
+
+      push({
+        id: `payment-${payment.id}-started`,
+        type: "payment_started",
+        occurredAt: new Date(payment.initializedAt ?? payment.createdAt).toISOString(),
+        title: "Payment started",
+        detail: `${amountLabel} · Paystack checkout initialized.`,
+        tone: "info",
+        actor: null,
+        metadata: paymentMetadata
+      });
+
+      if (payment.paidAt) {
+        push({
+          id: `payment-${payment.id}-confirmed`,
+          type: "payment_confirmed",
+          occurredAt: new Date(payment.paidAt).toISOString(),
+          title: "Payment confirmed",
+          detail: `${payment.providerReference} · provider-confirmed.`,
+          tone: "success",
+          actor: null,
+          metadata: paymentMetadata
+        });
+      }
+
+      if (payment.reconciliationState === "matched" && payment.paidAt) {
+        push({
+          id: `payment-${payment.id}-matched`,
+          type: "reconciliation_matched",
+          occurredAt: new Date(payment.paidAt).toISOString(),
+          title: "Payment matched",
+          detail: `Reference resolved to ${invoiceWithCustomer.invoice.invoiceNumber}.`,
+          tone: "success",
+          actor: null,
+          metadata: paymentMetadata
+        });
+      } else if (payment.reconciliationState === "review_required") {
+        push({
+          id: `payment-${payment.id}-review`,
+          type: "reconciliation_review",
+          occurredAt: new Date(payment.paidAt ?? payment.createdAt).toISOString(),
+          title: "Payment needs review",
+          detail: "A reconciliation exception needs a manual decision.",
+          tone: "warning",
+          actor: null,
+          metadata: paymentMetadata
+        });
+      }
+
+      if (payment.receipt?.issuedAt) {
+        push({
+          id: `payment-${payment.id}-receipt`,
+          type: "receipt_issued",
+          occurredAt: new Date(payment.receipt.issuedAt).toISOString(),
+          title: `Receipt ${payment.receipt.receiptNumber} issued`,
+          detail: "Immutable receipt for the confirmed payment.",
+          tone: "success",
+          actor: null,
+          metadata: { ...paymentMetadata, receiptNumber: payment.receipt.receiptNumber }
+        });
+      }
+    }
+
+    for (const refund of refunds) {
+      const metadata = {
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+        amountKobo: refund.amountKobo
+      };
+
+      if (refund.status === "processed") {
+        push({
+          id: `refund-${refund.id}-processed`,
+          type: "refund_processed",
+          occurredAt: new Date(refund.processedAt ?? refund.createdAt).toISOString(),
+          title: "Refund processed",
+          detail: `${this.formatKobo(refund.amountKobo)} returned via Paystack.`,
+          tone: "info",
+          actor: null,
+          metadata
+        });
+      } else {
+        push({
+          id: `refund-${refund.id}-requested`,
+          type: "refund_requested",
+          occurredAt: new Date(refund.createdAt).toISOString(),
+          title: "Refund requested",
+          detail:
+            refund.status === "pending" || refund.status === "processing"
+              ? `${this.formatKobo(refund.amountKobo)} refund in progress.`
+              : `${this.formatKobo(refund.amountKobo)} refund needs attention.`,
+          tone:
+            refund.status === "pending" || refund.status === "processing" ? "warning" : "danger",
+          actor: null,
+          metadata
+        });
+      }
+    }
+
+    items.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : a.occurredAt > b.occurredAt ? -1 : 0));
+
+    return {
+      activity: items.slice(0, 200),
+      viewSummary
+    };
+  }
+
+  private async findInvoiceAuditRows(organisationId: string, invoiceId: string) {
+    return this.databaseService.db
+      .select({ auditLog: auditLogs, actor: { name: users.name } })
+      .from(auditLogs)
+      .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+      .where(
+        and(
+          eq(auditLogs.organisationId, organisationId),
+          eq(auditLogs.entityType, "invoice"),
+          eq(auditLogs.entityId, invoiceId)
+        )
+      )
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(100);
+  }
+
+  private formatViewSummaryDetail(
+    viewCount: number,
+    firstViewedAt: Date | string | null,
+    lastViewedAt: Date | string | null
+  ): string {
+    const formatDateTime = (value: Date | string) =>
+      new Date(value).toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    const times = viewCount === 1 ? "time" : "times";
+
+    if (firstViewedAt && lastViewedAt && viewCount > 1) {
+      return `Viewed ${viewCount} ${times} · first ${formatDateTime(firstViewedAt)} · last ${formatDateTime(lastViewedAt)}`;
+    }
+
+    if (firstViewedAt) {
+      return `Viewed ${viewCount} ${times} · first ${formatDateTime(firstViewedAt)}`;
+    }
+
+    return `Viewed ${viewCount} ${times}`;
+  }
+
+  private formatKobo(amountKobo: number): string {
+    return `₦${(amountKobo / 100).toLocaleString("en-NG", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  }
 
   async listInvoices(context: ActiveOrganisationContext, query: ListInvoicesQueryDto) {
     const pagination = this.getPagination(query);
@@ -311,12 +756,14 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
-    const [lineItems, statusEvents, invoicePayments, financialSummary] = await Promise.all([
-      this.findLineItems(context.activeOrganisation.id, invoiceId),
-      this.findStatusEvents(context.activeOrganisation.id, invoiceId),
-      this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId),
-      this.paymentsService.getInvoiceFinancialSummary(context.activeOrganisation.id, invoiceId)
-    ]);
+    const [lineItems, statusEvents, invoicePayments, financialSummary, deliverySummary] =
+      await Promise.all([
+        this.findLineItems(context.activeOrganisation.id, invoiceId),
+        this.findStatusEvents(context.activeOrganisation.id, invoiceId),
+        this.findPaymentsForInvoice(context.activeOrganisation.id, invoiceId),
+        this.paymentsService.getInvoiceFinancialSummary(context.activeOrganisation.id, invoiceId),
+        this.communicationsService.getDeliverySummary(context.activeOrganisation.id, invoiceId)
+      ]);
 
     const paymentAccount = await this.findPaymentAvailabilityAccount(context.activeOrganisation.id);
     const paymentSummary = this.toAuthenticatedPaymentSummary(
@@ -330,6 +777,8 @@ export class InvoicesService {
       statusEvents: statusEvents.map((event) => this.toSafeStatusEvent(event)),
       payments: invoicePayments,
       financialSummary,
+      delivery: this.toDeliveryResponse(deliverySummary),
+      viewSummary: this.toViewSummary(invoiceWithCustomer.invoice),
       publicUrl: invoiceWithCustomer.invoice.publicAccessEnabled
         ? this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
         : null,
@@ -351,8 +800,11 @@ export class InvoicesService {
       throw new NotFoundException("Invoice was not found.");
     }
 
+    // Conflict (not 422): under a send-vs-edit race the read may already
+    // reflect the winner's state, so every stale-state refusal here must carry
+    // the same 409 the CAS transaction below produces on a lost update.
     if (!editableStatuses.includes(invoiceWithCustomer.invoice.status)) {
-      throw new UnprocessableEntityException("Only draft invoices can be edited.");
+      throw new ConflictException("Only draft invoices can be edited.");
     }
 
     const normalized = this.normalizeInvoiceUpdateInput(input, invoiceWithCustomer.invoice);
@@ -390,11 +842,19 @@ export class InvoicesService {
           balanceDueKobo: totals.balanceDueKobo,
           updatedAt: new Date()
         })
-        .where(eq(invoices.id, invoiceWithCustomer.invoice.id))
+        .where(
+          and(
+            eq(invoices.id, invoiceWithCustomer.invoice.id),
+            eq(invoices.organisationId, context.activeOrganisation.id),
+            eq(invoices.status, "draft")
+          )
+        )
         .returning();
 
       if (!updated) {
-        throw new Error("Invoice update failed.");
+        throw new ConflictException(
+          "The invoice changed before the request completed. Refresh and try again."
+        );
       }
 
       if (normalized.lineItems) {
@@ -428,12 +888,19 @@ export class InvoicesService {
     return this.getInvoice(context, invoiceId);
   }
 
-  async sendInvoice(context: ActiveOrganisationContext, invoiceId: string) {
+  async sendInvoice(
+    context: ActiveOrganisationContext,
+    invoiceId: string,
+    email?: SendInvoiceEmailDto
+  ) {
     const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
 
+    // Conflict (not 422): same send-vs-send staleness argument as updateInvoice.
     if (invoiceWithCustomer.invoice.status !== "draft") {
-      throw new UnprocessableEntityException("Only draft invoices can be sent.");
+      throw new ConflictException("Only draft invoices can be sent.");
     }
+
+    const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email);
 
     const sentAt = new Date();
     await this.transitionInvoice(context, invoiceWithCustomer.invoice, {
@@ -446,14 +913,271 @@ export class InvoicesService {
         updatedAt: sentAt
       },
       reason: "invoice_sent",
-      toStatus: "sent"
+      toStatus: "sent",
+      expectedFromStatus: "draft"
+    });
+
+    const publicUrl = this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken);
+    const delivery = await this.deliverIssuedInvoiceEmail({
+      context,
+      invoice: invoiceWithCustomer.invoice,
+      customer: invoiceWithCustomer.customer,
+      publicUrl,
+      recipients,
+      subject: email?.subject
     });
 
     const response = await this.getInvoice(context, invoiceId);
     return {
       ...response,
-      publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken)
+      publicUrl,
+      delivery
     };
+  }
+
+  async resendInvoiceEmail(
+    context: ActiveOrganisationContext,
+    invoiceId: string,
+    email: ResendInvoiceEmailDto
+  ) {
+    const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+
+    if (
+      !invoiceWithCustomer.invoice.publicAccessEnabled ||
+      ["draft", "cancelled", "void"].includes(invoiceWithCustomer.invoice.status)
+    ) {
+      throw new UnprocessableEntityException("Only issued invoices can be emailed.");
+    }
+
+    const recipients = this.resolveSendRecipients(invoiceWithCustomer.customer, email, true);
+    const businessProfile = context.businessProfile;
+
+    const { outcome } = await this.communicationsService.resendInvoiceEmail(
+      {
+        organisationId: context.activeOrganisation.id,
+        userId: context.user.id,
+        invoice: {
+          id: invoiceWithCustomer.invoice.id,
+          invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber
+        },
+        customerId: invoiceWithCustomer.customer.id,
+        content: {
+          customerEmail: invoiceWithCustomer.customer.email,
+          customerName: invoiceWithCustomer.customer.name,
+          businessName: businessProfile?.businessName ?? context.activeOrganisation.name,
+          businessEmail: businessProfile?.email ?? null,
+          invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
+          amountDueKobo: invoiceWithCustomer.invoice.balanceDueKobo,
+          dueDate: this.formatDueDate(invoiceWithCustomer.invoice.dueDate),
+          publicUrl: this.createPublicInvoiceUrl(invoiceWithCustomer.invoice.publicToken),
+          to: recipients.to,
+          cc: recipients.cc,
+          subject: email?.subject
+        }
+      },
+      { force: email?.force === true }
+    );
+
+    const delivery = await this.communicationsService.getDeliverySummary(
+      context.activeOrganisation.id,
+      invoiceWithCustomer.invoice.id
+    );
+
+    if (outcome === "uncertain") {
+      return {
+        delivery: this.toDeliveryResponse(
+          delivery,
+          "The email may have been sent, but confirmation was not received. Check the activity timeline before resending again."
+        )
+      };
+    }
+
+    return { delivery: this.toDeliveryResponse(delivery) };
+  }
+
+  /**
+   * Internal recovery retry of one unresolved delivery attempt. Replays the
+   * stored immutable provider request with the original idempotency key while
+   * the 24-hour provider window holds. Never creates a new attempt.
+   */
+  async retryUncertainDelivery(
+    context: ActiveOrganisationContext,
+    invoiceId: string,
+    communicationId: string
+  ) {
+    const invoiceWithCustomer = await this.requireInvoice(context.activeOrganisation.id, invoiceId);
+
+    if (
+      !invoiceWithCustomer.invoice.publicAccessEnabled ||
+      ["draft", "cancelled", "void"].includes(invoiceWithCustomer.invoice.status)
+    ) {
+      throw new UnprocessableEntityException("Only issued invoices can be emailed.");
+    }
+
+    const { outcome } = await this.communicationsService.retryUncertainAttempt({
+      organisationId: context.activeOrganisation.id,
+      userId: context.user.id,
+      invoice: {
+        id: invoiceWithCustomer.invoice.id,
+        invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber
+      },
+      communicationId
+    });
+
+    const delivery = await this.communicationsService.getDeliverySummary(
+      context.activeOrganisation.id,
+      invoiceWithCustomer.invoice.id
+    );
+
+    if (outcome === "uncertain") {
+      return {
+        delivery: this.toDeliveryResponse(
+          delivery,
+          "The email may have been sent, but confirmation was not received. Check the activity timeline before resending again."
+        )
+      };
+    }
+
+    return { delivery: this.toDeliveryResponse(delivery) };
+  }
+
+  private resolveSendRecipients(
+    customer: Customer,
+    email: SendInvoiceEmailDto | undefined,
+    requireExplicit = false
+  ): { to: string[]; cc: string[] } {
+    const to = email?.to ?? (requireExplicit ? [] : customer.email ? [customer.email] : []);
+    const cc = email?.cc ?? [];
+
+    try {
+      return validateSendRecipients(to, cc);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Recipients are invalid."
+      );
+    }
+  }
+
+  private async deliverIssuedInvoiceEmail(input: {
+    context: ActiveOrganisationContext;
+    invoice: Invoice;
+    customer: Customer;
+    publicUrl: string;
+    recipients: { to: string[]; cc: string[] };
+    subject?: string | undefined;
+  }) {
+    const businessProfile = input.context.businessProfile;
+
+    try {
+      const { outcome } = await this.communicationsService.sendInvoiceEmail({
+        organisationId: input.context.activeOrganisation.id,
+        userId: input.context.user.id,
+        invoice: { id: input.invoice.id, invoiceNumber: input.invoice.invoiceNumber },
+        customerId: input.customer.id,
+        content: {
+          customerEmail: input.customer.email,
+          customerName: input.customer.name,
+          businessName: businessProfile?.businessName ?? input.context.activeOrganisation.name,
+          businessEmail: businessProfile?.email ?? null,
+          invoiceNumber: input.invoice.invoiceNumber,
+          amountDueKobo: input.invoice.balanceDueKobo,
+          dueDate: this.formatDueDate(input.invoice.dueDate),
+          publicUrl: input.publicUrl,
+          to: input.recipients.to,
+          cc: input.recipients.cc,
+          subject: input.subject
+        }
+      });
+
+      if (outcome === "uncertain") {
+        return this.toDeliveryResponse(
+          await this.communicationsService.getDeliverySummary(
+            input.context.activeOrganisation.id,
+            input.invoice.id
+          ),
+          "The invoice was issued, but email confirmation was not received. It may still have been sent — check the activity timeline before resending."
+        );
+      }
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return this.toDeliveryResponse(
+          await this.communicationsService.getDeliverySummary(
+            input.context.activeOrganisation.id,
+            input.invoice.id
+          ),
+          "Email delivery is not configured. The invoice is issued and the public link can still be shared."
+        );
+      }
+
+      if (error instanceof BadGatewayException) {
+        return this.toDeliveryResponse(
+          await this.communicationsService.getDeliverySummary(
+            input.context.activeOrganisation.id,
+            input.invoice.id
+          ),
+          "Invoice issued, but the email could not be sent. Copy the public link or try again."
+        );
+      }
+
+      throw error;
+    }
+
+    return this.toDeliveryResponse(
+      await this.communicationsService.getDeliverySummary(
+        input.context.activeOrganisation.id,
+        input.invoice.id
+      )
+    );
+  }
+
+  private toDeliveryResponse(
+    summary: {
+      state: DeliveryState;
+      attempts: number;
+      lastCommunication: ReturnType<CommunicationsService["toSafeCommunication"]> | null;
+    },
+    message?: string
+  ) {
+    const defaultMessages: Record<DeliveryState, string> = {
+      not_emailed: "This invoice has not been emailed.",
+      sending: "Email is being sent.",
+      accepted: "Email accepted by the email provider.",
+      delivered: "Email delivered.",
+      delayed: "Email delivery is delayed.",
+      failed: "Email delivery failed.",
+      uncertain:
+        "Email send status is uncertain. It may still have been sent — check the activity timeline before resending.",
+      in_progress: "Email delivery is in progress.",
+      partially_failed:
+        "Email delivery partially failed. See the activity timeline for the affected addresses."
+    };
+
+    return {
+      state: summary.state,
+      message: message ?? defaultMessages[summary.state],
+      attempts: summary.attempts,
+      lastCommunication: summary.lastCommunication
+    };
+  }
+
+  private toViewSummary(invoice: Invoice) {
+    if (!invoice.viewCount && !invoice.viewedAt && !invoice.lastViewedAt) {
+      return null;
+    }
+
+    return {
+      viewCount: invoice.viewCount,
+      firstViewedAt: invoice.viewedAt,
+      lastViewedAt: invoice.lastViewedAt
+    };
+  }
+
+  private formatDueDate(dueDate: string): string {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    }).format(new Date(`${dueDate}T00:00:00.000Z`));
   }
 
   async duplicateInvoice(context: ActiveOrganisationContext, invoiceId: string) {
@@ -501,7 +1225,8 @@ export class InvoicesService {
         updatedAt: cancelledAt
       },
       reason: trimmedReason,
-      toStatus: "cancelled"
+      toStatus: "cancelled",
+      expectedFromStatuses: [...cancelableStatuses]
     });
 
     return this.getInvoice(context, invoiceId);
@@ -526,7 +1251,8 @@ export class InvoicesService {
         voidedAt
       },
       reason: trimmedReason,
-      toStatus: "void"
+      toStatus: "void",
+      expectedFromStatuses: [...voidableStatuses]
     });
 
     return this.getInvoice(context, invoiceId);
@@ -543,57 +1269,91 @@ export class InvoicesService {
   }
 
   async markPublicInvoiceViewed(publicToken: string) {
-    const publicInvoice = await this.requirePublicInvoice(publicToken);
-    const displayStatus = this.displayStatus(publicInvoice.invoice);
+    const occurredAt = new Date();
 
-    if (publicInvoice.invoice.status !== "sent" || displayStatus === "overdue") {
-      return { success: true };
-    }
+    // One transaction owns the whole first-view operation. The invoice row is
+    // locked first and public availability (public access plus non-terminal
+    // status) is rechecked under that lock, so a concurrent cancel/void that
+    // commits after request start cannot leave view telemetry on a revoked
+    // invoice. Timestamps keep earliest-wins semantics (COALESCE) and the
+    // lifecycle flip only moves sent (non-overdue) to viewed, so concurrent
+    // first views cannot replace the true timestamp or duplicate the
+    // transition event.
+    const summary = await this.databaseService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM invoices WHERE public_token = ${publicToken} FOR UPDATE`);
+      const [invoice] = await tx
+        .select()
+        .from(invoices)
+        .where(eq(invoices.publicToken, publicToken))
+        .limit(1);
 
-    const viewedAt = publicInvoice.invoice.viewedAt ?? new Date();
+      if (!invoice || !this.isPublicInvoiceAvailable(invoice)) {
+        throw new NotFoundException("Invoice is not available.");
+      }
 
-    await this.databaseService.db.transaction(async (tx) => {
+      await tx.insert(invoiceViewEvents).values({
+        organisationId: invoice.organisationId,
+        invoiceId: invoice.id,
+        occurredAt,
+        source: "public_invoice_page"
+      });
+
+      const shouldFlip = invoice.status === "sent" && this.displayStatus(invoice) !== "overdue";
       const [updated] = await tx
         .update(invoices)
         .set({
-          status: "viewed",
-          viewedAt,
-          updatedAt: viewedAt
+          ...(shouldFlip ? { status: "viewed" as const } : {}),
+          lastViewedAt: occurredAt,
+          viewCount: sql`${invoices.viewCount} + 1`,
+          viewedAt: sql`COALESCE(${invoices.viewedAt}, ${occurredAt})`,
+          updatedAt: occurredAt
         })
-        .where(and(eq(invoices.id, publicInvoice.invoice.id), eq(invoices.status, "sent")))
-        .returning();
+        .where(eq(invoices.id, invoice.id))
+        .returning({
+          viewCount: invoices.viewCount,
+          firstViewedAt: invoices.viewedAt,
+          lastViewedAt: invoices.lastViewedAt
+        });
 
       if (!updated) {
-        return;
+        throw new Error("Invoice view summary could not be updated.");
       }
 
-      await tx.insert(invoiceStatusEvents).values({
-        organisationId: publicInvoice.invoice.organisationId,
-        invoiceId: publicInvoice.invoice.id,
-        fromStatus: "sent",
-        toStatus: "viewed",
-        reason: "invoice_viewed",
-        actorUserId: null,
-        metadataRedacted: {
-          invoiceNumber: publicInvoice.invoice.invoiceNumber,
-          source: "public_invoice_page"
-        }
-      });
+      if (shouldFlip) {
+        await tx.insert(invoiceStatusEvents).values({
+          organisationId: invoice.organisationId,
+          invoiceId: invoice.id,
+          fromStatus: "sent",
+          toStatus: "viewed",
+          reason: "invoice_viewed",
+          actorUserId: null,
+          metadataRedacted: {
+            invoiceNumber: invoice.invoiceNumber,
+            source: "public_invoice_page"
+          }
+        });
 
-      await tx.insert(auditLogs).values({
-        organisationId: publicInvoice.invoice.organisationId,
-        actorUserId: null,
-        action: "invoice_viewed",
-        entityType: "invoice",
-        entityId: publicInvoice.invoice.id,
-        metadataRedacted: {
-          invoiceNumber: publicInvoice.invoice.invoiceNumber,
-          source: "public_invoice_page"
-        }
-      });
+        await tx.insert(auditLogs).values({
+          organisationId: invoice.organisationId,
+          actorUserId: null,
+          action: "invoice_viewed",
+          entityType: "invoice",
+          entityId: invoice.id,
+          metadataRedacted: {
+            invoiceNumber: invoice.invoiceNumber,
+            source: "public_invoice_page"
+          }
+        });
+      }
+
+      return {
+        viewCount: updated.viewCount,
+        firstViewedAt: updated.firstViewedAt ?? occurredAt,
+        lastViewedAt: updated.lastViewedAt ?? occurredAt
+      };
     });
 
-    return { success: true };
+    return { success: true, ...summary };
   }
 
   async initializePublicInvoicePayment(publicToken: string) {
@@ -709,23 +1469,42 @@ export class InvoicesService {
       patch: Partial<Invoice>;
       reason: string;
       toStatus: InvoiceStatusValue;
+      expectedFromStatus?: InvoiceStatusValue;
+      expectedFromStatuses?: InvoiceStatusValue[];
     }
   ) {
     await this.databaseService.db.transaction(async (tx) => {
+      const conditions = [
+        eq(invoices.id, invoice.id),
+        eq(invoices.organisationId, context.activeOrganisation.id)
+      ];
+
+      if (input.expectedFromStatus) {
+        conditions.push(eq(invoices.status, input.expectedFromStatus));
+      } else if (input.expectedFromStatuses?.length) {
+        conditions.push(inArray(invoices.status, input.expectedFromStatuses));
+      }
+
       const [updated] = await tx
         .update(invoices)
         .set(input.patch)
-        .where(eq(invoices.id, invoice.id))
+        .where(and(...conditions))
         .returning();
 
       if (!updated) {
+        if (input.expectedFromStatus || input.expectedFromStatuses?.length) {
+          throw new ConflictException(
+            "The invoice changed before the request completed. Refresh and try again."
+          );
+        }
+
         throw new Error("Invoice transition failed.");
       }
 
       await tx.insert(invoiceStatusEvents).values({
         organisationId: context.activeOrganisation.id,
         invoiceId: invoice.id,
-        fromStatus: invoice.status,
+        fromStatus: input.expectedFromStatus ?? invoice.status,
         toStatus: input.toStatus,
         reason: input.reason,
         actorUserId: context.user.id,
@@ -1281,7 +2060,9 @@ export class InvoicesService {
       publicToken: invoice.publicToken,
       customerReference: invoice.customerReference,
       notes: invoice.notes,
-      viewedAt: invoice.viewedAt
+      viewedAt: invoice.viewedAt,
+      lastViewedAt: invoice.lastViewedAt,
+      viewCount: invoice.viewCount
     };
   }
 

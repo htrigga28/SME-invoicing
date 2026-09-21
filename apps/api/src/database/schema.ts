@@ -1,4 +1,7 @@
 import { relations, sql } from "drizzle-orm";
+
+import type { SendEmailInput } from "../modules/communications/email-provider";
+
 import {
   boolean,
   date,
@@ -15,6 +18,13 @@ import {
   uuid,
   varchar
 } from "drizzle-orm/pg-core";
+
+/**
+ * Immutable normalized provider request stored per communication attempt.
+ * Internal recovery retries replay this snapshot verbatim. Alias of the
+ * provider input so snapshot and send contract cannot drift apart.
+ */
+export type ProviderRequestSnapshot = SendEmailInput;
 
 export const organisationRoleEnum = pgEnum("organisation_role", [
   "owner",
@@ -67,6 +77,25 @@ export const paymentRefundStatusEnum = pgEnum("payment_refund_status", [
   "processing",
   "needs_attention",
   "processed",
+  "failed"
+]);
+
+export const communicationStatusEnum = pgEnum("communication_status", [
+  "pending",
+  "accepted",
+  "delivered",
+  "deferred",
+  "failed",
+  "submission_uncertain",
+  "in_progress",
+  "partially_failed"
+]);
+
+export const communicationRecipientStatusEnum = pgEnum("communication_recipient_status", [
+  "pending",
+  "accepted",
+  "delivered",
+  "deferred",
   "failed"
 ]);
 
@@ -320,6 +349,8 @@ export const invoices = pgTable(
     balanceDueKobo: integer("balance_due_kobo").notNull().default(0),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     viewedAt: timestamp("viewed_at", { withTimezone: true }),
+    lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+    viewCount: integer("view_count").notNull().default(0),
     paidAt: timestamp("paid_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
@@ -418,6 +449,7 @@ export const payments = pgTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     provider: varchar("provider", { length: 40 }).notNull(),
     providerReference: varchar("provider_reference", { length: 120 }).notNull(),
+    providerTransactionId: varchar("provider_transaction_id", { length: 120 }),
     providerSubaccountCode: varchar("provider_subaccount_code", { length: 120 }),
     providerAccessCode: text("provider_access_code"),
     providerAuthorizationUrl: text("provider_authorization_url"),
@@ -802,6 +834,267 @@ export const invoiceStatusEventsRelations = relations(invoiceStatusEvents, ({ on
   })
 }));
 
+export const communications = pgTable(
+  "communications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    purpose: varchar("purpose", { length: 40 }).notNull().default("invoice_delivery"),
+    channel: varchar("channel", { length: 20 }).notNull().default("email"),
+    provider: varchar("provider", { length: 40 }).notNull().default("resend"),
+    subject: varchar("subject", { length: 300 }),
+    toRecipients: jsonb("to_recipients").$type<string[]>().notNull(),
+    ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull(),
+    providerMessageId: varchar("provider_message_id", { length: 200 }),
+    providerIdempotencyKey: varchar("provider_idempotency_key", { length: 36 }).notNull(),
+    /**
+     * Resend retains idempotency keys for 24 hours. Same-attempt recovery
+     * retries are allowed only before this deadline; afterwards only an
+     * explicit new attempt (new row, new key) may send.
+     */
+    idempotencyExpiresAt: timestamp("idempotency_expires_at", { withTimezone: true }),
+    /**
+     * Immutable normalized provider request for this attempt. Internal
+     * recovery retries replay this snapshot verbatim; Resend rejects a reused
+     * key with a different payload, so retries never rebuild from new input.
+     */
+    providerRequestSnapshot: jsonb("provider_request_snapshot").$type<ProviderRequestSnapshot>(),
+    retryClaimToken: varchar("retry_claim_token", { length: 36 }),
+    retryClaimedAt: timestamp("retry_claimed_at", { withTimezone: true }),
+    status: communicationStatusEnum("status").notNull().default("pending"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deferredAt: timestamp("deferred_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    failureReason: varchar("failure_reason", { length: 300 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    ...timestamps
+  },
+  (table) => ({
+    organisationInvoiceIndex: index("communications_org_invoice_id_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    providerMessageIdUnique: uniqueIndex("communications_provider_message_id_unique")
+      .on(table.providerMessageId)
+      .where(sql`${table.providerMessageId} is not null`),
+    idempotencyKeyIndex: index("communications_provider_idempotency_key_idx").on(
+      table.providerIdempotencyKey
+    )
+  })
+);
+
+export const communicationRecipients = pgTable(
+  "communication_recipients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    communicationId: uuid("communication_id")
+      .notNull()
+      .references(() => communications.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    recipientType: varchar("recipient_type", { length: 10 }).notNull().default("to"),
+    status: communicationRecipientStatusEnum("status").notNull().default("pending"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    deferredAt: timestamp("deferred_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    failureReason: varchar("failure_reason", { length: 300 }),
+    ...timestamps
+  },
+  (table) => ({
+    communicationIndex: index("communication_recipients_communication_idx").on(
+      table.organisationId,
+      table.communicationId
+    ),
+    invoiceIndex: index("communication_recipients_org_invoice_idx").on(
+      table.organisationId,
+      table.invoiceId
+    ),
+    communicationEmailUnique: uniqueIndex("communication_recipients_communication_email_unique").on(
+      table.communicationId,
+      table.email
+    )
+  })
+);
+
+export const communicationEvents = pgTable(
+  "communication_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    communicationId: uuid("communication_id")
+      .notNull()
+      .references(() => communications.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 40 }).notNull().default("resend"),
+    providerEventKey: varchar("provider_event_key", { length: 300 }).notNull().unique(),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    metadataRedacted: jsonb("metadata_redacted").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    organisationCommunicationIndex: index("communication_events_org_communication_idx").on(
+      table.organisationId,
+      table.communicationId
+    ),
+    organisationInvoiceIndex: index("communication_events_org_invoice_idx").on(
+      table.organisationId,
+      table.invoiceId
+    )
+  })
+);
+
+/**
+ * Authenticated Resend events that cannot yet be correlated to a communication.
+ * This table deliberately stores only normalized routing fields, never raw
+ * provider payloads or message content.
+ */
+export const communicationEventQuarantine = pgTable(
+  "communication_event_quarantine",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: varchar("provider", { length: 40 }).notNull().default("resend"),
+    providerEventId: varchar("provider_event_id", { length: 200 }),
+    providerEventKey: varchar("provider_event_key", { length: 300 }).notNull().unique(),
+    providerMessageId: varchar("provider_message_id", { length: 200 }),
+    correlationCommunicationId: uuid("correlation_communication_id"),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    recipientEmail: varchar("recipient_email", { length: 320 }),
+    reason: varchar("reason", { length: 120 }).notNull(),
+    resolvedCommunicationId: uuid("resolved_communication_id").references(() => communications.id, {
+      onDelete: "set null"
+    }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    providerEventUnique: uniqueIndex("communication_event_quarantine_provider_event_unique")
+      .on(table.provider, table.providerEventId)
+      .where(sql`${table.providerEventId} is not null`),
+    unresolvedMessageIndex: index("communication_event_quarantine_unresolved_message_idx").on(
+      table.providerMessageId
+    ),
+    unresolvedCorrelationIndex: index(
+      "communication_event_quarantine_unresolved_correlation_idx"
+    ).on(table.correlationCommunicationId)
+  })
+);
+
+export const invoiceViewEvents = pgTable(
+  "invoice_view_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    source: varchar("source", { length: 60 }).notNull().default("public_invoice_page"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    organisationInvoiceIndex: index("invoice_view_events_org_invoice_idx").on(
+      table.organisationId,
+      table.invoiceId
+    )
+  })
+);
+
+export const communicationsRelations = relations(communications, ({ many, one }) => ({
+  organisation: one(organisations, {
+    fields: [communications.organisationId],
+    references: [organisations.id]
+  }),
+  invoice: one(invoices, {
+    fields: [communications.invoiceId],
+    references: [invoices.id]
+  }),
+  customer: one(customers, {
+    fields: [communications.customerId],
+    references: [customers.id]
+  }),
+  createdBy: one(users, {
+    fields: [communications.createdByUserId],
+    references: [users.id]
+  }),
+  events: many(communicationEvents)
+}));
+
+export const communicationRecipientsRelations = relations(communicationRecipients, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [communicationRecipients.organisationId],
+    references: [organisations.id]
+  }),
+  communication: one(communications, {
+    fields: [communicationRecipients.communicationId],
+    references: [communications.id]
+  }),
+  invoice: one(invoices, {
+    fields: [communicationRecipients.invoiceId],
+    references: [invoices.id]
+  })
+}));
+
+export const communicationEventsRelations = relations(communicationEvents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [communicationEvents.organisationId],
+    references: [organisations.id]
+  }),
+  communication: one(communications, {
+    fields: [communicationEvents.communicationId],
+    references: [communications.id]
+  }),
+  invoice: one(invoices, {
+    fields: [communicationEvents.invoiceId],
+    references: [invoices.id]
+  })
+}));
+
+export const communicationEventQuarantineRelations = relations(
+  communicationEventQuarantine,
+  ({ one }) => ({
+    resolvedCommunication: one(communications, {
+      fields: [communicationEventQuarantine.resolvedCommunicationId],
+      references: [communications.id]
+    })
+  })
+);
+
+export const invoiceViewEventsRelations = relations(invoiceViewEvents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [invoiceViewEvents.organisationId],
+    references: [organisations.id]
+  }),
+  invoice: one(invoices, {
+    fields: [invoiceViewEvents.invoiceId],
+    references: [invoices.id]
+  })
+}));
+
 export const paymentsRelations = relations(payments, ({ many, one }) => ({
   organisation: one(organisations, {
     fields: [payments.organisationId],
@@ -896,6 +1189,12 @@ export type CatalogueItem = typeof catalogueItems.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
 export type InvoiceStatusEvent = typeof invoiceStatusEvents.$inferSelect;
+export type Communication = typeof communications.$inferSelect;
+export type NewCommunication = typeof communications.$inferInsert;
+export type CommunicationEvent = typeof communicationEvents.$inferSelect;
+export type CommunicationEventQuarantine = typeof communicationEventQuarantine.$inferSelect;
+export type CommunicationRecipient = typeof communicationRecipients.$inferSelect;
+export type InvoiceViewEvent = typeof invoiceViewEvents.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
 export type PaymentRefund = typeof paymentRefunds.$inferSelect;

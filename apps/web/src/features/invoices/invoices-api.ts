@@ -2,7 +2,12 @@ import type { InvoiceStatus } from "@sme-invoicing/shared";
 
 import { apiGet, apiRequest } from "@/lib/api";
 
-import type { InvoiceDetailResponse, InvoiceListResponse, InvoiceMutationPayload } from "./types";
+import type {
+  InvoiceActivityResponse,
+  InvoiceDetailResponse,
+  InvoiceListResponse,
+  InvoiceMutationPayload
+} from "./types";
 
 type ListInvoicesInput = {
   customerId?: string;
@@ -55,21 +60,65 @@ export function updateInvoice(
   });
 }
 
-export function sendInvoice(accessToken: string, invoiceId: string) {
+export type SendInvoiceEmailInput = {
+  to?: string[];
+  cc?: string[];
+  subject?: string;
+};
+
+export type ResendInvoiceEmailInput = SendInvoiceEmailInput & {
+  force?: boolean;
+};
+
+export function sendInvoice(
+  accessToken: string,
+  invoiceId: string,
+  input: SendInvoiceEmailInput = {}
+) {
   return apiRequest<InvoiceDetailResponse>(`/invoices/${encodeURIComponent(invoiceId)}/send`, {
     method: "POST",
+    accessToken,
+    body: input
+  });
+}
+
+export function resendInvoiceEmail(
+  accessToken: string,
+  invoiceId: string,
+  input: ResendInvoiceEmailInput
+) {
+  return apiRequest<{ delivery: InvoiceDetailResponse["delivery"] }>(
+    `/invoices/${encodeURIComponent(invoiceId)}/resend`,
+    {
+      method: "POST",
+      accessToken,
+      body: input
+    }
+  );
+}
+
+export function retryInvoiceEmailAttempt(
+  accessToken: string,
+  invoiceId: string,
+  attemptId: string
+) {
+  return apiRequest<{ delivery: InvoiceDetailResponse["delivery"] }>(
+    `/invoices/${encodeURIComponent(invoiceId)}/delivery-attempts/${encodeURIComponent(attemptId)}/retry`,
+    { method: "POST", accessToken }
+  );
+}
+
+export function getInvoiceActivity(accessToken: string, invoiceId: string) {
+  return apiGet<InvoiceActivityResponse>(`/invoices/${encodeURIComponent(invoiceId)}/activity`, {
     accessToken
   });
 }
 
 export function duplicateInvoice(accessToken: string, invoiceId: string) {
-  return apiRequest<InvoiceDetailResponse>(
-    `/invoices/${encodeURIComponent(invoiceId)}/duplicate`,
-    {
-      method: "POST",
-      accessToken
-    }
-  );
+  return apiRequest<InvoiceDetailResponse>(`/invoices/${encodeURIComponent(invoiceId)}/duplicate`, {
+    method: "POST",
+    accessToken
+  });
 }
 
 export function cancelInvoice(accessToken: string, invoiceId: string, reason: string) {

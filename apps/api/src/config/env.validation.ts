@@ -13,15 +13,29 @@ const envSchema = z.object({
   FRONTEND_APP_URL: z.string().url().optional(),
   MARKETING_SITE_URL: z.string().url().optional(),
   API_PUBLIC_URL: z.string().url().optional(),
-  BREVO_API_KEY: z.string().optional(),
-  BREVO_FROM_EMAIL: z.string().email().optional(),
-  BREVO_SENDER_EMAIL: z.string().email().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().email().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
+  RESEND_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
-  TRUST_PROXY: z.string().min(1).default("loopback")
+  TRUST_PROXY: z.string().min(1).default("loopback"),
+  // Compat window for pre-cookie clients that still POST the refresh token in
+  // the body. New clients use the HttpOnly cookie. Disabled by default: enable
+  // temporarily only while pre-cookie clients remain, then remove the
+  // body-token flow entirely. Every legacy use is logged while enabled.
+  LEGACY_REFRESH_BODY_ENABLED: z.string().default("false")
 });
 
 export function validateEnv(config: Record<string, unknown>) {
   const parsed = envSchema.parse(config);
+
+  // Fail-closed in every environment: outbound email without the webhook
+  // secret means every delivery event is rejected and silently lost.
+  if ((parsed.RESEND_API_KEY || parsed.RESEND_FROM_EMAIL) && !parsed.RESEND_WEBHOOK_SECRET) {
+    throw new Error(
+      "RESEND_WEBHOOK_SECRET is required when Resend sending is configured (RESEND_API_KEY/RESEND_FROM_EMAIL)."
+    );
+  }
 
   if (parsed.NODE_ENV !== "production") {
     return parsed;
@@ -88,6 +102,19 @@ export function validateEnv(config: Record<string, unknown>) {
     parsed.JWT_REFRESH_SECRET === "dev-refresh-secret-change-me"
   ) {
     throw new Error("Development JWT secrets must not be used in production.");
+  }
+
+  for (const [key, value] of [
+    ["JWT_ACCESS_SECRET", parsed.JWT_ACCESS_SECRET],
+    ["JWT_REFRESH_SECRET", parsed.JWT_REFRESH_SECRET]
+  ] as const) {
+    if (value.length < 32) {
+      throw new Error(`${key} must be at least 32 characters in production.`);
+    }
+  }
+
+  if (parsed.JWT_ACCESS_SECRET === parsed.JWT_REFRESH_SECRET) {
+    throw new Error("JWT access and refresh secrets must be distinct in production.");
   }
 
   return parsed;

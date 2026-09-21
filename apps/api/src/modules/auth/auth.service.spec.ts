@@ -1,10 +1,11 @@
-import { ConflictException, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { AuthService } from "./auth.service";
 import type { AuthRepository } from "./auth.repository";
 import type { PasswordService } from "./password.service";
 import type { TokenService } from "./token.service";
+import type { TenantContextService } from "../tenant/tenant-context.service";
 
 const now = new Date("2026-01-01T00:00:00.000Z");
 
@@ -100,7 +101,9 @@ describe("AuthService", () => {
           revokedAt: new Date(),
           expiresAt: new Date("2099-01-01")
         });
-      })
+      }),
+      listContextsForUser: jest.fn().mockResolvedValue([context]),
+      createAuditLog: jest.fn().mockResolvedValue(undefined)
     };
     const passwordService = {
       hash: jest.fn().mockResolvedValue("hashed-password"),
@@ -112,13 +115,17 @@ describe("AuthService", () => {
       getRefreshTokenExpiry: jest.fn().mockReturnValue(new Date("2099-01-01")),
       signAccessToken: jest.fn((userId: string) => `access-${userId}`)
     };
+    const tenantContextService = {
+      resolveForUser: jest.fn().mockResolvedValue(context)
+    };
     const service = new AuthService(
       repository as unknown as AuthRepository,
       passwordService as unknown as PasswordService,
-      tokenService as unknown as TokenService
+      tokenService as unknown as TokenService,
+      tenantContextService as unknown as TenantContextService
     );
 
-    return { context, passwordService, repository, service, tokenService };
+    return { context, passwordService, repository, service, tenantContextService, tokenService };
   }
 
   it("registers a user with organisation, owner membership, blank business profile, refresh token, and audit log", async () => {
@@ -170,8 +177,7 @@ describe("AuthService", () => {
 
     expect(result.accessToken).toBe("access-user-1");
     expect(result.refreshToken).toBe("refresh-token");
-    expect(result.onboardingRequired).toBe(true);
-    expect(result.onboardingStep).toBe("business_profile");
+    expect(result).toMatchObject({ onboardingRequired: true, onboardingStep: "business_profile" });
     expect(repository.hasPaymentAccountHistory).not.toHaveBeenCalled();
   });
 
@@ -182,23 +188,59 @@ describe("AuthService", () => {
       ...context.user,
       passwordHash: "hashed-password"
     });
-    repository.getActiveContextForUser.mockResolvedValue({
-      ...context,
-      activeOrganisation: {
-        ...context.activeOrganisation,
-        onboardingCompletedAt: completedAt
-      },
-      businessProfile: {
-        ...context.businessProfile,
-        setupCompletedAt: completedAt
+    repository.listContextsForUser.mockResolvedValue([
+      {
+        ...context,
+        activeOrganisation: {
+          ...context.activeOrganisation,
+          onboardingCompletedAt: completedAt
+        },
+        businessProfile: {
+          ...context.businessProfile,
+          setupCompletedAt: completedAt
+        }
       }
+    ]);
+
+    const result = await service.login({ email: "owner@example.com", password: "password123" });
+
+    expect(result).toMatchObject({ onboardingRequired: true, onboardingStep: "payment_setup" });
+    expect(repository.hasPaymentAccountHistory).toHaveBeenCalledWith("org-1");
+  });
+
+  it("requires workspace selection instead of silently selecting for multi-workspace login", async () => {
+    const { context, repository, service } = setup();
+    repository.findUserByEmail.mockResolvedValue({
+      ...context.user,
+      passwordHash: "hashed-password"
+    });
+    const second = {
+      ...context,
+      activeOrganisation: { ...context.activeOrganisation, id: "org-2", name: "Second" },
+      membership: { ...context.membership, id: "member-2", organisationId: "org-2" }
+    };
+    repository.listContextsForUser.mockResolvedValue([context, second]);
+
+    const result = await service.login({ email: "owner@example.com", password: "password123" });
+
+    expect(result).toMatchObject({ selectionRequired: true });
+    expect("organisations" in result && result.organisations).toHaveLength(2);
+    expect("activeOrganisation" in result).toBe(false);
+  });
+
+  it("auto-selects the sole workspace on single-membership login", async () => {
+    const { context, repository, service } = setup();
+    repository.findUserByEmail.mockResolvedValue({
+      ...context.user,
+      passwordHash: "hashed-password"
     });
 
     const result = await service.login({ email: "owner@example.com", password: "password123" });
 
-    expect(result.onboardingRequired).toBe(true);
-    expect(result.onboardingStep).toBe("payment_setup");
-    expect(repository.hasPaymentAccountHistory).toHaveBeenCalledWith("org-1");
+    expect(result).toMatchObject({ selectionRequired: false });
+    expect("activeOrganisation" in result && result.activeOrganisation).toMatchObject({
+      id: "org-1"
+    });
   });
 
   it("completes onboarding when the organisation has submitted any payment account", async () => {
@@ -250,6 +292,17 @@ describe("AuthService", () => {
     );
   });
 
+  it("maps a lost rotation race to an unauthorized error instead of a server error", async () => {
+    const { repository, service } = setup();
+    repository.rotateRefreshToken.mockRejectedValueOnce(
+      new Error("Refresh token was already used.")
+    );
+
+    await expect(service.refresh({ refreshToken: "refresh-token" })).rejects.toBeInstanceOf(
+      UnauthorizedException
+    );
+  });
+
   it("revokes refresh token on logout", async () => {
     const { repository, service } = setup();
 
@@ -267,5 +320,68 @@ describe("AuthService", () => {
     expect(result.activeOrganisation.id).toBe("org-1");
     expect(result.membership.role).toBe("owner");
     expect(result.businessProfile.id).toBe("profile-1");
+  });
+
+  it("resolves /me through the selected workspace when the header is present", async () => {
+    const { service, tenantContextService } = setup();
+    const selected = { ...createContext(), activeOrganisation: { ...createContext().activeOrganisation, id: "org-2" } };
+    tenantContextService.resolveForUser.mockResolvedValueOnce(selected);
+
+    const result = await service.getMe("user-1", "org-2");
+
+    expect(tenantContextService.resolveForUser).toHaveBeenCalledWith("user-1", "org-2");
+    expect(result.activeOrganisation.id).toBe("org-2");
+  });
+
+  it("lists organisation memberships with the oldest-default workspace", async () => {
+    const { repository, service } = setup();
+    const second = {
+      ...createContext(),
+      activeOrganisation: { ...createContext().activeOrganisation, id: "org-2", name: "Second" },
+      membership: { ...createContext().membership, id: "member-2", organisationId: "org-2" }
+    };
+    repository.listContextsForUser.mockResolvedValueOnce([createContext(), second]);
+
+    const result = await service.getOrganisations("user-1");
+
+    expect(result.organisations).toHaveLength(2);
+    expect(result.organisations[1]?.membership.organisationId).toBe("org-2");
+    expect(result.activeOrganisationId).toBe("org-1");
+  });
+
+  it("selects a workspace the user belongs to and audits the selection", async () => {
+    const { context, repository, service, tenantContextService } = setup();
+
+    const result = await service.selectOrganisation("user-1", "org-1");
+
+    expect(tenantContextService.resolveForUser).toHaveBeenCalledWith("user-1", "org-1");
+    expect(repository.createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organisationId: "org-1",
+        actorUserId: "user-1",
+        action: "workspace_selected"
+      })
+    );
+    expect(result.activeOrganisation.id).toBe(context.activeOrganisation.id);
+  });
+
+  it("still returns the selection when the selection audit write fails", async () => {
+    const { repository, service } = setup();
+    repository.createAuditLog.mockRejectedValueOnce(new Error("audit down"));
+
+    const result = await service.selectOrganisation("user-1", "org-1");
+
+    expect(result.activeOrganisation.id).toBe("org-1");
+  });
+
+  it("rejects selecting a workspace the user cannot access", async () => {
+    const { service, tenantContextService } = setup();
+    tenantContextService.resolveForUser.mockRejectedValueOnce(
+      new ForbiddenException("You do not have access to the selected workspace.")
+    );
+
+    await expect(service.selectOrganisation("user-1", "org-9")).rejects.toBeInstanceOf(
+      ForbiddenException
+    );
   });
 });

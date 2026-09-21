@@ -3,7 +3,8 @@ import {
   BadRequestException,
   NotFoundException,
   ServiceUnavailableException,
-  UnauthorizedException
+  UnauthorizedException,
+  UnprocessableEntityException
 } from "@nestjs/common";
 
 import { MAX_KOBO } from "../../common/money-limits";
@@ -80,6 +81,8 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     balanceDueKobo: 97500,
     sentAt: now,
     viewedAt: null,
+    lastViewedAt: null,
+    viewCount: 0,
     paidAt: null,
     cancelledAt: null,
     voidedAt: null,
@@ -98,6 +101,7 @@ function createPayment(overrides: Partial<Payment> = {}): Payment {
     customerId: "customer-1",
     provider: "paystack",
     providerReference: "SME-INV000001-ABC123",
+    providerTransactionId: "123456",
     providerSubaccountCode: "ACCT_test_subaccount",
     providerAccessCode: "access-code",
     providerAuthorizationUrl: "https://checkout.paystack.test/pay/reference",
@@ -222,10 +226,38 @@ function createPaymentRelation(
   };
 }
 
+function createReviewRequiredRelations() {
+  return [
+    createPaymentRelation({ payment: { id: "payment-1", status: "successful" } }),
+    createPaymentRelation({
+      payment: {
+        id: "payment-2",
+        invoiceId: "invoice-2",
+        amountKobo: 870000,
+        initializedAt: new Date()
+      },
+      invoice: { id: "invoice-2", totalKobo: 870000, balanceDueKobo: 870000 },
+      events: [
+        createPaymentEvent({
+          id: "event-2",
+          paymentId: "payment-2",
+          errorMessage: "Payment amount did not match the pending payment.",
+          payloadRedacted: {
+            event: "charge.success",
+            data: { amount: 860000, currency: "NGN" }
+          }
+        })
+      ]
+    })
+  ];
+}
+
 function setup() {
   const transaction = jest.fn(async (callback: (tx: unknown) => Promise<void>) => callback({}));
   const paystackService = {
     createRefund: jest.fn(),
+    fetchRefund: jest.fn(),
+    listRefunds: jest.fn(),
     verifyTransaction: jest.fn()
   };
   const receiptsService = {
@@ -347,7 +379,9 @@ describe("PaymentsService event safety", () => {
       processVerifiedWebhook: (tx: unknown, webhook: unknown) => Promise<void>;
     };
     internals.findProcessedDuplicate = jest.fn().mockResolvedValue(duplicate);
-    internals.createPaymentEvent = jest.fn().mockResolvedValue(newEvent);
+    internals.createPaymentEvent = jest
+      .fn()
+      .mockResolvedValue({ conflict: false, event: newEvent });
     internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
     internals.processChargeSuccess = jest.fn();
 
@@ -369,6 +403,44 @@ describe("PaymentsService event safety", () => {
       expect.anything(),
       expect.objectContaining({
         action: "payment_webhook_duplicate_ignored"
+      })
+    );
+  });
+
+  it("treats a lost insert race as a duplicate without reconciling again", async () => {
+    const { service } = setup();
+    const winner = createPaymentEvent({ id: "winner-event", processed: false });
+    const internals = service as unknown as {
+      createAuditLog: jest.Mock;
+      createPaymentEvent: jest.Mock;
+      findProcessedDuplicate: jest.Mock;
+      processChargeSuccess: jest.Mock;
+      processRefundWebhook: jest.Mock;
+      processVerifiedWebhook: (tx: unknown, webhook: unknown) => Promise<void>;
+    };
+    // Both deliveries miss the pre-insert lookup; the insert arbiter decides.
+    internals.findProcessedDuplicate = jest.fn().mockResolvedValue(undefined);
+    internals.createPaymentEvent = jest.fn().mockResolvedValue({ conflict: true, event: winner });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.processChargeSuccess = jest.fn();
+    internals.processRefundWebhook = jest.fn();
+
+    await internals.processVerifiedWebhook(
+      {},
+      {
+        eventType: "charge.success",
+        providerEventId: "evt-1",
+        providerReference: "SME-INV000001-ABC123"
+      }
+    );
+
+    expect(internals.processChargeSuccess).not.toHaveBeenCalled();
+    expect(internals.processRefundWebhook).not.toHaveBeenCalled();
+    expect(internals.createAuditLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "payment_webhook_duplicate_ignored",
+        entityId: "winner-event"
       })
     );
   });
@@ -411,38 +483,7 @@ describe("PaymentsService read APIs", () => {
     const internals = service as unknown as {
       findPaymentsWithRelations: jest.Mock;
     };
-    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
-      createPaymentRelation({
-        payment: { id: "payment-1", status: "successful" }
-      }),
-      createPaymentRelation({
-        payment: {
-          id: "payment-2",
-          invoiceId: "invoice-2",
-          amountKobo: 870000,
-          initializedAt: new Date()
-        },
-        invoice: {
-          id: "invoice-2",
-          totalKobo: 870000,
-          balanceDueKobo: 870000
-        },
-        events: [
-          createPaymentEvent({
-            id: "event-2",
-            paymentId: "payment-2",
-            errorMessage: "Payment amount did not match the pending payment.",
-            payloadRedacted: {
-              event: "charge.success",
-              data: {
-                amount: 860000,
-                currency: "NGN"
-              }
-            }
-          })
-        ]
-      })
-    ]);
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue(createReviewRequiredRelations());
 
     const response = await service.listPayments(context as never, {
       reconciliationState: "review_required"
@@ -804,38 +845,7 @@ describe("PaymentsService read APIs", () => {
     const internals = service as unknown as {
       findPaymentsWithRelations: jest.Mock;
     };
-    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue([
-      createPaymentRelation({
-        payment: { id: "payment-1", status: "successful" }
-      }),
-      createPaymentRelation({
-        payment: {
-          id: "payment-2",
-          invoiceId: "invoice-2",
-          amountKobo: 870000,
-          initializedAt: new Date()
-        },
-        invoice: {
-          id: "invoice-2",
-          totalKobo: 870000,
-          balanceDueKobo: 870000
-        },
-        events: [
-          createPaymentEvent({
-            id: "event-2",
-            paymentId: "payment-2",
-            errorMessage: "Payment amount did not match the pending payment.",
-            payloadRedacted: {
-              event: "charge.success",
-              data: {
-                amount: 860000,
-                currency: "NGN"
-              }
-            }
-          })
-        ]
-      })
-    ]);
+    internals.findPaymentsWithRelations = jest.fn().mockResolvedValue(createReviewRequiredRelations());
 
     const response = await service.listPayments(context as never, { view: "review_required" });
 
@@ -1019,6 +1029,10 @@ describe("PaymentsService refunds", () => {
     const updateWhere = jest.fn(() => ({ returning: updateReturning }));
     const updateSet = jest.fn(() => ({ where: updateWhere }));
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) }))
+      })),
       insert: jest.fn(() => ({ values: insertValues })),
       update: jest.fn(() => ({ set: updateSet }))
     };
@@ -1032,21 +1046,158 @@ describe("PaymentsService refunds", () => {
     };
   }
 
+  it.each([
+    ["known refund id", "3018284", 1, "matched"],
+    ["transaction discovery", null, 1, "matched"],
+    ["ambiguous transaction discovery", null, 2, "unresolved"]
+  ])(
+    "handles provider-realistic evidence by %s",
+    async (_case, providerRefundId, matchCount, expectedStatus) => {
+      const { paystackService, service, transaction } = setup();
+      const payment = createPayment({
+        amountKobo: 170000,
+        providerTransactionId: "1004723697",
+        status: "successful"
+      });
+      const refund = createPaymentRefund({
+        amountKobo: 170000,
+        id: "refund-1",
+        merchantNote: "lumina-refund:refund-1",
+        providerRefundId,
+        status: "needs_attention"
+      });
+      const providerRefund = {
+        amountKobo: 170000,
+        currency: "NGN",
+        merchantNote: "lumina-refund:refund-1",
+        providerRefundId: "3018284",
+        providerTransactionId: "1004723697",
+        status: "processed",
+        transactionReference: null
+      };
+      const updated = createPaymentRefund({
+        ...refund,
+        providerRefundId: "3018284",
+        processedAt: now,
+        status: "processed"
+      });
+      const returning = jest.fn().mockResolvedValue([updated]);
+      const where = jest.fn(() => ({ returning }));
+      const set = jest.fn(() => ({ where }));
+      const tx = { update: jest.fn(() => ({ set })) };
+      transaction.mockImplementation(async (callback) => callback(tx));
+      paystackService.fetchRefund.mockResolvedValue(providerRefund);
+      paystackService.listRefunds.mockResolvedValue(Array(matchCount).fill(providerRefund));
+
+      const internals = service as unknown as {
+        createAuditLog: jest.Mock;
+        findPaymentRefundInOrganisation: jest.Mock;
+        getInvoiceFinancialSummary: jest.Mock;
+        lockInvoiceFinancialState: jest.Mock;
+        recalculateInvoiceFinancialState: jest.Mock;
+      };
+      internals.findPaymentRefundInOrganisation = jest.fn().mockResolvedValue({ payment, refund });
+      internals.getInvoiceFinancialSummary = jest
+        .fn()
+        .mockResolvedValue({ balanceDueKobo: 0, processedRefundsKobo: 0 });
+      internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
+        invoice: createInvoice(),
+        payments: [payment],
+        refunds: [refund]
+      });
+      internals.recalculateInvoiceFinancialState = jest.fn().mockResolvedValue({
+        financialSummary: { balanceDueKobo: 0, processedRefundsKobo: 170000 }
+      });
+      internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+
+      const result = await service.reconcilePaymentRefund(
+        context as never,
+        { userId: "user-1" } as never,
+        payment.id,
+        refund.id
+      );
+
+      expect(result).toMatchObject({ reconciliation: { status: expectedStatus } });
+      if (expectedStatus === "matched") {
+        expect(result.refund).toMatchObject({ status: "processed" });
+      }
+
+      if (providerRefundId) {
+        expect(paystackService.fetchRefund).toHaveBeenCalledWith("3018284");
+        expect(paystackService.listRefunds).not.toHaveBeenCalled();
+      } else {
+        expect(paystackService.listRefunds).toHaveBeenCalledWith("1004723697");
+        expect(paystackService.fetchRefund).not.toHaveBeenCalled();
+      }
+    }
+  );
+
+  it.each([
+    ["wrong provider transaction", { providerTransactionId: "999" }],
+    ["wrong merchant note", { merchantNote: "lumina-refund:other" }],
+    ["wrong amount", { amountKobo: 1 }],
+    ["wrong currency", { currency: "USD" }]
+  ])("rejects reconciliation evidence with %s", async (_case, override) => {
+    const { paystackService, service } = setup();
+    const payment = createPayment({ providerTransactionId: "1004723697", status: "successful" });
+    const refund = createPaymentRefund({
+      id: "refund-1",
+      merchantNote: "lumina-refund:refund-1",
+      providerRefundId: "3018284"
+    });
+    const internals = service as unknown as {
+      findPaymentRefundInOrganisation: jest.Mock;
+      getInvoiceFinancialSummary: jest.Mock;
+    };
+    internals.findPaymentRefundInOrganisation = jest.fn().mockResolvedValue({ payment, refund });
+    internals.getInvoiceFinancialSummary = jest
+      .fn()
+      .mockResolvedValue({ balanceDueKobo: 0, processedRefundsKobo: 0 });
+    paystackService.fetchRefund.mockResolvedValue({
+      amountKobo: refund.amountKobo,
+      currency: refund.currency,
+      merchantNote: "lumina-refund:refund-1",
+      providerRefundId: "3018284",
+      providerTransactionId: "1004723697",
+      status: "processed",
+      transactionReference: null,
+      ...override
+    });
+
+    await expect(
+      service.reconcilePaymentRefund(
+        context as never,
+        { userId: "user-1" } as never,
+        payment.id,
+        refund.id
+      )
+    ).resolves.toMatchObject({ reconciliation: { status: "unresolved" } });
+  });
+
   it("initiates an overpayment refund through Paystack and stores safe refund state", async () => {
     const { paystackService, service, transaction } = setup();
     const refundTx = createRefundTx();
     transaction.mockImplementation(async (callback) => callback(refundTx.tx));
-    paystackService.createRefund.mockResolvedValue({
-      providerRefundId: "refund-provider-1",
-      status: "pending",
-      amountKobo: 170000,
-      currency: "NGN",
-      transactionReference: "SME-INV000001-ABC123"
-    });
+    paystackService.createRefund.mockImplementation(
+      async (input: {
+        amountKobo: number;
+        currency: string;
+        transactionReference: string;
+        merchantNote?: string | null;
+      }) => ({
+        providerRefundId: "refund-provider-1",
+        status: "pending",
+        amountKobo: input.amountKobo,
+        currency: input.currency,
+        transactionReference: input.transactionReference,
+        merchantNote: input.merchantNote ?? null
+      })
+    );
     const internals = service as unknown as {
       calculateInvoiceFinancialSummaryForId: jest.Mock;
       createAuditLog: jest.Mock;
       getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
     };
     internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
       payment: createPayment({ status: "successful", amountKobo: 170000 }),
@@ -1078,6 +1229,34 @@ describe("PaymentsService refunds", () => {
       }
     });
     internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.lockInvoiceFinancialState = jest
+      .fn()
+      .mockResolvedValueOnce({
+        invoice: createInvoice({
+          amountPaidKobo: 340000,
+          balanceDueKobo: 0,
+          status: "paid",
+          totalKobo: 170000
+        }),
+        payments: [
+          createPayment({ status: "successful", amountKobo: 170000 }),
+          createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+        ],
+        refunds: []
+      })
+      .mockResolvedValue({
+        invoice: createInvoice({
+          amountPaidKobo: 340000,
+          balanceDueKobo: 0,
+          status: "paid",
+          totalKobo: 170000
+        }),
+        payments: [
+          createPayment({ status: "successful", amountKobo: 170000 }),
+          createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+        ],
+        refunds: [refundTx.pendingRefund]
+      });
 
     const response = await service.createPaymentRefund(
       context as never,
@@ -1091,11 +1270,12 @@ describe("PaymentsService refunds", () => {
       amountKobo: 170000,
       currency: "NGN",
       customerNote: "Duplicate payment",
-      merchantNote: "Duplicate payment"
+      merchantNote: expect.stringMatching(/^lumina-refund:/)
     });
     expect(refundTx.insertValues).toHaveBeenCalledWith(
       expect.objectContaining({
         amountKobo: 170000,
+        merchantNote: expect.stringMatching(/^lumina-refund:/),
         reason: "Duplicate payment",
         status: "pending"
       })
@@ -1115,6 +1295,219 @@ describe("PaymentsService refunds", () => {
       amountKobo: 170000
     });
     expect(JSON.stringify(response)).not.toContain("sk_test");
+  });
+
+  it.each([
+    [
+      "keeps ambiguous provider failures as needs_attention so capacity stays reserved",
+      new ServiceUnavailableException("Paystack is temporarily unavailable."),
+      "needs_attention"
+    ],
+    [
+      "marks definite provider rejections as failed so capacity is released",
+      new UnprocessableEntityException("Paystack could not validate this payment request."),
+      "failed"
+    ]
+  ])("%s", async (_case, providerError, expectedStatus) => {
+    const { paystackService, service, transaction } = setup();
+    const refundTx = createRefundTx();
+    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+    paystackService.createRefund.mockRejectedValue(providerError);
+    const internals = service as unknown as {
+      createAuditLog: jest.Mock;
+      getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: { overpaymentKobo: 170000 },
+      remainingRefundableKobo: 170000
+    });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
+      invoice: createInvoice({
+        amountPaidKobo: 340000,
+        balanceDueKobo: 0,
+        status: "paid",
+        totalKobo: 170000
+      }),
+      payments: [
+        createPayment({ status: "successful", amountKobo: 170000 }),
+        createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+      ],
+      refunds: []
+    });
+
+    await expect(
+      service.createPaymentRefund(context as never, { userId: "user-1" } as never, "payment-1", {
+        amountKobo: 170000,
+        reason: "Duplicate payment"
+      })
+    ).rejects.toBeInstanceOf(providerError.constructor);
+    expect(refundTx.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: expectedStatus })
+    );
+  });
+
+  it.each([
+    ["wrong amount", { amountKobo: 1 }],
+    ["missing amount", { amountKobo: null }],
+    ["wrong currency", { currency: "USD" }],
+    ["missing currency", { currency: null }],
+    ["wrong reference", { transactionReference: "SME-OTHER-999" }],
+    ["missing reference", { transactionReference: null }],
+    ["missing refund identity", { providerRefundId: null }],
+    ["wrong merchant note", { merchantNote: "lumina-refund:someone-else" }],
+    ["missing merchant note", { merchantNote: null }]
+  ])(
+    "holds a %s provider response as needs_attention without moving balances",
+    async (_case, overrides) => {
+      const { paystackService, service, transaction } = setup();
+      const refundTx = createRefundTx();
+      transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+      // Echo the request like a well-behaved provider, then apply the case
+      // override so each test isolates exactly one evidence defect.
+      paystackService.createRefund.mockImplementation(
+        async (input: {
+          amountKobo: number;
+          currency: string;
+          transactionReference: string;
+          merchantNote?: string | null;
+        }) => ({
+          providerRefundId: "refund-provider-1",
+          status: "pending",
+          amountKobo: input.amountKobo,
+          currency: input.currency,
+          transactionReference: input.transactionReference,
+          merchantNote: input.merchantNote ?? null,
+          ...overrides
+        })
+      );
+      const internals = service as unknown as {
+        calculateInvoiceFinancialSummaryForId: jest.Mock;
+        createAuditLog: jest.Mock;
+        getRefundablePaymentState: jest.Mock;
+        lockInvoiceFinancialState: jest.Mock;
+      };
+      internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+        payment: createPayment({ status: "successful", amountKobo: 170000 }),
+        financialSummary: { overpaymentKobo: 170000 },
+        remainingRefundableKobo: 170000
+      });
+      internals.calculateInvoiceFinancialSummaryForId = jest.fn().mockResolvedValue({
+        financialSummary: { overpaymentKobo: 170000, processedRefundsKobo: 0 }
+      });
+      internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+      internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
+        invoice: createInvoice({
+          amountPaidKobo: 340000,
+          balanceDueKobo: 0,
+          status: "paid",
+          totalKobo: 170000
+        }),
+        payments: [
+          createPayment({ status: "successful", amountKobo: 170000 }),
+          createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+        ],
+        refunds: []
+      });
+
+      const result = await service.createPaymentRefund(
+        context as never,
+        { userId: "user-1" } as never,
+        "payment-1",
+        { amountKobo: 170000, reason: "Duplicate payment" }
+      );
+
+      // The stubbed update returns a fixed row, so the status assertion targets
+      // the SET clause: the implementation must persist needs_attention and
+      // never apply the mismatched provider status to the refund.
+      expect(result.refund).toMatchObject({ id: "refund-pending" });
+      expect(refundTx.updateSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "needs_attention",
+          providerMetadataRedacted: expect.objectContaining({ responseMismatch: true })
+        })
+      );
+      expect(internals.createAuditLog).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: "payment_refund_response_mismatch" })
+      );
+    }
+  );
+
+  it("applies a provider response with exact evidence", async () => {
+    const { paystackService, service, transaction } = setup();
+    const refundTx = createRefundTx();
+    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+    paystackService.createRefund.mockImplementation(
+      async (input: {
+        amountKobo: number;
+        currency: string;
+        transactionReference: string;
+        merchantNote?: string | null;
+      }) => ({
+        providerRefundId: "refund-provider-1",
+        status: "pending",
+        amountKobo: input.amountKobo,
+        currency: input.currency,
+        transactionReference: input.transactionReference,
+        merchantNote: input.merchantNote ?? null
+      })
+    );
+    const internals = service as unknown as {
+      calculateInvoiceFinancialSummaryForId: jest.Mock;
+      createAuditLog: jest.Mock;
+      getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: { overpaymentKobo: 170000 },
+      remainingRefundableKobo: 170000
+    });
+    internals.calculateInvoiceFinancialSummaryForId = jest.fn().mockResolvedValue({
+      financialSummary: { overpaymentKobo: 170000, processedRefundsKobo: 0 }
+    });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    const lockedInvoice = createInvoice({
+      amountPaidKobo: 340000,
+      balanceDueKobo: 0,
+      status: "paid",
+      totalKobo: 170000
+    });
+    const lockedPayments = [
+      createPayment({ status: "successful", amountKobo: 170000 }),
+      createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+    ];
+    internals.lockInvoiceFinancialState = jest
+      .fn()
+      .mockResolvedValueOnce({
+        invoice: lockedInvoice,
+        payments: lockedPayments,
+        refunds: []
+      })
+      .mockResolvedValue({
+        invoice: lockedInvoice,
+        payments: lockedPayments,
+        refunds: [refundTx.pendingRefund]
+      });
+
+    const result = await service.createPaymentRefund(
+      context as never,
+      { userId: "user-1" } as never,
+      "payment-1",
+      { amountKobo: 170000, reason: "Duplicate payment" }
+    );
+
+    expect(result.refund).toMatchObject({ id: "refund-pending" });
+    expect(refundTx.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerRefundId: "refund-provider-1",
+        status: "pending",
+        providerMetadataRedacted: expect.not.objectContaining({ responseMismatch: true })
+      })
+    );
   });
 
   it("rejects refund amounts above the invoice overpayment before calling Paystack", async () => {

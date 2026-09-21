@@ -2,7 +2,7 @@ import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MeResponse } from "@/features/auth/types";
+import { demoMe as me } from "@/test/fixtures";
 
 import { TeamManagementContent } from "./team-management-page";
 import { listTeamInvitations, listTeamMembers } from "./team-api";
@@ -15,39 +15,6 @@ vi.mock("./team-api", () => ({
   revokeTeamInvitation: vi.fn(),
   updateTeamMember: vi.fn()
 }));
-
-const me = {
-  user: {
-    id: "user-owner",
-    email: "owner@demo.com",
-    name: "Demo Owner"
-  },
-  activeOrganisation: {
-    id: "org-1",
-    name: "Akin & Co Creative Services",
-    slug: "akin-co-demo",
-    onboardingCompletedAt: "2026-01-01T00:00:00.000Z"
-  },
-  membership: {
-    id: "member-owner",
-    organisationId: "org-1",
-    userId: "user-owner",
-    role: "owner",
-    status: "active"
-  },
-  businessProfile: {
-    id: "profile-1",
-    organisationId: "org-1",
-    businessName: "Akin & Co Creative Services",
-    email: "billing@akinco.test",
-    phone: "+2348012345678",
-    address: "12 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
-    logoFileId: null,
-    setupCompletedAt: "2026-01-01T00:00:00.000Z"
-  },
-  onboardingRequired: false,
-  onboardingStep: null
-} satisfies MeResponse;
 
 beforeEach(() => {
   vi.mocked(listTeamMembers).mockResolvedValue({

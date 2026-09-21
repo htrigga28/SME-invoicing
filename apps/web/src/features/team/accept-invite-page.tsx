@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { FieldLabel, FormField, Input } from "@/components/ui/form";
 import { getMe } from "@/features/auth/auth-api";
-import { clearStoredSession, getStoredSession, setStoredSession } from "@/features/auth/session";
+import {
+  clearStoredSession,
+  getStoredSession,
+  scrubLegacyStoredSession,
+  setStoredOrganisationId,
+  setStoredSession
+} from "@/features/auth/session";
 import type { MeResponse } from "@/features/auth/types";
 
 import { acceptInvitation, previewInvitation } from "./team-api";
@@ -67,10 +73,11 @@ export function AcceptInvitePage({ token }: { token: string }) {
 
     try {
       const response = await acceptInvitation(token, { mode: "existing" }, session.accessToken);
-      setStoredSession({
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken
-      });
+      setStoredSession({ accessToken: response.accessToken });
+      // Land the user in the workspace they just joined instead of the
+      // oldest membership resolved by default.
+      setStoredOrganisationId(response.organisation.id);
+      scrubLegacyStoredSession();
       setState("success");
       router.replace(response.onboardingRequired ? "/onboarding/business" : "/dashboard");
     } catch (acceptError) {
@@ -95,10 +102,9 @@ export function AcceptInvitePage({ token }: { token: string }) {
 
     try {
       const response = await acceptInvitation(token, { mode: "new", name, password });
-      setStoredSession({
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken
-      });
+      setStoredSession({ accessToken: response.accessToken });
+      setStoredOrganisationId(response.organisation.id);
+      scrubLegacyStoredSession();
       setState("success");
       router.replace(response.onboardingRequired ? "/onboarding/business" : "/dashboard");
     } catch (acceptError) {

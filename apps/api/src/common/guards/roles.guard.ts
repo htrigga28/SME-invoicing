@@ -38,7 +38,16 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException("Authentication context is missing.");
     }
 
-    const tenant = await this.tenantContextService.resolveForUser(request.authUser.userId);
+    const tenant = await this.tenantContextService.resolveForUser(
+      request.authUser.userId,
+      request.headers?.["x-organisation-id"],
+      // Every tenant-scoped business route requires an explicit workspace
+      // header, reads included: a missing header fails closed instead of
+      // silently selecting the oldest membership. Bootstrap routes
+      // (login/refresh, GET /me, GET /me/organisations, workspace selection)
+      // do not use this guard.
+      { requireExplicit: true }
+    );
     request.tenant = tenant;
 
     if (!roles.includes(tenant.membership.role)) {

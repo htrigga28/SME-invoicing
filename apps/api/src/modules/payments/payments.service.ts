@@ -1,6 +1,8 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import {
   BadRequestException,
+  ConflictException,
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -10,8 +12,9 @@ import {
   UnauthorizedException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
+import { businessDate } from "../../common/business-date";
 import { assertKoboAmount, isKoboAmount } from "../../common/money-limits";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import type { AppDatabase } from "../../database/database.service";
@@ -47,6 +50,7 @@ import type { PaymentSummaryQueryDto } from "./dto/payment-summary-query.dto";
 import {
   PaystackService,
   type PaystackCreateRefundResponse,
+  type PaystackRefundResponse,
   type PaystackVerifyResponse
 } from "../paystack/paystack.service";
 import { ReceiptsService } from "../receipts/receipts.service";
@@ -181,6 +185,7 @@ type NormalizedSuccessfulPaystackPayment = {
   gatewayResponse: string | null;
   paidAt: Date;
   providerStatus: string | null;
+  providerTransactionId: string | null;
   reference: string;
   source: "verification" | "webhook";
 };
@@ -576,19 +581,76 @@ export class PaymentsService {
       );
     }
 
+    const refundId = randomUUID();
+    const merchantNote = this.refundMerchantNote(refundId);
+
+    // The outer precheck gives a fast error only. This transaction locks the
+    // canonical invoice state before every payment and refund row, then makes
+    // the reservation from the re-read values.
     const pendingRefund = await this.databaseService.db.transaction(async (tx) => {
+      const locked = await this.lockInvoiceFinancialState(tx as AppDatabase, payment.invoiceId);
+      const currentPayment = locked.payments.find((item) => item.id === payment.id);
+
+      if (
+        !currentPayment ||
+        currentPayment.organisationId !== context.activeOrganisation.id ||
+        currentPayment.status !== "successful"
+      ) {
+        throw new UnprocessableEntityException("Only successful payments can be refunded.");
+      }
+
+      const financialSummary = this.buildFinancialSummary(
+        locked.invoice,
+        locked.payments,
+        locked.refunds
+      );
+
+      const remainingInvoiceRefundableKobo = Math.max(
+        financialSummary.grossSuccessfulKobo -
+          locked.invoice.totalKobo -
+          this.requestedRefundedKobo(locked.refunds),
+        0
+      );
+
+      if (remainingInvoiceRefundableKobo <= 0) {
+        throw new UnprocessableEntityException(
+          "This invoice does not currently have an overpayment."
+        );
+      }
+
+      if (input.amountKobo > remainingInvoiceRefundableKobo) {
+        throw new UnprocessableEntityException(
+          "Refund amount cannot exceed the invoice overpayment."
+        );
+      }
+
+      const currentRefunds = locked.refunds.filter(
+        (refund) => refund.paymentId === currentPayment.id
+      );
+      const currentRemaining = Math.max(
+        currentPayment.amountKobo - this.requestedRefundedKobo(currentRefunds),
+        0
+      );
+
+      if (input.amountKobo > currentRemaining) {
+        throw new UnprocessableEntityException(
+          "Refund amount cannot exceed the selected payment's refundable amount."
+        );
+      }
+
       const [refund] = await tx
         .insert(paymentRefunds)
         .values({
-          organisationId: payment.organisationId,
-          paymentId: payment.id,
+          id: refundId,
+          organisationId: currentPayment.organisationId,
+          paymentId: currentPayment.id,
           provider: paystackProvider,
           amountKobo: input.amountKobo,
-          currency: payment.currency,
+          currency: currentPayment.currency,
           status: "pending",
           reason,
           customerNote: reason,
-          merchantNote: reason,
+          merchantNote,
           initiatedByUserId: user.userId
         })
         .returning();
@@ -608,29 +670,51 @@ export class PaymentsService {
         amountKobo: input.amountKobo,
         currency: "NGN",
         customerNote: reason,
-        merchantNote: reason
+        merchantNote
       });
     } catch (error) {
+      // A network timeout, 5xx, rate limit or unreadable response after
+      // transmission is ambiguous: the provider may have created the refund.
+      // Only definite rejections (400/404/422/409 mapped to 422/409) release
+      // the reservation as failed; everything else stays uncertain and keeps
+      // the capacity reserved until reconciled via webhook/lookup.
+      const definiteRejection =
+        error instanceof UnprocessableEntityException || error instanceof ConflictException;
+      // Reuse the existing needs_attention reconciliation state for ambiguous
+      // outcomes (no schema change): it keeps the capacity reserved because
+      // only failed refunds release refundable capacity.
+      const uncertainStatus = definiteRejection ? "failed" : "needs_attention";
+      const now = new Date();
+
       await this.databaseService.db.transaction(async (tx) => {
+        await this.lockInvoiceFinancialState(tx as AppDatabase, payment.invoiceId);
         await tx
           .update(paymentRefunds)
           .set({
-            status: "failed",
-            failedAt: new Date(),
+            status: uncertainStatus,
+            failedAt: definiteRejection ? now : null,
+            needsAttentionAt: definiteRejection ? null : now,
             providerMetadataRedacted: {
               transactionReference: payment.providerReference,
               amountKobo: input.amountKobo,
               currency: payment.currency,
-              providerSubmissionFailed: true
+              providerSubmissionFailed: definiteRejection,
+              providerSubmissionUncertain: !definiteRejection,
+              providerError:
+                error instanceof HttpException
+                  ? String(error.message).slice(0, 300)
+                  : "Provider submission outcome unknown."
             },
-            updatedAt: new Date()
+            updatedAt: now
           })
           .where(eq(paymentRefunds.id, pendingRefund.id));
 
         await this.createAuditLog(tx as AppDatabase, {
           organisationId: payment.organisationId,
           actorUserId: user.userId,
-          action: "payment_refund_submission_failed",
+          action: definiteRejection
+            ? "payment_refund_submission_failed"
+            : "payment_refund_submission_uncertain",
           entityType: "payment_refund",
           entityId: pendingRefund.id,
           metadataRedacted: {
@@ -644,9 +728,92 @@ export class PaymentsService {
       throw error;
     }
 
-    const refundStatus = this.toRefundStatus(providerRefund.status);
+    // The provider response is untrusted input until it proves it describes
+    // exactly the refund Lumina requested. A mismatched reference, amount,
+    // currency, merchant note, or missing refund identity keeps the
+    // reservation in needs_attention: capacity stays reserved and no
+    // financial balance moves. Uses the same evidence validator as the
+    // reconciliation path.
+    const responseMismatch =
+      !providerRefund.providerRefundId ||
+      !providerRefund.status ||
+      !this.refundEvidenceMatches(
+        {
+          providerReference: payment.providerReference,
+          providerTransactionId: payment.providerTransactionId
+        },
+        { id: refundId, amountKobo: input.amountKobo, currency: payment.currency },
+        providerRefund
+      );
+
+    if (responseMismatch) {
+      const now = new Date();
+      const mismatched = await this.databaseService.db.transaction(async (tx) => {
+        await this.lockInvoiceFinancialState(tx as AppDatabase, payment.invoiceId);
+        const [refund] = await tx
+          .update(paymentRefunds)
+          .set({
+            status: "needs_attention",
+            needsAttentionAt: now,
+            providerMetadataRedacted: {
+              providerRefundId: providerRefund.providerRefundId,
+              providerStatus: providerRefund.status,
+              providerTransactionId: providerRefund.providerTransactionId,
+              transactionReference: providerRefund.transactionReference,
+              amountKobo: providerRefund.amountKobo,
+              currency: providerRefund.currency,
+              responseMismatch: true,
+              expectedTransactionReference: payment.providerReference,
+              expectedAmountKobo: input.amountKobo,
+              expectedCurrency: payment.currency
+            },
+            updatedAt: now
+          })
+          .where(eq(paymentRefunds.id, pendingRefund.id))
+          .returning();
+
+        if (!refund) {
+          throw new Error("Refund could not be updated.");
+        }
+
+        const recalculated = await this.calculateInvoiceFinancialSummaryForId(
+          tx as AppDatabase,
+          payment.invoiceId
+        );
+
+        await this.createAuditLog(tx as AppDatabase, {
+          organisationId: payment.organisationId,
+          actorUserId: user.userId,
+          action: "payment_refund_response_mismatch",
+          entityType: "payment_refund",
+          entityId: refund.id,
+          metadataRedacted: {
+            paymentId: payment.id,
+            amountKobo: input.amountKobo
+          }
+        });
+
+        return { refund, financialSummary: recalculated.financialSummary };
+      });
+
+      return {
+        refund: this.toSafeRefund(mismatched.refund),
+        financialSummary: mismatched.financialSummary
+      };
+    }
+
+    // The mismatch gate above returns early on a missing status, so this
+    // fallback is unreachable in practice and only satisfies the type system.
+    const refundStatus = this.toRefundStatus(providerRefund.status ?? "unknown");
 
     const result = await this.databaseService.db.transaction(async (tx) => {
+      const locked = await this.lockInvoiceFinancialState(tx as AppDatabase, payment.invoiceId);
+      const currentRefund = locked.refunds.find((refund) => refund.id === pendingRefund.id);
+
+      if (!currentRefund) {
+        throw new NotFoundException("Refund was not found.");
+      }
+
       const [refund] = await tx
         .update(paymentRefunds)
         .set({
@@ -658,13 +825,14 @@ export class PaymentsService {
           providerMetadataRedacted: {
             providerRefundId: providerRefund.providerRefundId,
             providerStatus: providerRefund.status,
+            providerTransactionId: providerRefund.providerTransactionId,
             transactionReference: providerRefund.transactionReference,
             amountKobo: providerRefund.amountKobo,
             currency: providerRefund.currency
           },
           updatedAt: new Date()
         })
-        .where(eq(paymentRefunds.id, pendingRefund.id))
+        .where(eq(paymentRefunds.id, currentRefund.id))
         .returning();
 
       if (!refund) {
@@ -701,6 +869,155 @@ export class PaymentsService {
       refund: this.toSafeRefund(result.refund),
       financialSummary: result.financialSummary
     };
+  }
+
+  async reconcilePaymentRefund(
+    context: ActiveOrganisationContext,
+    user: AuthenticatedUser,
+    paymentId: string,
+    refundId: string
+  ) {
+    const current = await this.findPaymentRefundInOrganisation(
+      context.activeOrganisation.id,
+      paymentId,
+      refundId
+    );
+
+    if (!current) {
+      throw new NotFoundException("Refund was not found.");
+    }
+
+    const unresolved = async (reason: string) => ({
+      refund: this.toSafeRefund(current.refund),
+      reconciliation: { reason, status: "unresolved" as const },
+      financialSummary: await this.getInvoiceFinancialSummary(
+        context.activeOrganisation.id,
+        current.payment.invoiceId
+      )
+    });
+
+    if (["processed", "failed"].includes(current.refund.status)) {
+      return unresolved("Refund is already terminal.");
+    }
+
+    let providerRefunds: PaystackRefundResponse[];
+
+    try {
+      providerRefunds = current.refund.providerRefundId
+        ? [await this.paystackService.fetchRefund(current.refund.providerRefundId)]
+        : current.payment.providerTransactionId
+          ? await this.paystackService.listRefunds(current.payment.providerTransactionId)
+          : [];
+    } catch {
+      return unresolved("Paystack refund evidence is unavailable.");
+    }
+
+    const matches = providerRefunds.filter((providerRefund) =>
+      this.matchesProviderRefund(current.payment, current.refund, providerRefund)
+    );
+
+    if (matches.length !== 1) {
+      return unresolved("Paystack refund evidence did not identify one matching refund.");
+    }
+
+    const providerRefund = matches[0]!;
+    return this.databaseService.db.transaction(async (tx) => {
+      const locked = await this.lockInvoiceFinancialState(
+        tx as AppDatabase,
+        current.payment.invoiceId
+      );
+      const payment = locked.payments.find((item) => item.id === current.payment.id);
+      const refund = locked.refunds.find((item) => item.id === current.refund.id);
+
+      if (
+        !payment ||
+        !refund ||
+        payment.organisationId !== context.activeOrganisation.id ||
+        refund.paymentId !== payment.id
+      ) {
+        throw new NotFoundException("Refund was not found.");
+      }
+
+      if (["processed", "failed"].includes(refund.status)) {
+        return {
+          refund: this.toSafeRefund(refund),
+          reconciliation: { reason: "Refund is already terminal.", status: "unchanged" as const },
+          financialSummary: this.buildFinancialSummary(
+            locked.invoice,
+            locked.payments,
+            locked.refunds
+          )
+        };
+      }
+
+      const status = this.toRefundStatus(providerRefund.status);
+      const now = new Date();
+      const [updated] = await tx
+        .update(paymentRefunds)
+        .set({
+          providerRefundId: providerRefund.providerRefundId,
+          status,
+          processedAt: status === "processed" ? (refund.processedAt ?? now) : refund.processedAt,
+          failedAt: status === "failed" ? (refund.failedAt ?? now) : refund.failedAt,
+          needsAttentionAt:
+            status === "needs_attention"
+              ? (refund.needsAttentionAt ?? now)
+              : refund.needsAttentionAt,
+          providerMetadataRedacted: {
+            amountKobo: providerRefund.amountKobo,
+            currency: providerRefund.currency,
+            providerRefundId: providerRefund.providerRefundId,
+            providerStatus: providerRefund.status,
+            providerTransactionId: providerRefund.providerTransactionId,
+            transactionReference: providerRefund.transactionReference
+          },
+          updatedAt: now
+        })
+        .where(eq(paymentRefunds.id, refund.id))
+        .returning();
+
+      if (!updated) {
+        throw new ConflictException("Refund changed before reconciliation completed.");
+      }
+
+      const financial =
+        status === "processed"
+          ? await this.recalculateInvoiceFinancialState(tx as AppDatabase, payment.invoiceId, {
+              actorUserId: user.userId,
+              paymentId: payment.id,
+              reason: "payment_refund_reconciled",
+              refundId: refund.id
+            })
+          : {
+              financialSummary: this.buildFinancialSummary(
+                locked.invoice,
+                locked.payments,
+                locked.refunds
+              )
+            };
+
+      await this.createAuditLog(tx as AppDatabase, {
+        organisationId: payment.organisationId,
+        actorUserId: user.userId,
+        action: "payment_refund_reconciled",
+        entityType: "payment_refund",
+        entityId: refund.id,
+        metadataRedacted: {
+          evidenceType: current.refund.providerRefundId ? "refund_fetch" : "refund_list",
+          finalStatus: status,
+          paymentId: payment.id,
+          priorStatus: refund.status,
+          providerRefundId: providerRefund.providerRefundId,
+          observedAt: now
+        }
+      });
+
+      return {
+        refund: this.toSafeRefund(updated),
+        reconciliation: { status: "matched" as const },
+        financialSummary: financial.financialSummary
+      };
+    });
   }
 
   async verifyPublicInvoicePayment(publicToken: string, reference: string) {
@@ -746,6 +1063,7 @@ export class PaymentsService {
           gatewayResponse: verification.gatewayResponse,
           paidAt: this.dateValue(verification.paidAt) ?? new Date(),
           providerStatus: verification.status,
+          providerTransactionId: verification.providerTransactionId,
           reference: normalizedReference,
           source: "verification"
         })
@@ -955,6 +1273,67 @@ export class PaymentsService {
       financialSummary: recalculated.financialSummary,
       remainingRefundableKobo
     };
+  }
+
+  private async findPaymentRefundInOrganisation(
+    organisationId: string,
+    paymentId: string,
+    refundId: string
+  ) {
+    const [row] = await this.databaseService.db
+      .select({ payment: payments, refund: paymentRefunds })
+      .from(payments)
+      .innerJoin(paymentRefunds, eq(paymentRefunds.paymentId, payments.id))
+      .where(
+        and(
+          eq(payments.organisationId, organisationId),
+          eq(payments.id, paymentId),
+          eq(paymentRefunds.organisationId, organisationId),
+          eq(paymentRefunds.id, refundId)
+        )
+      )
+      .limit(1);
+
+    return row;
+  }
+
+  private matchesProviderRefund(
+    payment: Payment,
+    refund: PaymentRefund,
+    providerRefund: PaystackRefundResponse
+  ) {
+    return this.refundEvidenceMatches(payment, refund, providerRefund);
+  }
+
+  /**
+   * Shared identity check for both the immediate create-refund response and
+   * later reconciliation: stable merchant-note token, provider transaction
+   * identity, amount, and currency must all match exactly. Missing provider
+   * evidence never matches.
+   */
+  private refundEvidenceMatches(
+    payment: { providerReference: string; providerTransactionId?: string | null },
+    refund: { id: string; amountKobo: number; currency: string },
+    providerRefund: {
+      merchantNote: string | null;
+      providerTransactionId?: string | null;
+      transactionReference: string | null;
+      amountKobo: number | null;
+      currency: string | null;
+    }
+  ) {
+    return (
+      providerRefund.merchantNote === this.refundMerchantNote(refund.id) &&
+      (payment.providerTransactionId && providerRefund.providerTransactionId
+        ? providerRefund.providerTransactionId === payment.providerTransactionId
+        : providerRefund.transactionReference === payment.providerReference) &&
+      providerRefund.amountKobo === refund.amountKobo &&
+      providerRefund.currency === refund.currency
+    );
+  }
+
+  private refundMerchantNote(refundId: string) {
+    return `lumina-refund:${refundId}`;
   }
 
   private computePaymentClassifications(
@@ -1819,7 +2198,9 @@ export class PaymentsService {
     this.logger.log({
       provider: paystackProvider,
       eventType,
-      providerReference,
+      // Safe suffix only: full provider references must not sit in normal
+      // application logs (deployment runbook logging policy).
+      providerReferenceSuffix: providerReference ? providerReference.slice(-4) : null,
       signatureValid: true,
       matchedPayment: result.matchedPayment,
       result: result.result
@@ -1899,18 +2280,19 @@ export class PaymentsService {
 
   private async processVerifiedWebhook(tx: AppDatabase, webhook: NormalizedWebhook) {
     const duplicate = await this.findProcessedDuplicate(tx, webhook);
-    const event = await this.createPaymentEvent(tx, webhook, duplicate);
+    const stored = await this.createPaymentEvent(tx, webhook, duplicate);
 
-    if (duplicate) {
+    if (duplicate || stored.conflict) {
       await this.createAuditLog(tx, {
-        organisationId: duplicate.organisationId,
+        organisationId: (duplicate ?? stored.event)?.organisationId ?? null,
         action: "payment_webhook_duplicate_ignored",
         entityType: "payment_event",
-        entityId: event.id,
+        entityId: stored.event?.id ?? null,
         metadataRedacted: {
-          duplicateOfEventId: duplicate.id,
+          duplicateOfEventId: duplicate?.id ?? stored.event?.id ?? null,
           eventType: webhook.eventType,
-          providerReference: webhook.providerReference
+          providerReference: webhook.providerReference,
+          insertConflict: stored.conflict
         }
       });
       this.logWebhookResult(webhook, {
@@ -1918,6 +2300,12 @@ export class PaymentsService {
         result: "duplicate"
       });
       return;
+    }
+
+    const event = stored.event;
+
+    if (!event) {
+      throw new Error("Payment event could not be stored.");
     }
 
     if (refundEventTypes.includes(webhook.eventType)) {
@@ -1947,24 +2335,23 @@ export class PaymentsService {
       isNull(paymentEvents.errorMessage)
     ];
 
-    const identityConditions = [];
+    // Provider event identity is authoritative. A transaction reference alone
+    // is not a unique refund-event identity: distinct partial refunds share it.
+    // Only fall back to the reference when no event ID exists.
+    const identityCondition = webhook.providerEventId
+      ? eq(paymentEvents.providerEventId, webhook.providerEventId)
+      : webhook.providerReference
+        ? eq(paymentEvents.providerReference, webhook.providerReference)
+        : null;
 
-    if (webhook.providerEventId) {
-      identityConditions.push(eq(paymentEvents.providerEventId, webhook.providerEventId));
-    }
-
-    if (webhook.providerReference) {
-      identityConditions.push(eq(paymentEvents.providerReference, webhook.providerReference));
-    }
-
-    if (!identityConditions.length) {
+    if (!identityCondition) {
       return undefined;
     }
 
     const [duplicate] = await tx
       .select()
       .from(paymentEvents)
-      .where(and(...duplicateConditions, or(...identityConditions)!))
+      .where(and(...duplicateConditions, identityCondition))
       .orderBy(desc(paymentEvents.createdAt))
       .limit(1);
 
@@ -1975,31 +2362,59 @@ export class PaymentsService {
     tx: AppDatabase,
     webhook: NormalizedWebhook,
     duplicate?: PaymentEvent
-  ) {
+  ): Promise<{ conflict: boolean; event: PaymentEvent | null }> {
     const processedAt = duplicate ? new Date() : null;
-    const [event] = await tx
-      .insert(paymentEvents)
-      .values({
-        organisationId: duplicate?.organisationId ?? null,
-        paymentId: duplicate?.paymentId ?? null,
-        provider: paystackProvider,
-        providerEventId: duplicate ? null : webhook.providerEventId,
-        providerReference: webhook.providerReference,
-        eventType: webhook.eventType,
-        signatureValid: true,
-        processed: Boolean(duplicate),
-        processedAt,
-        duplicateOfEventId: duplicate?.id ?? null,
-        payloadRedacted: webhook.redactedPayload,
-        errorMessage: duplicate ? "Duplicate webhook ignored." : null
-      })
-      .returning();
+    const values = {
+      organisationId: duplicate?.organisationId ?? null,
+      paymentId: duplicate?.paymentId ?? null,
+      provider: paystackProvider,
+      providerEventId: duplicate ? null : webhook.providerEventId,
+      providerReference: webhook.providerReference,
+      eventType: webhook.eventType,
+      signatureValid: true,
+      processed: Boolean(duplicate),
+      processedAt,
+      duplicateOfEventId: duplicate?.id ?? null,
+      payloadRedacted: webhook.redactedPayload,
+      errorMessage: duplicate ? "Duplicate webhook ignored." : null
+    };
 
-    if (!event) {
-      throw new Error("Payment event could not be stored.");
+    // The unique index is the idempotency authority, not the pre-insert
+    // lookup: two identical deliveries can both miss findProcessedDuplicate
+    // and race to insert. Only rows carrying a provider event ID can hit the
+    // partial unique index, so only they need the conflict arbiter.
+    const insert = tx.insert(paymentEvents).values(values);
+    const rows =
+      !duplicate && webhook.providerEventId
+        ? await insert
+            .onConflictDoNothing({
+              target: [paymentEvents.provider, paymentEvents.providerEventId],
+              where: sql`${paymentEvents.providerEventId} IS NOT NULL`
+            })
+            .returning()
+        : await insert.returning();
+
+    if (rows.length > 0) {
+      return { conflict: false, event: rows[0] ?? null };
     }
 
-    return event;
+    // Lost the insert race: the concurrent delivery committed first and owns
+    // processing. Re-read the winner for the audit trail (Postgres resolves
+    // the speculative conflict only after the winner commits, so it is
+    // visible here).
+    const [winner] = await tx
+      .select()
+      .from(paymentEvents)
+      .where(
+        and(
+          eq(paymentEvents.provider, paystackProvider),
+          eq(paymentEvents.providerEventId, webhook.providerEventId ?? "")
+        )
+      )
+      .orderBy(desc(paymentEvents.createdAt))
+      .limit(1);
+
+    return { conflict: true, event: winner ?? null };
   }
 
   private async processChargeSuccess(
@@ -2027,6 +2442,7 @@ export class PaymentsService {
       gatewayResponse: this.safeString(webhook.payload.data?.gateway_response, 500),
       paidAt: this.dateValue(webhook.payload.data?.paid_at) ?? new Date(),
       providerStatus: this.safeString(webhook.payload.data?.status, 80),
+      providerTransactionId: this.safeString(webhook.payload.data?.id, 120),
       reference: webhook.providerReference,
       source: "webhook"
     });
@@ -2039,9 +2455,13 @@ export class PaymentsService {
   ) {
     const providerRefundId = this.safeString(webhook.payload.data?.id, 120);
     const providerReference = webhook.providerReference;
-    const refund = await this.findRefundForWebhook(tx, providerRefundId, providerReference);
+    const candidateRefund = await this.findRefundForWebhook(
+      tx,
+      providerRefundId,
+      providerReference
+    );
 
-    if (!refund) {
+    if (!candidateRefund) {
       await this.markEventProcessed(tx, event.id, {
         errorMessage: "Unknown refund reference."
       });
@@ -2052,13 +2472,32 @@ export class PaymentsService {
       return;
     }
 
-    const refundStatus = this.toRefundStatusFromEvent(webhook.eventType);
-    const now = new Date();
-    const [payment] = await tx
+    const [candidatePayment] = await tx
       .select()
       .from(payments)
-      .where(eq(payments.id, refund.paymentId))
+      .where(eq(payments.id, candidateRefund.paymentId))
       .limit(1);
+
+    if (!candidatePayment) {
+      await this.markEventProcessed(tx, event.id, {
+        errorMessage: "Refund payment was not found."
+      });
+      return;
+    }
+
+    const locked = await this.lockInvoiceFinancialState(tx, candidatePayment.invoiceId);
+    const refund = locked.refunds.find((item) => item.id === candidateRefund.id);
+    const payment = locked.payments.find((item) => item.id === candidatePayment.id);
+
+    if (!refund || !payment) {
+      await this.markEventProcessed(tx, event.id, {
+        errorMessage: "Refund changed before webhook processing."
+      });
+      return;
+    }
+
+    const refundStatus = this.toRefundStatusFromEvent(webhook.eventType);
+    const now = new Date();
 
     await tx
       .update(paymentRefunds)
@@ -2084,11 +2523,9 @@ export class PaymentsService {
       })
       .where(eq(paymentRefunds.id, refund.id));
 
-    if (payment) {
-      await this.linkEventToPayment(tx, event.id, payment);
-    }
+    await this.linkEventToPayment(tx, event.id, payment);
 
-    if (payment && refundStatus === "processed") {
+    if (refundStatus === "processed") {
       await this.recalculateInvoiceFinancialState(tx, payment.invoiceId, {
         eventId: event.id,
         paymentId: payment.id,
@@ -2100,7 +2537,7 @@ export class PaymentsService {
 
     await this.markEventProcessed(tx, event.id);
     this.logWebhookResult(webhook, {
-      matchedPayment: Boolean(payment),
+      matchedPayment: true,
       result: "processed"
     });
   }
@@ -2110,9 +2547,9 @@ export class PaymentsService {
     input: NormalizedSuccessfulPaystackPayment
   ): Promise<ReconciliationResult> {
     const event = input.eventId ? await this.findPaymentEvent(tx, input.eventId) : null;
-    const payment = await this.findPaymentByReference(tx, input.reference);
+    const candidatePayment = await this.findPaymentByReference(tx, input.reference);
 
-    if (!payment) {
+    if (!candidatePayment) {
       if (event) {
         await this.markEventProcessed(tx, event.id, {
           errorMessage: "Unknown payment reference."
@@ -2139,22 +2576,14 @@ export class PaymentsService {
       return { invoiceUpdated: false, status: "successful" };
     }
 
-    const invoice = await this.findInvoice(tx, payment.invoiceId);
+    const locked = await this.lockInvoiceFinancialState(tx, candidatePayment.invoiceId);
+    const payment = locked.payments.find((item) => item.id === candidatePayment.id);
 
-    if (!invoice) {
-      if (event) {
-        await this.markMismatch(tx, {
-          event,
-          payment,
-          message: "Payment invoice was not found."
-        });
-      }
-      this.logWebhookResult(input, {
-        matchedPayment: true,
-        result: "review_required"
-      });
-      return { invoiceUpdated: false, status: "successful" };
+    if (!payment) {
+      throw new NotFoundException("Payment was not found.");
     }
+
+    const { invoice } = locked;
 
     if (event) {
       await this.linkEventToPayment(tx, event.id, payment);
@@ -2246,6 +2675,13 @@ export class PaymentsService {
     }
 
     if (payment.status === "successful") {
+      if (!payment.providerTransactionId && input.providerTransactionId) {
+        await tx
+          .update(payments)
+          .set({ providerTransactionId: input.providerTransactionId, updatedAt: new Date() })
+          .where(eq(payments.id, payment.id));
+      }
+
       await this.recalculateInvoiceFinancialState(tx, invoice.id, {
         eventId: event?.id ?? null,
         paymentId: payment.id,
@@ -2382,13 +2818,17 @@ export class PaymentsService {
       if (refund) {
         return refund;
       }
+
+      // A provider refund ID that matches nothing locally must never mutate a
+      // different refund that happens to share the transaction reference.
+      return null;
     }
 
     if (!providerReference) {
       return null;
     }
 
-    const [row] = await tx
+    const rows = await tx
       .select({ refund: paymentRefunds })
       .from(paymentRefunds)
       .innerJoin(payments, eq(payments.id, paymentRefunds.paymentId))
@@ -2398,10 +2838,9 @@ export class PaymentsService {
           eq(payments.providerReference, providerReference)
         )
       )
-      .orderBy(desc(paymentRefunds.createdAt))
-      .limit(1);
+      .limit(2);
 
-    return row?.refund ?? null;
+    return rows.length === 1 ? (rows[0]?.refund ?? null) : null;
   }
 
   private async findPaymentEvent(tx: AppDatabase, eventId: string) {
@@ -2452,6 +2891,7 @@ export class PaymentsService {
         paidAt: input.paidAt,
         channel: input.channel,
         gatewayResponse: input.gatewayResponse,
+        providerTransactionId: input.providerTransactionId ?? payment.providerTransactionId,
         metadataRedacted: metadata,
         updatedAt: new Date()
       })
@@ -2590,13 +3030,9 @@ export class PaymentsService {
       refundId?: string | null;
     }
   ) {
-    const invoice = await this.findInvoice(tx, invoiceId);
-
-    if (!invoice) {
-      throw new NotFoundException("Invoice was not found.");
-    }
-
-    const financialSummary = await this.calculateInvoiceFinancialSummary(tx, invoice);
+    const locked = await this.lockInvoiceFinancialState(tx, invoiceId);
+    const { invoice } = locked;
+    const financialSummary = this.buildFinancialSummary(invoice, locked.payments, locked.refunds);
     assertKoboAmount(financialSummary.netReceivedKobo, "Invoice amount paid");
     assertKoboAmount(financialSummary.balanceDueKobo, "Invoice balance due");
     const nextStatus = this.nextInvoiceStatusFromFinancialSummary(invoice, financialSummary);
@@ -2659,6 +3095,40 @@ export class PaymentsService {
     };
   }
 
+  private async lockInvoiceFinancialState(tx: AppDatabase, invoiceId: string) {
+    // One order for every financial mutation: invoice, every payment, then
+    // every refund. Ordered locks keep two operations on one invoice from
+    // deadlocking while the subsequent reads see one canonical snapshot.
+    await tx.execute(sql`SELECT id FROM invoices WHERE id = ${invoiceId} FOR UPDATE`);
+    const invoice = await this.findInvoice(tx, invoiceId);
+
+    if (!invoice) {
+      throw new NotFoundException("Invoice was not found.");
+    }
+
+    await tx.execute(
+      sql`SELECT id FROM payments WHERE invoice_id = ${invoice.id} ORDER BY id FOR UPDATE`
+    );
+    await tx.execute(sql`
+      SELECT id
+      FROM payment_refunds
+      WHERE payment_id IN (SELECT id FROM payments WHERE invoice_id = ${invoice.id})
+      ORDER BY id
+      FOR UPDATE
+    `);
+
+    const invoicePayments = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.invoiceId, invoice.id));
+    const paymentIds = invoicePayments.map((payment) => payment.id);
+    const refunds = paymentIds.length
+      ? await tx.select().from(paymentRefunds).where(inArray(paymentRefunds.paymentId, paymentIds))
+      : [];
+
+    return { invoice, payments: invoicePayments, refunds };
+  }
+
   private nextInvoiceStatusFromFinancialSummary(
     invoice: Invoice,
     financialSummary: FinancialSummary
@@ -2702,13 +3172,7 @@ export class PaymentsService {
       return false;
     }
 
-    const today = new Date();
-    const dueDate = new Date(`${invoice.dueDate}T00:00:00.000Z`);
-    const todayStart = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-    );
-
-    return dueDate < todayStart;
+    return invoice.dueDate < businessDate();
   }
 
   private async markMismatch(inputTx: AppDatabase, input: MismatchInput) {

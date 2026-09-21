@@ -46,6 +46,7 @@ export type PaystackVerifyResponse = {
   currency: string;
   gatewayResponse: string | null;
   paidAt: string | null;
+  providerTransactionId: string | null;
   reference: string;
   status: string;
 };
@@ -58,6 +59,7 @@ type PaystackVerifyApiResponse = {
     channel?: unknown;
     currency?: unknown;
     gateway_response?: unknown;
+    id?: unknown;
     paid_at?: unknown;
     reference?: unknown;
     status?: unknown;
@@ -73,9 +75,21 @@ type PaystackCreateRefundInput = {
 };
 
 export type PaystackCreateRefundResponse = {
+  amountKobo: number | null;
+  currency: string | null;
+  providerRefundId: string | null;
+  providerTransactionId: string | null;
+  status: string | null;
+  transactionReference: string | null;
+  merchantNote: string | null;
+};
+
+export type PaystackRefundResponse = {
   amountKobo: number;
   currency: string;
+  merchantNote: string | null;
   providerRefundId: string | null;
+  providerTransactionId: string | null;
   status: string;
   transactionReference: string | null;
 };
@@ -89,9 +103,33 @@ type PaystackCreateRefundApiResponse = {
     currency?: unknown;
     status?: unknown;
     transaction?: {
+      id?: unknown;
       reference?: unknown;
     };
+    merchant_note?: unknown;
   };
+};
+
+type PaystackRefundApiResponse = {
+  status: boolean;
+  message?: unknown;
+  data?:
+    | {
+        amount?: unknown;
+        currency?: unknown;
+        id?: unknown;
+        merchant_note?: unknown;
+        status?: unknown;
+        transaction?: unknown;
+      }
+    | Array<{
+        amount?: unknown;
+        currency?: unknown;
+        id?: unknown;
+        merchant_note?: unknown;
+        status?: unknown;
+        transaction?: unknown;
+      }>;
 };
 
 @Injectable()
@@ -116,6 +154,7 @@ export class PaystackService {
           Authorization: `Bearer ${secretKey}`,
           "Content-Type": "application/json"
         },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           email: input.email,
           amount: input.amountKobo,
@@ -177,7 +216,8 @@ export class PaystackService {
           headers: {
             Authorization: `Bearer ${secretKey}`,
             "Content-Type": "application/json"
-          }
+          },
+          signal: AbortSignal.timeout(15000)
         }
       );
     } catch {
@@ -204,6 +244,7 @@ export class PaystackService {
       amountKobo: this.numberValue(payload.data.amount),
       currency: this.safeString(payload.data.currency, 3) ?? "",
       paidAt: this.safeString(payload.data.paid_at, 80),
+      providerTransactionId: this.safeString(payload.data.id, 120),
       channel: this.safeString(payload.data.channel, 80),
       gatewayResponse: this.safeString(payload.data.gateway_response, 500)
     };
@@ -229,6 +270,7 @@ export class PaystackService {
           Authorization: `Bearer ${secretKey}`,
           "Content-Type": "application/json"
         },
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           transaction: input.transactionReference,
           amount: input.amountKobo,
@@ -255,14 +297,93 @@ export class PaystackService {
       throw this.toPaystackException(response.status, this.safeProviderMessage(payload?.message));
     }
 
+    // Strict evidence: missing provider fields stay missing. Callers must
+    // validate this response against the requested refund before applying it
+    // to financial state; request values are never substituted here.
     return {
       providerRefundId: this.safeString(payload.data.id, 120),
-      status: this.safeString(payload.data.status, 80) ?? "pending",
-      amountKobo: this.numberValue(payload.data.amount),
-      currency: this.safeString(payload.data.currency, 3) ?? input.currency,
-      transactionReference:
-        this.safeString(payload.data.transaction?.reference, 120) ?? input.transactionReference
+      providerTransactionId: this.safeString(payload.data.transaction?.id, 120),
+      status: this.safeString(payload.data.status, 80),
+      amountKobo: this.strictKobo(payload.data.amount),
+      currency: this.safeString(payload.data.currency, 3),
+      transactionReference: this.safeString(payload.data.transaction?.reference, 120),
+      merchantNote: this.safeString(payload.data.merchant_note, 240)
     };
+  }
+
+  async fetchRefund(providerRefundId: string): Promise<PaystackRefundResponse> {
+    const [refund] = await this.getRefunds(`/refund/${encodeURIComponent(providerRefundId)}`);
+
+    if (!refund) {
+      throw new BadGatewayException("Paystack refund response was invalid.");
+    }
+
+    return refund;
+  }
+
+  async listRefunds(providerTransactionId: string): Promise<PaystackRefundResponse[]> {
+    return this.getRefunds(`/refund?transaction=${encodeURIComponent(providerTransactionId)}`);
+  }
+
+  private async getRefunds(path: string): Promise<PaystackRefundResponse[]> {
+    const secretKey = this.configService.get<string>("PAYSTACK_SECRET_KEY");
+
+    if (!secretKey) {
+      throw new ServiceUnavailableException("Paystack is not configured.");
+    }
+
+    const baseUrl =
+      this.configService.get<string>("PAYSTACK_BASE_URL") ?? "https://api.paystack.co";
+    let response: Response;
+
+    try {
+      response = await fetch(new URL(path, baseUrl), {
+        method: "GET",
+        headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(15000)
+      });
+    } catch {
+      throw new ServiceUnavailableException(
+        "Paystack is temporarily unavailable. Please try again later."
+      );
+    }
+
+    let payload: PaystackRefundApiResponse | undefined;
+
+    try {
+      payload = (await response.json()) as PaystackRefundApiResponse;
+    } catch {
+      payload = undefined;
+    }
+
+    if (!response.ok || !payload?.status || !payload.data) {
+      throw this.toPaystackException(response.status, this.safeProviderMessage(payload?.message));
+    }
+
+    const rows = Array.isArray(payload.data) ? payload.data : [payload.data];
+    return rows.map((refund) => {
+      const transaction = refund.transaction;
+
+      return {
+        amountKobo: this.numberValue(refund.amount),
+        currency: this.safeString(refund.currency, 3) ?? "",
+        merchantNote: this.safeString(refund.merchant_note, 240),
+        providerRefundId: this.safeString(refund.id, 120),
+        providerTransactionId: this.safeString(
+          typeof transaction === "object" && transaction !== null && "id" in transaction
+            ? transaction.id
+            : transaction,
+          120
+        ),
+        status: this.safeString(refund.status, 80) ?? "unknown",
+        transactionReference: this.safeString(
+          typeof transaction === "object" && transaction !== null && "reference" in transaction
+            ? transaction.reference
+            : null,
+          120
+        )
+      };
+    });
   }
 
   private toPaystackException(responseStatus: number, providerMessage: string | null) {
@@ -347,5 +468,24 @@ export class PaystackService {
     }
 
     return 0;
+  }
+
+  /**
+   * Strict kobo parsing for refund evidence: only a safe non-negative
+   * integer counts. Anything else stays null so callers can distinguish
+   * "Paystack returned zero" from "Paystack returned no usable amount".
+   */
+  private strictKobo(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    const parsed = typeof value === "number" ? value : Number(value);
+
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      return null;
+    }
+
+    return parsed;
   }
 }

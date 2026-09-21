@@ -9,13 +9,17 @@ import {
   Query,
   UseGuards
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
+import {
+  ResendInvoiceEmailDto,
+  SendInvoiceEmailDto
+} from "../communications/dto/send-invoice-email.dto";
 import { CreateInvoiceDto } from "./dto/create-invoice.dto";
 import { InvoiceReasonDto } from "./dto/invoice-reason.dto";
 import { ListInvoicesQueryDto } from "./dto/list-invoices-query.dto";
@@ -47,6 +51,15 @@ export class InvoicesController {
     return this.invoicesService.createInvoice(context, body);
   }
 
+  @Get(":id/activity")
+  @Roles("owner", "admin", "accountant", "viewer")
+  getInvoiceActivity(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string
+  ) {
+    return this.invoicesService.getInvoiceActivity(context, id);
+  }
+
   @Get(":id")
   @Roles("owner", "admin", "accountant", "viewer")
   getInvoice(@CurrentOrganisation() context: ActiveOrganisationContext, @Param("id") id: string) {
@@ -65,8 +78,35 @@ export class InvoicesController {
 
   @Post(":id/send")
   @Roles("owner", "admin", "accountant")
-  sendInvoice(@CurrentOrganisation() context: ActiveOrganisationContext, @Param("id") id: string) {
-    return this.invoicesService.sendInvoice(context, id);
+  sendInvoice(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string,
+    @Body() body: SendInvoiceEmailDto
+  ) {
+    return this.invoicesService.sendInvoice(context, id, body);
+  }
+
+  @Post(":id/resend")
+  @Roles("owner", "admin", "accountant")
+  resendInvoiceEmail(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string,
+    @Body() body: ResendInvoiceEmailDto
+  ) {
+    return this.invoicesService.resendInvoiceEmail(context, id, body);
+  }
+
+  @Post(":id/delivery-attempts/:attemptId/retry")
+  @Roles("owner", "admin", "accountant")
+  @ApiOperation({
+    summary: "Retry one unresolved delivery attempt with its original provider request"
+  })
+  retryUncertainDelivery(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string,
+    @Param("attemptId") attemptId: string
+  ) {
+    return this.invoicesService.retryUncertainDelivery(context, id, attemptId);
   }
 
   @Post(":id/duplicate")

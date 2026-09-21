@@ -46,6 +46,28 @@ export class DatabaseService implements OnModuleDestroy, OnModuleInit {
     }
   }
 
+  async checkConnection(): Promise<boolean> {
+    if (!this.pool) {
+      return false;
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+
+    try {
+      await Promise.race([
+        this.pool.query("select 1"),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("readiness probe timed out")), 3000);
+        })
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   get db(): AppDatabase {
     if (!this.database) {
       throw new Error("DATABASE_URL is required for database-backed API operations.");

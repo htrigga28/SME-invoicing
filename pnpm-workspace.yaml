@@ -7,6 +7,12 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
 allowBuilds:
+  '@embedded-postgres/windows-x64': true
+  '@embedded-postgres/windows-arm64': true
+  '@embedded-postgres/linux-x64': true
+  '@embedded-postgres/linux-arm64': true
+  '@embedded-postgres/darwin-x64': true
+  '@embedded-postgres/darwin-arm64': true
   "@scarf/scarf": true
   argon2: true
   esbuild: true

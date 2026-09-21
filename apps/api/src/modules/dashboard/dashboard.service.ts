@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 
+import { businessDate, businessTimezone } from "../../common/business-date";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { DatabaseService } from "../../database/database.service";
 import {
@@ -25,7 +26,7 @@ type DashboardPeriod = {
   dateFrom: string;
   dateTo: string;
   granularity: DashboardResolvedGranularity;
-  timezone: typeof dashboardTimezone;
+  timezone: typeof businessTimezone;
   utcEndExclusive: Date;
   utcStart: Date;
 };
@@ -54,7 +55,6 @@ type PaymentRefundRow = {
   status: "failed" | "needs_attention" | "pending" | "processed" | "processing";
 };
 
-const dashboardTimezone = "Africa/Lagos";
 const lagosUtcOffsetMs = 60 * 60 * 1000;
 const dayMs = 24 * 60 * 60 * 1000;
 const maxDashboardRangeDays = 731;
@@ -314,10 +314,9 @@ export class DashboardService {
   }
 
   private async getOperationalInvoiceMetrics(organisationId: string) {
-    const statusToday = this.utcDateString(new Date());
-    const lagosToday = this.lagosDateString(new Date());
+    const lagosToday = businessDate();
     const outstandingCondition = sql`${invoices.balanceDueKobo} > 0 and ${activeBalanceStatusSql}`;
-    const overdueCondition = sql`${outstandingCondition} and ${invoices.dueDate} < ${statusToday}`;
+    const overdueCondition = sql`${outstandingCondition} and ${invoices.dueDate} < ${lagosToday}`;
     const effectiveStatus = sql<InvoiceStatusValue>`case
       when ${overdueCondition} then 'overdue'
       else ${invoices.status}
@@ -599,18 +598,18 @@ export class DashboardService {
     granularity: DashboardResolvedGranularity
   ) {
     if (granularity === "day") {
-      return sql<string>`to_char(${column} at time zone ${dashboardTimezone}, 'YYYY-MM-DD')`;
+      return sql<string>`to_char(${column} at time zone ${businessTimezone}, 'YYYY-MM-DD')`;
     }
 
     if (granularity === "week") {
-      return sql<string>`to_char(date_trunc('week', ${column} at time zone ${dashboardTimezone}), 'YYYY-MM-DD')`;
+      return sql<string>`to_char(date_trunc('week', ${column} at time zone ${businessTimezone}), 'YYYY-MM-DD')`;
     }
 
-    return sql<string>`to_char(date_trunc('month', ${column} at time zone ${dashboardTimezone}), 'YYYY-MM-01')`;
+    return sql<string>`to_char(date_trunc('month', ${column} at time zone ${businessTimezone}), 'YYYY-MM-01')`;
   }
 
   private resolvePeriod(query: DashboardOverviewQueryDto): DashboardPeriod {
-    const dateTo = query.dateTo ?? this.lagosDateString(new Date());
+    const dateTo = query.dateTo ?? businessDate();
     const dateFrom = query.dateFrom ?? this.addDays(dateTo, -29);
     const rangeDays = this.daysBetween(dateFrom, dateTo) + 1;
 
@@ -628,7 +627,7 @@ export class DashboardService {
       dateFrom,
       dateTo,
       granularity,
-      timezone: dashboardTimezone,
+      timezone: businessTimezone,
       utcStart: this.toLagosUtcStart(dateFrom),
       utcEndExclusive: this.toLagosUtcEndExclusive(dateTo)
     };
@@ -677,24 +676,6 @@ export class DashboardService {
     }
 
     return buckets;
-  }
-
-  private lagosDateString(date: Date) {
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      timeZone: dashboardTimezone,
-      year: "numeric"
-    }).formatToParts(date);
-    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-
-    return `${values.year}-${values.month}-${values.day}`;
-  }
-
-  private utcDateString(date: Date) {
-    return this.formatDate(
-      new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
-    );
   }
 
   private toLagosUtcStart(value: string) {

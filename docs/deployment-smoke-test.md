@@ -98,7 +98,7 @@ Run this checklist against controlled demo data after DNS, environment variables
 - [ ] `DATABASE_URL` exists only on the API project.
 - [ ] JWT secrets exist only on the API project.
 - [ ] Paystack secrets exist only on the API project.
-- [ ] Brevo secret exists only on the API project if email is enabled.
+- [ ] Resend secrets exist only on the API project if email is enabled.
 - [ ] No `NEXT_PUBLIC_*` variable contains a secret.
 - [ ] CSV exports omit public tokens, raw payloads, and provider subaccount codes.
 - [ ] CSV cells are protected against spreadsheet formula injection.

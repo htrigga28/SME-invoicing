@@ -91,6 +91,8 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     balanceDueKobo: 72500,
     sentAt: new Date("2026-06-01T10:00:00.000Z"),
     viewedAt: null,
+    lastViewedAt: null,
+    viewCount: 0,
     paidAt: null,
     cancelledAt: null,
     voidedAt: null,
@@ -107,15 +109,37 @@ function createService(
     existing?: Customer;
     invoices?: Invoice[];
     inserted?: Customer;
+    summary?: {
+      totalBalanceDueKobo: number;
+      totalInvoices: number;
+      totalInvoicedKobo: number;
+      totalPaidKobo: number;
+    };
     updated?: Customer;
   } = {}
 ) {
   const duplicateRows = options.duplicate ? [{ id: "duplicate-customer" }] : [];
   const existingRows = options.existing ? [options.existing] : [];
   const invoiceRows = options.invoices ?? [];
+  const invoiceSummary =
+    options.summary ??
+    invoiceRows.reduce(
+      (totals, invoice) => ({
+        totalBalanceDueKobo: totals.totalBalanceDueKobo + invoice.balanceDueKobo,
+        totalInvoices: totals.totalInvoices + 1,
+        totalInvoicedKobo: totals.totalInvoicedKobo + invoice.totalKobo,
+        totalPaidKobo: totals.totalPaidKobo + invoice.amountPaidKobo
+      }),
+      {
+        totalBalanceDueKobo: 0,
+        totalInvoices: 0,
+        totalInvoicedKobo: 0,
+        totalPaidKobo: 0
+      }
+    );
   const selectResults =
     options.invoices !== undefined
-      ? [existingRows, invoiceRows, duplicateRows]
+      ? [existingRows, invoiceRows, [invoiceSummary], duplicateRows]
       : options.existing
         ? [existingRows, duplicateRows]
         : [duplicateRows, existingRows];
@@ -248,6 +272,29 @@ describe("CustomersService", () => {
       })
     ]);
     expect(result.customer).not.toHaveProperty("organisationId");
+  });
+
+  it("keeps ten recent invoices separate from all-time totals", async () => {
+    const { service } = createService({
+      existing: createCustomer(),
+      invoices: [createInvoice()],
+      summary: {
+        totalBalanceDueKobo: 797500,
+        totalInvoices: 11,
+        totalInvoicedKobo: 1072500,
+        totalPaidKobo: 275000
+      }
+    });
+
+    const result = await service.getCustomer(createContext("viewer"), "customer-1");
+
+    expect(result.invoices).toHaveLength(1);
+    expect(result.invoiceSummary).toMatchObject({
+      totalBalanceDueKobo: 797500,
+      totalInvoices: 11,
+      totalInvoicedKobo: 1072500,
+      totalPaidKobo: 275000
+    });
   });
 
   it("returns conflict when archiving an already archived customer", async () => {

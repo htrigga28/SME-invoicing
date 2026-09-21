@@ -10,11 +10,15 @@ import { Pool } from "pg";
 import {
   businessProfiles,
   catalogueItems,
+  communicationEvents,
+  communicationRecipients,
+  communications,
   customers,
   invoiceLineItems,
   invoiceNumberSequences,
   invoices,
   invoiceStatusEvents,
+  invoiceViewEvents,
   organisationPaymentAccounts,
   organisationInvitations,
   organisationMembers,
@@ -68,82 +72,92 @@ const demoInvitations = [
   }
 ] as const;
 
+function demoCustomer(
+  name: string,
+  email: string,
+  phone: string,
+  billingAddress: string,
+  archived = false
+) {
+  return { name, email, phone, billingAddress, archived };
+}
+
 const demoCustomers = [
-  {
-    name: "Lagos Bright Prints",
-    email: "accounts@lagosbrightprints.com",
-    phone: "+2348010000001",
-    billingAddress: "14 Allen Avenue, Ikeja, Lagos"
-  },
-  {
-    name: "Northstar Foods Ltd",
-    email: "finance@northstarfoods.com",
-    phone: "+2348010000002",
-    billingAddress: "22 Ahmadu Bello Way, Victoria Island, Lagos"
-  },
-  {
-    name: "Lekki Dental Studio",
-    email: "billing@lekkidental.com",
-    phone: "+2348010000003",
-    billingAddress: "8 Admiralty Road, Lekki Phase 1, Lagos"
-  },
-  {
-    name: "BluePeak Logistics",
-    email: "ops@bluepeaklogistics.com",
-    phone: "+2348010000004",
-    billingAddress: "31 Airport Road, Ikeja, Lagos"
-  },
-  {
-    name: "Abuja Creative Hub",
-    email: "admin@abujacreativehub.com",
-    phone: "+2348010000005",
-    billingAddress: "6 Gana Street, Maitama, Abuja"
-  },
-  {
-    name: "Prime Tutors Academy",
-    email: "bursar@primetutors.com",
-    phone: "+2348010000006",
-    billingAddress: "10 Toyin Street, Ikeja, Lagos"
-  },
-  {
-    name: "Mainland Events Co",
-    email: "payments@mainlandevents.com",
-    phone: "+2348010000007",
-    billingAddress: "44 Bode Thomas Street, Surulere, Lagos"
-  },
-  {
-    name: "Greenline Pharmacy",
-    email: "accounts@greenlinepharmacy.com",
-    phone: "+2348010000008",
-    billingAddress: "19 Herbert Macaulay Way, Yaba, Lagos"
-  },
-  {
-    name: "Coral Edge Consulting",
-    email: "finance@coraledge.com",
-    phone: "+2348010000009",
-    billingAddress: "2 Ligali Ayorinde Street, Victoria Island, Lagos"
-  },
-  {
-    name: "Swift Repairs NG",
-    email: "billing@swiftrepairs.com",
-    phone: "+2348010000010",
-    billingAddress: "15 Ikorodu Road, Maryland, Lagos"
-  },
-  {
-    name: "Archived Customer One",
-    email: "archived.one@example.com",
-    phone: "+2348010000011",
-    billingAddress: "1 Old Marina Road, Lagos",
-    archived: true
-  },
-  {
-    name: "Archived Customer Two",
-    email: "archived.two@example.com",
-    phone: "+2348010000012",
-    billingAddress: "2 Old Marina Road, Lagos",
-    archived: true
-  }
-] as const;
+  demoCustomer(
+    "Lagos Bright Prints",
+    "accounts@lagosbrightprints.com",
+    "+2348010000001",
+    "14 Allen Avenue, Ikeja, Lagos"
+  ),
+  demoCustomer(
+    "Northstar Foods Ltd",
+    "finance@northstarfoods.com",
+    "+2348010000002",
+    "22 Ahmadu Bello Way, Victoria Island, Lagos"
+  ),
+  demoCustomer(
+    "Lekki Dental Studio",
+    "billing@lekkidental.com",
+    "+2348010000003",
+    "8 Admiralty Road, Lekki Phase 1, Lagos"
+  ),
+  demoCustomer(
+    "BluePeak Logistics",
+    "ops@bluepeaklogistics.com",
+    "+2348010000004",
+    "31 Airport Road, Ikeja, Lagos"
+  ),
+  demoCustomer(
+    "Abuja Creative Hub",
+    "admin@abujacreativehub.com",
+    "+2348010000005",
+    "6 Gana Street, Maitama, Abuja"
+  ),
+  demoCustomer(
+    "Prime Tutors Academy",
+    "bursar@primetutors.com",
+    "+2348010000006",
+    "10 Toyin Street, Ikeja, Lagos"
+  ),
+  demoCustomer(
+    "Mainland Events Co",
+    "payments@mainlandevents.com",
+    "+2348010000007",
+    "44 Bode Thomas Street, Surulere, Lagos"
+  ),
+  demoCustomer(
+    "Greenline Pharmacy",
+    "accounts@greenlinepharmacy.com",
+    "+2348010000008",
+    "19 Herbert Macaulay Way, Yaba, Lagos"
+  ),
+  demoCustomer(
+    "Coral Edge Consulting",
+    "finance@coraledge.com",
+    "+2348010000009",
+    "2 Ligali Ayorinde Street, Victoria Island, Lagos"
+  ),
+  demoCustomer(
+    "Swift Repairs NG",
+    "billing@swiftrepairs.com",
+    "+2348010000010",
+    "15 Ikorodu Road, Maryland, Lagos"
+  ),
+  demoCustomer(
+    "Archived Customer One",
+    "archived.one@example.com",
+    "+2348010000011",
+    "1 Old Marina Road, Lagos",
+    true
+  ),
+  demoCustomer(
+    "Archived Customer Two",
+    "archived.two@example.com",
+    "+2348010000012",
+    "2 Old Marina Road, Lagos",
+    true
+  )
+];
 
 const invoiceStatuses = [
   ...Array.from({ length: 6 }, () => "draft" as const),
@@ -179,7 +193,8 @@ const demoHistoricalSubaccountCode = "ACCT_demo_historical";
 const demoCatalogueItems = [
   {
     name: "Brand strategy workshop",
-    description: "Full-day brand positioning workshop with stakeholder interviews and a strategy brief.",
+    description:
+      "Full-day brand positioning workshop with stakeholder interviews and a strategy brief.",
     defaultUnitPriceKobo: 180000
   },
   {
@@ -425,7 +440,7 @@ export async function seedDemo() {
       }
 
       for (const customer of demoCustomers) {
-        const archivedAt = "archived" in customer && customer.archived ? now : null;
+        const archivedAt = customer.archived ? now : null;
         const [existingCustomer] = await db
           .select()
           .from(customers)
@@ -516,7 +531,7 @@ export async function seedDemo() {
         activeCustomers.map((customer) => [customer.email, customer])
       );
       const activeCustomerEmails = demoCustomers
-        .filter((customer) => !("archived" in customer && customer.archived))
+        .filter((customer) => !customer.archived)
         .map((customer) => customer.email);
       const publicInvoiceUrls: string[] = [];
 
@@ -1199,6 +1214,313 @@ export async function seedDemo() {
             updatedAt: now
           }
         });
+
+      await seedInvoiceDeliveryActivity();
+
+      async function seedInvoiceDeliveryActivity(): Promise<void> {
+        if (!organisation) {
+          throw new Error("Demo organisation was not found for delivery seed.");
+        }
+
+        if (!owner) {
+          throw new Error("Demo owner was not found for delivery seed.");
+        }
+
+        const dayMs = 24 * 60 * 60 * 1000;
+        const scenarios: {
+          invoiceNumber: string;
+          providerMessageId: string;
+          idempotencyKey: string;
+          toRecipients: string[];
+          ccRecipients: string[];
+          subject: string;
+          status: "accepted" | "delivered" | "failed" | "partially_failed";
+          acceptedAt: Date;
+          deliveredAt?: Date;
+          failedAt?: Date;
+          failureReason?: string;
+          events: { eventType: string; email: string; occurredAt: Date }[];
+          views: Date[];
+        }[] = [
+          {
+            invoiceNumber: "INV-000007",
+            providerMessageId: "demo-t021-000007-email-id",
+            idempotencyKey: "demo-t021-000007-key",
+            toRecipients: ["accounts@example.com"],
+            ccRecipients: [],
+            subject: "Invoice INV-000007 from Akin & Co Creative Services",
+            status: "accepted",
+            acceptedAt: new Date(now.getTime() - 2 * dayMs),
+            events: [
+              {
+                eventType: "email.sent",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 2 * dayMs)
+              }
+            ],
+            views: []
+          },
+          {
+            invoiceNumber: "INV-000008",
+            providerMessageId: "demo-t021-000008-email-id",
+            idempotencyKey: "demo-t021-000008-key",
+            toRecipients: ["bounce@example.com"],
+            ccRecipients: [],
+            subject: "Invoice INV-000008 from Akin & Co Creative Services",
+            status: "failed",
+            acceptedAt: new Date(now.getTime() - 3 * dayMs),
+            failedAt: new Date(now.getTime() - 3 * dayMs + 5 * 60 * 1000),
+            failureReason: "The email address bounced. Check the recipient and try again.",
+            events: [
+              {
+                eventType: "email.sent",
+                email: "bounce@example.com",
+                occurredAt: new Date(now.getTime() - 3 * dayMs)
+              },
+              {
+                eventType: "email.bounced",
+                email: "bounce@example.com",
+                occurredAt: new Date(now.getTime() - 3 * dayMs + 5 * 60 * 1000)
+              }
+            ],
+            views: []
+          },
+          {
+            invoiceNumber: "INV-000013",
+            providerMessageId: "demo-t021-000013-email-id",
+            idempotencyKey: "demo-t021-000013-key",
+            toRecipients: ["accounts@example.com"],
+            ccRecipients: [],
+            subject: "Invoice INV-000013 from Akin & Co Creative Services",
+            status: "delivered",
+            acceptedAt: new Date(now.getTime() - 4 * dayMs),
+            deliveredAt: new Date(now.getTime() - 4 * dayMs + 2 * 60 * 1000),
+            events: [
+              {
+                eventType: "email.sent",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 4 * dayMs)
+              },
+              {
+                eventType: "email.delivered",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 4 * dayMs + 2 * 60 * 1000)
+              }
+            ],
+            views: [
+              new Date(now.getTime() - 3 * dayMs),
+              new Date(now.getTime() - 3 * dayMs + 60 * 60 * 1000),
+              new Date(now.getTime() - 2 * dayMs),
+              new Date(now.getTime() - 1 * dayMs)
+            ]
+          },
+          {
+            invoiceNumber: "INV-000011",
+            providerMessageId: "demo-t021-000011-email-id",
+            idempotencyKey: "demo-t021-000011-key",
+            toRecipients: ["accounts@example.com"],
+            ccRecipients: [],
+            subject: "Invoice INV-000011 from Akin & Co Creative Services",
+            status: "delivered",
+            acceptedAt: new Date(now.getTime() - 18 * dayMs),
+            deliveredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000),
+            events: [
+              {
+                eventType: "email.sent",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 18 * dayMs)
+              },
+              {
+                eventType: "email.delivered",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 18 * dayMs + 3 * 60 * 1000)
+              }
+            ],
+            views: [new Date(now.getTime() - 17 * dayMs), new Date(now.getTime() - 16 * dayMs)]
+          },
+          {
+            invoiceNumber: "INV-000025",
+            providerMessageId: "demo-t021-000025-email-id",
+            idempotencyKey: "demo-t021-000025-key",
+            toRecipients: ["accounts@example.com"],
+            ccRecipients: ["bounce@example.com"],
+            subject: "Invoice INV-000025 from Akin & Co Creative Services",
+            status: "partially_failed",
+            acceptedAt: new Date(now.getTime() - 1 * dayMs),
+            failedAt: new Date(now.getTime() - 1 * dayMs + 10 * 60 * 1000),
+            failureReason:
+              "1 of 2 recipients failed delivery. See the activity timeline for the affected addresses.",
+            events: [
+              {
+                eventType: "email.sent",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 1 * dayMs)
+              },
+              {
+                eventType: "email.delivered",
+                email: "accounts@example.com",
+                occurredAt: new Date(now.getTime() - 1 * dayMs + 2 * 60 * 1000)
+              },
+              {
+                eventType: "email.bounced",
+                email: "bounce@example.com",
+                occurredAt: new Date(now.getTime() - 1 * dayMs + 10 * 60 * 1000)
+              }
+            ],
+            views: []
+          }
+        ];
+
+        for (const scenario of scenarios) {
+          const invoice = invoiceByNumber.get(scenario.invoiceNumber);
+
+          if (!invoice) {
+            continue;
+          }
+
+          // Rebuild demo delivery fixtures so reruns converge on the current
+          // recipient-aware shape instead of accumulating legacy rows.
+          const [seedExisting] = await db
+            .select({ id: communications.id })
+            .from(communications)
+            .where(eq(communications.providerMessageId, scenario.providerMessageId))
+            .limit(1);
+
+          if (seedExisting) {
+            await db
+              .delete(communicationEvents)
+              .where(eq(communicationEvents.communicationId, seedExisting.id));
+            await db
+              .delete(communicationRecipients)
+              .where(eq(communicationRecipients.communicationId, seedExisting.id));
+            await db.delete(communications).where(eq(communications.id, seedExisting.id));
+          }
+
+          const [created] = await db
+            .insert(communications)
+            .values({
+              organisationId: organisation.id,
+              invoiceId: invoice.id,
+              customerId: invoice.customerId,
+              purpose: "invoice_delivery",
+              channel: "email",
+              provider: "resend",
+              subject: scenario.subject,
+              toRecipients: scenario.toRecipients,
+              ccRecipients: scenario.ccRecipients,
+              providerMessageId: scenario.providerMessageId,
+              providerIdempotencyKey: scenario.idempotencyKey,
+              status: scenario.status,
+              acceptedAt: scenario.acceptedAt,
+              deliveredAt: scenario.deliveredAt ?? null,
+              deferredAt: null,
+              failedAt: scenario.failedAt ?? null,
+              failureReason: scenario.failureReason ?? null,
+              createdByUserId: owner.id,
+              createdAt: scenario.acceptedAt,
+              updatedAt: now
+            })
+            .returning({ id: communications.id });
+
+          const communicationId = created?.id;
+
+          if (!communicationId) {
+            continue;
+          }
+
+          const recipientOutcomes = new Map<
+            string,
+            { status: "accepted" | "delivered" | "failed"; at: Date; failureReason: string | null }
+          >();
+
+          for (const event of scenario.events) {
+            if (event.eventType === "email.sent") {
+              continue;
+            }
+
+            recipientOutcomes.set(event.email, {
+              status: event.eventType === "email.delivered" ? "delivered" : "failed",
+              at: event.occurredAt,
+              failureReason:
+                event.eventType === "email.delivered" ? null : (scenario.failureReason ?? null)
+            });
+          }
+
+          for (const { email, recipientType } of [
+            ...scenario.toRecipients.map((email) => ({ email, recipientType: "to" as const })),
+            ...scenario.ccRecipients.map((email) => ({ email, recipientType: "cc" as const }))
+          ]) {
+            const outcome = recipientOutcomes.get(email) ?? {
+              status: "accepted" as const,
+              at: scenario.acceptedAt,
+              failureReason: null
+            };
+
+            await db.insert(communicationRecipients).values({
+              organisationId: organisation.id,
+              communicationId,
+              invoiceId: invoice.id,
+              email,
+              recipientType,
+              status: outcome.status,
+              acceptedAt: scenario.acceptedAt,
+              deliveredAt: outcome.status === "delivered" ? outcome.at : null,
+              deferredAt: null,
+              failedAt: outcome.status === "failed" ? outcome.at : null,
+              failureReason: outcome.failureReason,
+              createdAt: scenario.acceptedAt,
+              updatedAt: now
+            });
+          }
+
+          for (const event of scenario.events) {
+            await db
+              .insert(communicationEvents)
+              .values({
+                organisationId: organisation.id,
+                communicationId,
+                invoiceId: invoice.id,
+                provider: "resend",
+                providerEventKey: `resend:${scenario.providerMessageId}:${event.eventType}:${Math.floor(event.occurredAt.getTime() / 1000)}:${event.email}`,
+                eventType: event.eventType,
+                occurredAt: event.occurredAt,
+                metadataRedacted: { seed: "demo_communication_event", email: event.email },
+                createdAt: event.occurredAt
+              })
+              .onConflictDoNothing();
+          }
+
+          const existingViews = await db
+            .select({ id: invoiceViewEvents.id })
+            .from(invoiceViewEvents)
+            .where(eq(invoiceViewEvents.invoiceId, invoice.id))
+            .limit(1);
+
+          if (existingViews.length === 0 && scenario.views.length > 0) {
+            for (const occurredAt of scenario.views) {
+              await db.insert(invoiceViewEvents).values({
+                organisationId: organisation.id,
+                invoiceId: invoice.id,
+                occurredAt,
+                source: "public_invoice_page",
+                createdAt: occurredAt
+              });
+            }
+
+            const sortedViews = [...scenario.views].sort((a, b) => a.getTime() - b.getTime());
+
+            await db
+              .update(invoices)
+              .set({
+                viewedAt: sortedViews[0] ?? null,
+                lastViewedAt: sortedViews[sortedViews.length - 1] ?? null,
+                viewCount: sortedViews.length,
+                updatedAt: now
+              })
+              .where(eq(invoices.id, invoice.id));
+          }
+        }
+      }
 
       console.log("Development seed complete.");
       console.log(`Demo organisation: ${organisationName}`);

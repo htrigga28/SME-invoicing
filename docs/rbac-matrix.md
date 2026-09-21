@@ -26,6 +26,7 @@ Customers paying public invoices do not need a platform account.
 | Customers create/update/archive | Yes | Yes | Yes | No |
 | Invoices view | Yes | Yes | Yes | Yes |
 | Invoices create/update/send | Yes | Yes | Yes | No |
+| Invoices resend email | Yes | Yes | Yes | No |
 | Invoices duplicate | Yes | Yes | Yes | No |
 | Invoices cancel/void | Yes | Yes | No | No |
 | Catalogue view | Yes | Yes | Yes | Yes |
@@ -84,10 +85,13 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - Payment Setup management is Owner/Admin only; Accountant/Viewer can view status only.
 - Payments and reconciliation views are readable in T013 for Owner/Admin/Accountant/Viewer.
 - Owner/Admin can initiate Paystack overpayment refund requests from payment detail. Accountant/Viewer remain read-only for refunds.
+- Owner/Admin can reconcile an uncertain refund via the bodyless `POST /payments/:paymentId/refunds/:refundId/reconcile` action, which reads authoritative Paystack evidence and never accepts a caller-chosen status. Accountant/Viewer remain read-only.
 - Owner/Admin/Accountant can generate customer, invoice, payment, and receipt CSV exports. Only Owner/Admin can export audit logs.
 - Only Owner/Admin can browse full audit logs. Accountant operational history should stay entity-specific unless later scoped.
 - Customer list, detail, create, update, and archive operations derive organisation scope from the authenticated active membership.
 - Customer create, update, and archive are allowed for Owner/Admin/Accountant only; Viewer is read-only.
+- Invoice email resend follows the same Owner/Admin/Accountant permission as invoice send; Viewer is read-only.
+- Invoice activity timelines are readable by all invoice viewers (Owner/Admin/Accountant/Viewer) and contain only customer-safe lifecycle data, never audit-only metadata.
 - Archived customers remain readable but cannot be updated in the MVP.
 - The backend should derive active organisation access from the authenticated session and membership.
 - Customers, invoices, payments, receipts, exports, audit logs, and dashboard data must be organisation-scoped.
@@ -95,13 +99,11 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 
 ## Active Organisation Handling
 
-- If a user has one active membership, use it as the active organisation.
-- If a user has multiple active memberships, the backend should support selecting the active organisation explicitly.
-- Complex organisation switching UI is deferred from MVP.
+- Every tenant-scoped business route requires an explicit `x-organisation-id` header, for reads and mutations alike. A missing header fails closed; the server never silently selects the oldest membership for business data.
+- Login with one active membership auto-selects it. Login with several returns a selection-required response; the client must complete `POST /session/organisation` before tenant data loads.
+- `GET /me` without a header is bootstrap-only (oldest membership) and must not feed business views; the web shell resolves memberships explicitly instead.
 - Never infer organisation from frontend-provided `organisationId` on protected resource operations.
-- A future endpoint may be added as `POST /me/active-organisation` with request `{ organisationId }`; the organisation ID must belong to the authenticated user.
-
-This endpoint is documented for future support and is not required in T003 unless explicitly scoped later.
+- Invoice email resend and uncertain-delivery retry follow the same Owner/Admin/Accountant permission as invoice send; Viewer is read-only.
 
 ## Enforcement Notes
 

@@ -149,6 +149,7 @@ describe("PaystackService", () => {
         status: true,
         message: "Verification successful",
         data: {
+          id: 1004723697,
           reference: "SME-INV000001-ABC123",
           status: "success",
           amount: 50000,
@@ -174,6 +175,7 @@ describe("PaystackService", () => {
       amountKobo: 50000,
       currency: "NGN",
       paidAt: "2026-06-30T10:00:00.000Z",
+      providerTransactionId: "1004723697",
       channel: "card",
       gatewayResponse: "Successful"
     });
@@ -201,6 +203,7 @@ describe("PaystackService", () => {
           amount: 170000,
           currency: "NGN",
           transaction: {
+            id: 1004723697,
             reference: "SME-INV000001-ABC123"
           },
           authorization: {
@@ -228,7 +231,9 @@ describe("PaystackService", () => {
       status: "pending",
       amountKobo: 170000,
       currency: "NGN",
-      transactionReference: "SME-INV000001-ABC123"
+      providerTransactionId: "1004723697",
+      transactionReference: "SME-INV000001-ABC123",
+      merchantNote: null
     });
 
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -247,5 +252,86 @@ describe("PaystackService", () => {
       customer_note: "Duplicate payment",
       merchant_note: "Duplicate payment"
     });
+  });
+
+  it("keeps missing provider evidence missing instead of filling request values", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        status: true,
+        message: "Refund has been queued",
+        data: {
+          id: "refund-456",
+          status: "pending"
+        }
+      })
+    });
+    (global as { fetch?: unknown }).fetch = fetchMock;
+    const service = new PaystackService({
+      get: jest.fn((key: string) =>
+        key === "PAYSTACK_SECRET_KEY" ? "sk_test_secret" : "https://api.paystack.co"
+      )
+    } as never);
+
+    await expect(
+      service.createRefund({
+        transactionReference: "SME-INV000001-ABC123",
+        amountKobo: 170000,
+        currency: "NGN",
+        merchantNote: "lumina-refund:refund-1"
+      })
+    ).resolves.toEqual({
+      providerRefundId: "refund-456",
+      status: "pending",
+      amountKobo: null,
+      currency: null,
+      providerTransactionId: null,
+      transactionReference: null,
+      merchantNote: null
+    });
+  });
+
+  it.each([
+    ["fetches", (service: PaystackService) => service.fetchRefund("3018284"), "/refund/3018284"],
+    [
+      "lists",
+      (service: PaystackService) => service.listRefunds("1004723697"),
+      "/refund?transaction=1004723697"
+    ]
+  ])("%s provider-realistic refund evidence by transaction id", async (_name, request, path) => {
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        status: true,
+        data: {
+          id: 3018284,
+          transaction: 1004723697,
+          amount: 170000,
+          currency: "NGN",
+          merchant_note: "lumina-refund:refund-1",
+          status: "processed"
+        }
+      })
+    } as never);
+    const service = new PaystackService({
+      get: jest.fn((key: string) =>
+        key === "PAYSTACK_SECRET_KEY" ? "sk_test_secret" : "https://api.paystack.co"
+      )
+    } as never);
+
+    const result = await request(service);
+    const refund = Array.isArray(result) ? result[0] : result;
+
+    expect(refund).toEqual({
+      providerRefundId: "3018284",
+      providerTransactionId: "1004723697",
+      status: "processed",
+      amountKobo: 170000,
+      currency: "NGN",
+      transactionReference: null,
+      merchantNote: "lumina-refund:refund-1"
+    });
+    expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(`https://api.paystack.co${path}`);
   });
 });

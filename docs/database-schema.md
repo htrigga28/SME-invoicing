@@ -216,7 +216,9 @@ Index: `catalogue_items_org_archived_at_idx` on `organisation_id + archived_at`.
 | balance_due_kobo | Derived from invoice total minus net received, floored at zero. |
 | paid_at | Nullable. Set when invoice first becomes fully paid. |
 | sent_at | Nullable. |
-| viewed_at | Nullable. |
+| viewed_at | Nullable. First public-invoice view timestamp, preserved for compatibility. |
+| last_viewed_at | Nullable. Most recent public-invoice view timestamp. |
+| view_count | Integer, defaults to 0. Denormalized count of `invoice_view_events` rows. |
 | cancelled_at | Nullable. |
 | voided_at | Nullable. |
 | created_at, updated_at | Timestamps. |
@@ -273,6 +275,138 @@ Server-side calculation is authoritative. MVP line items do not have per-line ta
 | metadata_redacted | Optional JSON metadata that excludes sensitive raw provider payloads. |
 | created_at | Timestamp. |
 
+### communications
+
+One row per invoice email send attempt (initial send or manual resend). Resends create new rows; history is never overwritten.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| invoice_id | References invoices. Cascade on invoice deletion. |
+| customer_id | References customers. |
+| purpose | Currently `invoice_delivery`. Reserved for T022 reminder reuse. |
+| channel | Currently `email`. |
+| provider | Currently `resend`. |
+| subject | Nullable email subject. |
+| to_recipients | JSONB array of normalized recipient emails. |
+| cc_recipients | JSONB array of normalized CC emails. |
+| provider_message_id | Nullable Resend email ID. Unique where present. Backfilled monotonically: only when null or equal; a conflicting value goes to review. |
+| provider_idempotency_key | Per-attempt UUID sent to Resend as the `Idempotency-Key` request option (retained 24 hours). Reused only when retrying a `pending`/`submission_uncertain` attempt on the same row with an identical payload. Indexed (non-unique, reuse is intentional). |
+| retry_claim_token | Nullable atomic retry claimant token for same-row retries. |
+| retry_claimed_at | Nullable claim timestamp; claims expire after a bounded lease longer than the Resend request timeout. |
+| status | `pending`, `accepted`, `delivered`, `deferred`, `failed`, `submission_uncertain`, `in_progress`, `partially_failed`. The last three are derived/ambiguity states, documented below. |
+| accepted_at | Nullable provider-acceptance timestamp. |
+| delivered_at | Nullable delivery timestamp. |
+| deferred_at | Nullable deferral timestamp. |
+| failed_at | Nullable failure timestamp. |
+| failure_reason | Nullable safe display reason. |
+| created_by_user_id | Nullable reference to the sending user. |
+| created_at, updated_at | Timestamps. |
+
+Indexes: `organisation_id + invoice_id`; partial unique on `provider_message_id` where not null; index on `provider_idempotency_key`.
+
+Delivery state semantics:
+
+- `submission_uncertain` means the provider did not confirm receipt (timeout, network drop, 5xx, unreadable response). It is never recorded when the provider explicitly rejected the send, and it never overwrites an accepted send.
+- `in_progress` and `partially_failed` are aggregates derived from `communication_recipients` (see below). Recipient rows are authoritative; the parent status converges to the same aggregate regardless of webhook arrival order.
+
+### communication_recipients
+
+One row per recipient (To/CC) of a communication, holding recipient-level delivery state. Recipient transitions use atomic conditional updates so concurrent webhook events cannot regress each other.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| communication_id | References communications. Cascade on deletion. |
+| invoice_id | References invoices. Cascade on deletion. |
+| email | Normalized (lower-cased) recipient email. Unique per communication. |
+| recipient_type | `to` or `cc`. |
+| status | `pending`, `accepted`, `delivered`, `deferred`, `failed`. |
+| accepted_at | Nullable acceptance timestamp. |
+| delivered_at | Nullable delivery timestamp. |
+| deferred_at | Nullable deferral timestamp. |
+| failed_at | Nullable failure timestamp. |
+| failure_reason | Nullable safe display reason. |
+| created_at, updated_at | Timestamps. |
+
+Indexes: `organisation_id + communication_id`; `organisation_id + invoice_id`; unique on `communication_id + email`.
+
+Aggregate rules (parent `communications.status` derived from recipient rows; single-recipient sends collapse to the plain lifecycle):
+
+- no recipients → `pending`;
+- all `accepted` → `accepted`;
+- all `delivered` → `delivered`;
+- all `failed` → `failed`;
+- any `failed` → `partially_failed`;
+- any `deferred` → `deferred`;
+- otherwise → `in_progress`.
+
+### communication_events
+
+Normalized provider webhook events. Raw payloads are never stored; only the event type, occurrence time, and safe metadata (recipient email) are persisted.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| communication_id | References communications. Cascade on deletion. |
+| invoice_id | References invoices. Cascade on deletion. |
+| provider | Currently `resend`. |
+| provider_event_key | Stable idempotency key (`resend:<svix message id>`). Unique; the Svix message id is the authoritative event identity. |
+| event_type | Normalized provider event name. |
+| occurred_at | Provider event timestamp. |
+| metadata_redacted | Optional safe metadata only. |
+| created_at | Timestamp. |
+
+Indexes: `organisation_id + communication_id`; `organisation_id + invoice_id`.
+
+### communication_event_quarantine
+
+Authenticated Resend events that cannot yet be correlated to a communication (migration `0015`). Rows store only normalized routing fields — never raw payloads, secrets, subjects, or bodies — and cannot mutate delivery truth before exact correlation.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| provider | Currently `resend`. |
+| provider_event_id | Nullable authoritative Svix message id. |
+| provider_event_key | Unique (`resend:<svix message id>`); conflict recovery keeps the first writer. |
+| provider_message_id | Nullable Resend email ID for later message-ID matching. |
+| correlation_communication_id | Validated Lumina communication UUID from the `lumina_communication` Resend tag, when present. |
+| event_type | Normalized provider event name. |
+| occurred_at | Provider event timestamp. |
+| recipient_email | Normalized recipient email when present. |
+| reason | Safe redacted quarantine reason. |
+| resolved_communication_id | Nullable resolved communication; set with `resolved_at` when a later acceptance or webhook correlates exactly. |
+| resolved_at | Nullable resolution timestamp. |
+| created_at | Timestamp. |
+
+Unique partial index on `(provider, provider_event_id)` where not null; indexes on `provider_message_id` and `correlation_communication_id` for resolution scans.
+
+### invoice_view_events
+
+One row per valid public-invoice page view. No IP address, device fingerprint, or user agent is collected.
+
+First-view semantics are split across two transactions by design: the view
+event, counters, and earliest/latest timestamps commit first; the `sent →
+viewed` lifecycle flip commits second under a `status = 'sent'` CAS predicate.
+A crash between the steps leaves view telemetry without the lifecycle event,
+and the next view heals it (counters increment again, the flip is retried
+idempotently). Counters may therefore exceed the lifecycle transition count by
+the number of interrupted first views; financial state never depends on views.
+
+| Column | Notes |
+| --- | --- |
+| id | Primary key. |
+| organisation_id | References organisations. |
+| invoice_id | References invoices. Cascade on deletion. |
+| occurred_at | View timestamp. |
+| source | Currently `public_invoice_page`. |
+| created_at | Timestamp. |
+
+Index: `organisation_id + invoice_id`.
+
 ### payments
 
 Rows in `payments` represent Paystack checkout/payment attempts. They are not deleted when a customer retries checkout or when a later successful payment supersedes an older failed/pending/abandoned attempt.
@@ -285,6 +419,7 @@ Rows in `payments` represent Paystack checkout/payment attempts. They are not de
 | customer_id | References customers. |
 | provider | `paystack`. |
 | provider_reference | Paystack reference. |
+| provider_transaction_id | Nullable Paystack transaction ID captured on confirmation and used for refund reconciliation. |
 | provider_subaccount_code | Nullable subaccount used during initialization for historical traceability. |
 | provider_access_code | Paystack checkout access code returned at initialization. |
 | provider_authorization_url | Paystack checkout URL returned at initialization. |
@@ -485,6 +620,9 @@ Audit logs are append-only and read-only through the T016 UI. API and CSV export
 - Invoice has many invoice_line_items.
 - Invoice has many payments.
 - Invoice has many invoice_status_events.
+- Invoice has many communications.
+- Invoice has many communication_events.
+- Invoice has many invoice_view_events.
 - Payment belongs to organisation, invoice, and customer.
 - Payment can have one receipt.
 - Receipt belongs to organisation, invoice, and payment.

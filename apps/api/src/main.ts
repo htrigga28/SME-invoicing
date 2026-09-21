@@ -32,13 +32,17 @@ async function bootstrap() {
     })
   );
 
-  const openApiConfig = new DocumentBuilder()
-    .setTitle("Lumina API")
-    .setDescription("API for Lumina invoice payment clarity and reconciliation.")
-    .setVersion("0.1.0")
-    .build();
-  const document = SwaggerModule.createDocument(app, openApiConfig);
-  SwaggerModule.setup("docs", app, document);
+  // API schema exposure is a deliberate choice, not a default: interactive
+  // docs stay available outside production only.
+  if (configService.get<string>("NODE_ENV") !== "production") {
+    const openApiConfig = new DocumentBuilder()
+      .setTitle("Lumina API")
+      .setDescription("API for Lumina invoice payment clarity and reconciliation.")
+      .setVersion("0.1.0")
+      .build();
+    const document = SwaggerModule.createDocument(app, openApiConfig);
+    SwaggerModule.setup("docs", app, document);
+  }
 
   await app.listen(port);
 }

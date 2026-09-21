@@ -12,6 +12,7 @@ import type { ActiveOrganisationContext } from "../../common/types/request-conte
 import { DatabaseService } from "../../database/database.service";
 import { customers, invoices, type Customer, type Invoice } from "../../database/schema";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { shouldDisplayAsOverdue } from "../invoices/invoice-status";
 import type { ArchiveCustomerDto } from "./dto/archive-customer.dto";
 import type { CreateCustomerDto } from "./dto/create-customer.dto";
 import type { ListCustomersQueryDto } from "./dto/list-customers-query.dto";
@@ -24,28 +25,6 @@ type PaginationInput = {
 
 type CustomerStatus = "active" | "archived";
 type InvoiceStatusValue = Invoice["status"];
-
-function shouldDisplayAsOverdue(input: {
-  balanceDueKobo: number;
-  dueDate: string;
-  status: InvoiceStatusValue;
-}) {
-  if (["draft", "paid", "cancelled", "void"].includes(input.status)) {
-    return false;
-  }
-
-  if (input.balanceDueKobo <= 0) {
-    return false;
-  }
-
-  const today = new Date();
-  const dueDate = new Date(`${input.dueDate}T00:00:00.000Z`);
-  const todayStart = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-  );
-
-  return dueDate < todayStart;
-}
 
 @Injectable()
 export class CustomersService {
@@ -108,14 +87,20 @@ export class CustomersService {
       email: normalized.email
     });
 
-    const [customer] = await this.databaseService.db
-      .insert(customers)
-      .values({
-        organisationId: context.activeOrganisation.id,
-        createdByUserId: context.user.id,
-        ...normalized
-      })
-      .returning();
+    let customer: Customer | undefined;
+
+    try {
+      [customer] = await this.databaseService.db
+        .insert(customers)
+        .values({
+          organisationId: context.activeOrganisation.id,
+          createdByUserId: context.user.id,
+          ...normalized
+        })
+        .returning();
+    } catch (error) {
+      this.throwCustomerEmailConflict(error);
+    }
 
     if (!customer) {
       throw new Error("Customer creation failed.");
@@ -147,7 +132,10 @@ export class CustomersService {
       context.activeOrganisation.id,
       customer.id
     );
-    const invoiceSummary = this.toInvoiceSummary(customerInvoices);
+    const invoiceSummary = await this.findInvoiceSummary(
+      context.activeOrganisation.id,
+      customer.id
+    );
 
     return {
       customer: this.toSafeCustomer(customer),
@@ -188,14 +176,20 @@ export class CustomersService {
       });
     }
 
-    const [updated] = await this.databaseService.db
-      .update(customers)
-      .set({
-        ...normalized,
-        updatedAt: new Date()
-      })
-      .where(eq(customers.id, customer.id))
-      .returning();
+    let updated: Customer | undefined;
+
+    try {
+      [updated] = await this.databaseService.db
+        .update(customers)
+        .set({
+          ...normalized,
+          updatedAt: new Date()
+        })
+        .where(eq(customers.id, customer.id))
+        .returning();
+    } catch (error) {
+      this.throwCustomerEmailConflict(error);
+    }
 
     if (!updated) {
       throw new Error("Customer update failed.");
@@ -278,6 +272,37 @@ export class CustomersService {
       .orderBy(desc(invoices.createdAt))
       .limit(10)
       .offset(0);
+  }
+
+  private async findInvoiceSummary(organisationId: string, customerId: string) {
+    const [summary] = await this.databaseService.db
+      .select({
+        totalBalanceDueKobo: sql<number>`coalesce(sum(${invoices.balanceDueKobo}), 0)`.mapWith(
+          Number
+        ),
+        totalInvoices: sql<number>`count(*)::int`.mapWith(Number),
+        totalInvoicedKobo: sql<number>`coalesce(sum(${invoices.totalKobo}), 0)`.mapWith(Number),
+        totalPaidKobo: sql<number>`coalesce(sum(${invoices.amountPaidKobo}), 0)`.mapWith(Number)
+      })
+      .from(invoices)
+      .where(and(eq(invoices.organisationId, organisationId), eq(invoices.customerId, customerId)))
+      .limit(1);
+
+    const totals = summary ?? {
+      totalBalanceDueKobo: 0,
+      totalInvoices: 0,
+      totalInvoicedKobo: 0,
+      totalPaidKobo: 0
+    };
+
+    return {
+      available: true,
+      ...totals,
+      message:
+        totals.totalInvoices === 0
+          ? "No invoices have been created for this customer yet."
+          : `${totals.totalInvoices} invoice${totals.totalInvoices === 1 ? "" : "s"} found for this customer.`
+    };
   }
 
   private async assertNoDuplicateActiveEmail(input: {
@@ -405,30 +430,20 @@ export class CustomersService {
       : invoice.status;
   }
 
-  private toInvoiceSummary(customerInvoices: Invoice[]) {
-    const totals = customerInvoices.reduce(
-      (summary, invoice) => ({
-        totalBalanceDueKobo: summary.totalBalanceDueKobo + invoice.balanceDueKobo,
-        totalInvoices: summary.totalInvoices + 1,
-        totalInvoicedKobo: summary.totalInvoicedKobo + invoice.totalKobo,
-        totalPaidKobo: summary.totalPaidKobo + invoice.amountPaidKobo
-      }),
-      {
-        totalBalanceDueKobo: 0,
-        totalInvoices: 0,
-        totalInvoicedKobo: 0,
-        totalPaidKobo: 0
-      }
-    );
-
-    return {
-      available: true,
-      ...totals,
-      message:
-        totals.totalInvoices === 0
-          ? "No invoices have been created for this customer yet."
-          : `${totals.totalInvoices} invoice${totals.totalInvoices === 1 ? "" : "s"} found for this customer.`
+  private throwCustomerEmailConflict(error: unknown): never {
+    const databaseError = error as {
+      cause?: { code?: unknown; constraint?: unknown };
+      code?: unknown;
+      constraint?: unknown;
     };
+    const code = databaseError.code ?? databaseError.cause?.code;
+    const constraint = databaseError.constraint ?? databaseError.cause?.constraint;
+
+    if (code === "23505" && constraint === "customers_active_email_unique") {
+      throw new ConflictException("An active customer with this email already exists.");
+    }
+
+    throw error;
   }
 
   private toCustomerInvoiceHistoryItem(invoice: Invoice) {

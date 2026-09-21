@@ -1,5 +1,6 @@
 import { Controller, Get, Inject, Param, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -42,6 +43,8 @@ export class PublicReceiptsController {
   constructor(@Inject(ReceiptsService) private readonly receiptsService: ReceiptsService) {}
 
   @Get(":token")
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(ThrottlerGuard)
   @ApiOperation({ summary: "Get a public receipt by token" })
   getPublicReceipt(@Param("token") token: string) {
     return this.receiptsService.getPublicReceipt(token);

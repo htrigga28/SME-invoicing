@@ -38,9 +38,28 @@ export type AuthResponse = {
   membership: Membership;
   businessProfile: BusinessProfile;
   accessToken: string;
-  refreshToken: string;
   onboardingRequired: boolean;
   onboardingStep: OnboardingStep;
+  selectionRequired: false;
 };
 
-export type MeResponse = Omit<AuthResponse, "accessToken" | "refreshToken">;
+export type WorkspaceSelectionResponse = {
+  user: SafeUser;
+  selectionRequired: true;
+  organisations: OrganisationMembership[];
+  accessToken: string;
+};
+
+export type LoginResponse = AuthResponse | WorkspaceSelectionResponse;
+
+export type MeResponse = Omit<AuthResponse, "accessToken">;
+
+export type OrganisationMembership = {
+  organisation: Organisation;
+  membership: Membership;
+};
+
+export type OrganisationsResponse = {
+  organisations: OrganisationMembership[];
+  activeOrganisationId: string | null;
+};

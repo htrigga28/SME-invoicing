@@ -7,9 +7,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -27,6 +30,7 @@ import { ListInvitationsQueryDto } from "./dto/list-invitations-query.dto";
 import { ListMembersQueryDto } from "./dto/list-members-query.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
 import { TeamService } from "./team.service";
+import { setRefreshCookie, type CookieResponse } from "../auth/refresh-cookie";
 
 @ApiTags("Team")
 @ApiBearerAuth()
@@ -94,20 +98,34 @@ export class TeamController {
 @ApiTags("Invitations")
 @Controller("invitations")
 export class PublicInvitationsController {
-  constructor(@Inject(TeamService) private readonly teamService: TeamService) {}
+  constructor(
+    @Inject(TeamService) private readonly teamService: TeamService,
+    @Inject(ConfigService) private readonly configService: ConfigService
+  ) {}
 
   @Get(":token")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(ThrottlerGuard)
   previewInvitation(@Param("token") token: string) {
     return this.teamService.previewInvitation(token);
   }
 
   @Post(":token/accept")
-  @UseGuards(OptionalJwtAuthGuard)
-  acceptInvitation(
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(ThrottlerGuard, OptionalJwtAuthGuard)
+  async acceptInvitation(
     @Param("token") token: string,
     @Body() body: AcceptInvitationDto,
-    @CurrentUser() user?: AuthenticatedUser
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Res({ passthrough: true }) res: CookieResponse
   ) {
-    return this.teamService.acceptInvitation(token, body, user?.userId);
+    const session = await this.teamService.acceptInvitation(token, body, user?.userId);
+    setRefreshCookie(
+      res,
+      session.refreshToken,
+      this.configService.get<string>("NODE_ENV") === "production"
+    );
+    const { refreshToken: _refreshToken, ...browserSession } = session;
+    return browserSession;
   }
 }

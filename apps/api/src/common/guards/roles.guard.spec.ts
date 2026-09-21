@@ -147,6 +147,70 @@ describe("RolesGuard", () => {
     });
   });
 
+  it("forwards the selected workspace header to tenant resolution", async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) =>
+        key === ROLES_KEY ? ["accountant"] : undefined
+      )
+    };
+    const tenantContextService = { resolveForUser: jest.fn().mockResolvedValue(context) };
+    const authRepository = { hasPaymentAccountHistory: jest.fn().mockResolvedValue(true) };
+    const guard = new RolesGuard(
+      reflector as unknown as Reflector,
+      tenantContextService as unknown as TenantContextService,
+      authRepository as unknown as AuthRepository
+    );
+
+    await guard.canActivate(
+      createExecutionContext({
+        authUser: { userId: "user-1" },
+        headers: { "x-organisation-id": "org-2" }
+      } as AuthenticatedRequest)
+    );
+
+    expect(tenantContextService.resolveForUser).toHaveBeenCalledWith("user-1", "org-2", {
+      requireExplicit: true
+    });
+  });
+
+  it("fails closed on mutations when the workspace header is omitted", async () => {
+    const reflector = {
+      getAllAndOverride: jest.fn((key: string) =>
+        key === ROLES_KEY ? ["accountant"] : undefined
+      )
+    };
+    const tenantContextService = {
+      resolveForUser: jest.fn(
+        async (_userId: string, _orgId: unknown, options?: { requireExplicit?: boolean }) => {
+          if (options?.requireExplicit) {
+            throw new Error("Select a workspace before changing business data.");
+          }
+
+          return context;
+        }
+      )
+    };
+    const authRepository = { hasPaymentAccountHistory: jest.fn().mockResolvedValue(true) };
+    const guard = new RolesGuard(
+      reflector as unknown as Reflector,
+      tenantContextService as unknown as TenantContextService,
+      authRepository as unknown as AuthRepository
+    );
+
+    await expect(
+      guard.canActivate(
+        createExecutionContext({
+          method: "POST",
+          authUser: { userId: "user-1" },
+          headers: {}
+        } as AuthenticatedRequest)
+      )
+    ).rejects.toThrow("Select a workspace before changing business data.");
+    expect(tenantContextService.resolveForUser).toHaveBeenCalledWith("user-1", undefined, {
+      requireExplicit: true
+    });
+  });
+
   it("allows setup endpoints while onboarding is incomplete", async () => {
     const { authRepository, guard } = createGuard({
       allowIncompleteOnboarding: true,

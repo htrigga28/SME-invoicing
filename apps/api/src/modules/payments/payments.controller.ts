@@ -95,6 +95,20 @@ export class PaymentsController {
     return this.paymentsService.createPaymentRefund(context, user, id, input);
   }
 
+  @Post(":id/refunds/:refundId/reconcile")
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("owner", "admin")
+  @ApiOperation({ summary: "Reconcile an uncertain Paystack refund from provider evidence" })
+  reconcileRefund(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Param("refundId") refundId: string
+  ) {
+    return this.paymentsService.reconcilePaymentRefund(context, user, id, refundId);
+  }
+
   @Post("paystack/webhook")
   @HttpCode(200)
   @ApiOperation({ summary: "Process Paystack webhook events" })

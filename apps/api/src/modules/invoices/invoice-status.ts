@@ -1,4 +1,5 @@
 import type { Invoice } from "../../database/schema";
+import { businessDate } from "../../common/business-date";
 
 type InvoiceStatusValue = Invoice["status"];
 
@@ -16,13 +17,7 @@ export function shouldDisplayAsOverdue(input: {
     return false;
   }
 
-  const today = input.today ?? new Date();
-  const dueDate = new Date(`${input.dueDate}T00:00:00.000Z`);
-  const todayStart = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-  );
-
-  return dueDate < todayStart;
+  return input.dueDate < businessDate(input.today);
 }
 
 export function displayInvoiceStatus(

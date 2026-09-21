@@ -166,7 +166,7 @@ Protected resource operations must never infer organisation from a frontend-prov
 | Database | PostgreSQL |
 | ORM | Drizzle |
 | Payments | Paystack test mode |
-| Email | Brevo later |
+| Email | Resend (transactional invoice email with signed webhooks) |
 | File storage | Cloudflare R2 later |
 | Testing | Jest/Vitest, Supertest, Playwright where useful |
 | Monorepo | pnpm workspaces and Turborepo |

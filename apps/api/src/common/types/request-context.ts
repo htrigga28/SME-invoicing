@@ -21,7 +21,10 @@ export type SafeUser = Pick<User, "id" | "email" | "name" | "createdAt" | "updat
 export type AuthenticatedRequest = {
   headers: {
     authorization?: string;
+    "x-organisation-id"?: string | string[] | undefined;
   };
+  /** HTTP verb; mutations without an explicit workspace header fail closed. */
+  method?: string;
   authUser?: AuthenticatedUser;
   tenant?: ActiveOrganisationContext;
 };

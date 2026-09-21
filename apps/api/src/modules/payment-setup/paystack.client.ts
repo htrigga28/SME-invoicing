@@ -195,6 +195,7 @@ export class PaystackClient {
         this.configService.get<string>("PAYSTACK_BASE_URL") ?? DEFAULT_PAYSTACK_BASE_URL;
       response = await fetch(new URL(path, baseUrl), {
         ...requestInit,
+        signal: requestInit.signal ?? AbortSignal.timeout(15000),
         headers
       });
     } catch {

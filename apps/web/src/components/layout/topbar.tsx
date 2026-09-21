@@ -20,12 +20,20 @@ import {
   type LucideIcon
 } from "lucide-react";
 
-import type { MeResponse, Membership } from "@/features/auth/types";
+import type {
+  MeResponse,
+  Membership,
+  OrganisationMembership
+} from "@/features/auth/types";
+import { getOrganisations, selectOrganisation } from "@/features/auth/auth-api";
+import { getStoredOrganisationId, setStoredOrganisationId } from "@/features/auth/session";
+import { getApiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 import { getNavigationSections, type AppRoute } from "./navigation";
 
 type TopbarProps = {
+  accessToken: string;
   activePath: string;
   me: MeResponse;
   onLogout: () => void;
@@ -51,10 +59,14 @@ const navigationIcons: Record<AppRoute["icon"], LucideIcon> = {
   team: BarChart3
 };
 
-export function Topbar({ activePath, me, onLogout }: TopbarProps) {
+export function Topbar({ accessToken, activePath, me, onLogout }: TopbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState<OrganisationMembership[] | null>(null);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
   const accountRef = useRef<HTMLDivElement | null>(null);
   const jumpPanelRef = useRef<HTMLDivElement | null>(null);
   const jumpTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -109,6 +121,41 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+  function loadWorkspaces() {
+    if (workspaces !== null || workspacesLoading) {
+      return;
+    }
+
+    setWorkspacesLoading(true);
+    setWorkspaceError(null);
+    getOrganisations(accessToken)
+      .then((response) => setWorkspaces(response.organisations))
+      .catch((loadError) => setWorkspaceError(getApiErrorMessage(loadError)))
+      .finally(() => setWorkspacesLoading(false));
+  }
+
+  function handleSwitchWorkspace(organisationId: string) {
+    if (switchingId) {
+      return;
+    }
+
+    setSwitchingId(organisationId);
+    setWorkspaceError(null);
+    selectOrganisation(accessToken, organisationId)
+      .then(() => {
+        setStoredOrganisationId(organisationId);
+        // Reload so every cached workspace response is re-resolved under the
+        // newly selected organisation.
+        window.location.reload();
+      })
+      .catch((switchError) => {
+        setWorkspaceError(getApiErrorMessage(switchError));
+        setSwitchingId(null);
+      });
+  }
+
+  const currentOrganisationId = getStoredOrganisationId() ?? me.activeOrganisation.id;
 
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--topbar-background)] print:hidden">
@@ -165,7 +212,14 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
             <button
               aria-expanded={accountOpen}
               aria-label="Account menu"
-              onClick={() => setAccountOpen((v) => !v)}
+              onClick={() => {
+                setAccountOpen((v) => {
+                  if (!v) {
+                    loadWorkspaces();
+                  }
+                  return !v;
+                });
+              }}
               type="button"
               className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--accent-foreground)] transition duration-150 hover:bg-[var(--accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
@@ -184,6 +238,49 @@ export function Topbar({ activePath, me, onLogout }: TopbarProps) {
                     {roleLabels[me.membership.role]} · {businessName}
                   </p>
                 </div>
+                {workspaces !== null && workspaces.length > 1 ? (
+                  <div className="border-b border-[var(--border-subtle)] p-1.5">
+                    <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Switch workspace
+                    </p>
+                    {workspaces.map(({ membership, organisation }) => {
+                      const isCurrent = organisation.id === currentOrganisationId;
+                      return (
+                        <button
+                          aria-current={isCurrent ? "true" : undefined}
+                          disabled={isCurrent || switchingId !== null}
+                          key={organisation.id}
+                          onClick={() => handleSwitchWorkspace(organisation.id)}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={isCurrent}
+                          className="flex w-full items-center gap-2 rounded-[var(--radius-control)] px-3 py-2 text-left text-sm transition duration-150 hover:bg-[var(--surface-raised)] disabled:opacity-70"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-semibold text-[var(--text-primary)]">
+                              {organisation.name}
+                            </span>
+                            <span className="block text-xs capitalize text-[var(--text-muted)]">
+                              {membership.role}
+                            </span>
+                          </span>
+                          {isCurrent ? (
+                            <span className="text-xs font-semibold text-[var(--accent)]">
+                              Current
+                            </span>
+                          ) : switchingId === organisation.id ? (
+                            <span className="text-xs text-[var(--text-muted)]">Switching…</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {workspaceError ? (
+                  <p className="px-4 py-2 text-xs text-[var(--danger)]" role="alert">
+                    {workspaceError}
+                  </p>
+                ) : null}
                 <div className="p-1.5">
                   <button
                     onClick={onLogout}

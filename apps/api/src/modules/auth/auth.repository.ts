@@ -167,6 +167,61 @@ export class AuthRepository {
     };
   }
 
+  async getContextForUserAndOrg(
+    userId: string,
+    organisationId: string
+  ): Promise<ActiveOrganisationContext | undefined> {
+    const [row] = await this.databaseService.db
+      .select()
+      .from(users)
+      .innerJoin(
+        organisationMembers,
+        and(eq(organisationMembers.userId, users.id), eq(organisationMembers.status, "active"))
+      )
+      .innerJoin(organisations, eq(organisations.id, organisationMembers.organisationId))
+      .innerJoin(
+        businessProfiles,
+        eq(businessProfiles.organisationId, organisationMembers.organisationId)
+      )
+      .where(and(eq(users.id, userId), eq(organisationMembers.organisationId, organisationId)))
+      .limit(1);
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      user: this.toSafeUser(row.users),
+      activeOrganisation: row.organisations,
+      membership: row.organisation_members,
+      businessProfile: row.business_profiles
+    };
+  }
+
+  async listContextsForUser(userId: string): Promise<ActiveOrganisationContext[]> {
+    const rows = await this.databaseService.db
+      .select()
+      .from(users)
+      .innerJoin(
+        organisationMembers,
+        and(eq(organisationMembers.userId, users.id), eq(organisationMembers.status, "active"))
+      )
+      .innerJoin(organisations, eq(organisations.id, organisationMembers.organisationId))
+      .innerJoin(
+        businessProfiles,
+        eq(businessProfiles.organisationId, organisationMembers.organisationId)
+      )
+      .where(eq(users.id, userId))
+      .orderBy(asc(organisationMembers.createdAt));
+
+    return rows.map((row) => ({
+      user: this.toSafeUser(row.users),
+      activeOrganisation: row.organisations,
+      membership: row.organisation_members,
+      businessProfile: row.business_profiles
+    }));
+  }
+
   async hasPaymentAccountHistory(organisationId: string): Promise<boolean> {
     const [paymentAccount] = await this.databaseService.db
       .select({ id: organisationPaymentAccounts.id })
@@ -217,10 +272,15 @@ export class AuthRepository {
     newTokenExpiresAt: Date
   ): Promise<void> {
     await this.databaseService.db.transaction(async (tx) => {
-      await tx
+      const [revoked] = await tx
         .update(refreshTokens)
         .set({ revokedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(refreshTokens.id, oldRefreshTokenId), isNull(refreshTokens.revokedAt)));
+        .where(and(eq(refreshTokens.id, oldRefreshTokenId), isNull(refreshTokens.revokedAt)))
+        .returning({ id: refreshTokens.id });
+
+      if (!revoked) {
+        throw new Error("Refresh token was already used.");
+      }
 
       await tx.insert(refreshTokens).values({
         userId,
