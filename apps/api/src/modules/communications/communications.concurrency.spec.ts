@@ -1,3 +1,4 @@
+import { createHmac } from "crypto";
 import { eq } from "drizzle-orm";
 
 import { ConfigService } from "@nestjs/config";
@@ -31,11 +32,11 @@ let auditCreate: jest.Mock;
 
 let databaseService: () => DatabaseService;
 
+const webhookSecret = "whsec_dGVzdC13ZWJob29rLXNlY3JldA==";
+
 function configStub() {
   return {
-    get: jest.fn((key: string) =>
-      key === "BREVO_WEBHOOK_SECRET" ? "test-webhook-secret" : undefined
-    )
+    get: jest.fn((key: string) => (key === "RESEND_WEBHOOK_SECRET" ? webhookSecret : undefined))
   } as unknown as ConfigService;
 }
 
@@ -48,22 +49,38 @@ function communicationsService() {
   );
 }
 
-let brevoEventSequence = 0;
+let resendEventSequence = 0;
 
-function brevoPayload(messageId: string, event: string, email: string, ts: number) {
-  brevoEventSequence += 1;
+function resendInput(emailId: string, type: string, to: string[]) {
+  resendEventSequence += 1;
+  const svixId = `msg_concurrency_${resendEventSequence}`;
+  const payload = {
+    type,
+    created_at: new Date().toISOString(),
+    data: {
+      email_id: emailId,
+      from: "billing@lumina.example",
+      to,
+      subject: "Invoice INV-000184 from Adebayo Studio",
+      tags: [{ name: "invoice_delivery", value: "invoice_delivery" }]
+    }
+  };
+  const rawBody = JSON.stringify(payload);
+  const timestamp = new Date();
+  const stripped = webhookSecret.startsWith("whsec_")
+    ? webhookSecret.slice("whsec_".length)
+    : webhookSecret;
+  const signature = createHmac("sha256", Buffer.from(stripped, "base64"))
+    .update(`${svixId}.${Math.floor(timestamp.getTime() / 1000)}.${rawBody}`)
+    .digest("base64");
   return {
-    event,
-    email,
-    id: `evt-${Date.now().toString(36)}-${brevoEventSequence}`,
-    date: "2026-09-18 10:00:00",
-    ts,
-    "message-id": messageId,
-    ts_event: ts,
-    subject: "Invoice INV-000184 from Adebayo Studio",
-    tag: '["invoice_delivery"]',
-    sending_ip: "185.41.28.109",
-    tags: ["invoice_delivery"]
+    headers: {
+      svixId,
+      svixTimestamp: Math.floor(timestamp.getTime() / 1000).toString(),
+      svixSignature: `v1,${signature}`
+    },
+    rawBody,
+    payload
   };
 }
 
@@ -110,7 +127,7 @@ async function seedDeliveryFixture(input: {
       .returning(),
     "invoice"
   );
-  const messageId = `<${slug}@relay.brevo.com>`;
+  const emailId = `email-${slug}`;
   const communication = requiredRow(
     await db
       .insert(communications)
@@ -121,7 +138,7 @@ async function seedDeliveryFixture(input: {
         subject: "Invoice",
         toRecipients: input.recipientEmails,
         ccRecipients: [],
-        providerMessageId: messageId,
+        providerMessageId: emailId,
         providerIdempotencyKey: `key-${slug}`,
         status: input.status,
         acceptedAt: new Date("2026-09-18T10:00:00.000Z"),
@@ -143,7 +160,7 @@ async function seedDeliveryFixture(input: {
     });
   }
 
-  return { communication, invoice, messageId, organisation };
+  return { communication, invoice, emailId, organisation };
 }
 
 async function recipientStates(communicationId: string) {
@@ -188,18 +205,17 @@ beforeEach(() => {
   auditCreate = jest.fn(async () => ({}));
 });
 
-describe("Brevo webhook concurrency (real Postgres)", () => {
-  it("converges concurrent delivered/deferred events on delivered", async () => {
+describe("Resend webhook concurrency (real Postgres)", () => {
+  it("converges concurrent delivered/delayed events on delivered", async () => {
     const service = communicationsService();
-    const { communication, messageId } = await seedDeliveryFixture({
+    const { communication, emailId } = await seedDeliveryFixture({
       status: "accepted",
       recipientEmails: ["accounts@northstar.example"]
     });
-    const ts = Math.floor(Date.now() / 1000);
 
     const [first, second] = await Promise.all([
-      service.processBrevoWebhook("test-webhook-secret", brevoPayload(messageId, "delivered", "accounts@northstar.example", ts)),
-      service.processBrevoWebhook("test-webhook-secret", brevoPayload(messageId, "deferred", "accounts@northstar.example", ts + 1))
+      service.processResendWebhook(resendInput(emailId, "email.delivered", ["accounts@northstar.example"])),
+      service.processResendWebhook(resendInput(emailId, "email.delivery_delayed", ["accounts@northstar.example"]))
     ]);
 
     expect(first).toEqual({ received: true });
@@ -217,15 +233,14 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
 
   it("aggregates mixed recipient outcomes to partially failed without cross-contamination", async () => {
     const service = communicationsService();
-    const { communication, messageId } = await seedDeliveryFixture({
+    const { communication, emailId } = await seedDeliveryFixture({
       status: "accepted",
       recipientEmails: ["accounts@northstar.example", "bounce@example.com"]
     });
-    const ts = Math.floor(Date.now() / 1000);
 
     await Promise.all([
-      service.processBrevoWebhook("test-webhook-secret", brevoPayload(messageId, "delivered", "accounts@northstar.example", ts)),
-      service.processBrevoWebhook("test-webhook-secret", brevoPayload(messageId, "hard_bounce", "bounce@example.com", ts))
+      service.processResendWebhook(resendInput(emailId, "email.delivered", ["accounts@northstar.example"])),
+      service.processResendWebhook(resendInput(emailId, "email.bounced", ["bounce@example.com"]))
     ]);
 
     expect(await recipientStates(communication.id)).toEqual([
@@ -236,16 +251,15 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
     expect(await eventCount(communication.id)).toBe(2);
   });
 
-  it("maps a realistic invalid_email payload to a safe recipient failure", async () => {
+  it("maps a realistic bounce payload to a safe recipient failure", async () => {
     const service = communicationsService();
-    const { communication, messageId } = await seedDeliveryFixture({
+    const { communication, emailId } = await seedDeliveryFixture({
       status: "accepted",
       recipientEmails: ["typo@example.com"]
     });
 
-    const result = await service.processBrevoWebhook(
-      "test-webhook-secret",
-      brevoPayload(messageId, "invalid_email", "typo@example.com", Math.floor(Date.now() / 1000))
+    const result = await service.processResendWebhook(
+      resendInput(emailId, "email.bounced", ["typo@example.com"])
     );
 
     expect(result).toEqual({ received: true });
@@ -262,20 +276,19 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
         .limit(1),
       "recipient"
     );
-    expect(recipient?.failureReason).toContain("invalid");
+    expect(recipient?.failureReason).toContain("bounced");
   });
 
   it("stores same-second events for two recipients as distinct rows", async () => {
     const service = communicationsService();
-    const { communication, messageId } = await seedDeliveryFixture({
+    const { communication, emailId } = await seedDeliveryFixture({
       status: "accepted",
       recipientEmails: ["one@example.com", "two@example.com"]
     });
-    const ts = Math.floor(Date.now() / 1000);
 
     await Promise.all([
-      service.processBrevoWebhook("test-webhook-secret", brevoPayload(messageId, "delivered", "one@example.com", ts)),
-      service.processBrevoWebhook("test-webhook-secret", brevoPayload(messageId, "delivered", "two@example.com", ts))
+      service.processResendWebhook(resendInput(emailId, "email.delivered", ["one@example.com"])),
+      service.processResendWebhook(resendInput(emailId, "email.delivered", ["two@example.com"]))
     ]);
 
     expect(await eventCount(communication.id)).toBe(2);
@@ -284,17 +297,16 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
 
   it("treats an exact replay as a duplicate without touching state", async () => {
     const service = communicationsService();
-    const { communication, messageId } = await seedDeliveryFixture({
+    const { communication, emailId } = await seedDeliveryFixture({
       status: "accepted",
       recipientEmails: ["accounts@northstar.example"]
     });
-    const ts = Math.floor(Date.now() / 1000);
-    const payload = brevoPayload(messageId, "delivered", "accounts@northstar.example", ts);
+    const replay = resendInput(emailId, "email.delivered", ["accounts@northstar.example"]);
 
-    await expect(service.processBrevoWebhook("test-webhook-secret", payload)).resolves.toEqual({
+    await expect(service.processResendWebhook(replay)).resolves.toEqual({
       received: true
     });
-    await expect(service.processBrevoWebhook("test-webhook-secret", payload)).resolves.toEqual({
+    await expect(service.processResendWebhook(replay)).resolves.toEqual({
       received: true,
       duplicate: true
     });
@@ -302,9 +314,9 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
     expect(await parentStatus(communication.id)).toBe("delivered");
   });
 
-  it("does not regress a delivered recipient when a late deferred event arrives", async () => {
+  it("does not regress a delivered recipient when a late delayed event arrives", async () => {
     const service = communicationsService();
-    const { communication, messageId } = await seedDeliveryFixture({
+    const { communication, emailId } = await seedDeliveryFixture({
       status: "delivered",
       recipientEmails: ["accounts@northstar.example"]
     });
@@ -313,9 +325,8 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
       .set({ status: "delivered", deliveredAt: new Date("2026-09-18T10:05:00.000Z") })
       .where(eq(communicationRecipients.communicationId, communication.id));
 
-    const result = await service.processBrevoWebhook(
-      "test-webhook-secret",
-      brevoPayload(messageId, "deferred", "accounts@northstar.example", Math.floor(Date.now() / 1000))
+    const result = await service.processResendWebhook(
+      resendInput(emailId, "email.delivery_delayed", ["accounts@northstar.example"])
     );
 
     expect(result).toEqual({ received: true });
@@ -324,5 +335,28 @@ describe("Brevo webhook concurrency (real Postgres)", () => {
     ]);
     expect(await parentStatus(communication.id)).toBe("delivered");
     expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it("cannot mutate another communication through a foreign recipient address", async () => {
+    const service = communicationsService();
+    const first = await seedDeliveryFixture({
+      status: "accepted",
+      recipientEmails: ["accounts@northstar.example"]
+    });
+    const second = await seedDeliveryFixture({
+      status: "accepted",
+      recipientEmails: ["other@example.com"]
+    });
+
+    const result = await service.processResendWebhook(
+      resendInput(second.emailId, "email.delivered", ["accounts@northstar.example"])
+    );
+
+    expect(result).toEqual({ received: true });
+    expect(await recipientStates(first.communication.id)).toEqual([
+      { email: "accounts@northstar.example", status: "accepted" }
+    ]);
+    expect(await parentStatus(first.communication.id)).toBe("accepted");
+    expect(await parentStatus(second.communication.id)).toBe("accepted");
   });
 });

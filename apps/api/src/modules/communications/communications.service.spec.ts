@@ -11,13 +11,16 @@ jest.mock("crypto", () => {
       (mockRandomUUID as unknown as (...callArgs: unknown[]) => string)(...args)
   };
 });
-import { BrevoEmailProvider } from "./brevo-email.provider";
+import { createHmac } from "crypto";
+
+import type { ResendWebhookPayload } from "./communications.service";
 import {
   aggregateRecipientStatuses,
   CommunicationsService,
-  mapBrevoEventType,
+  mapResendEventType,
   toDeliveryState
 } from "./communications.service";
+import { ResendEmailProvider } from "./resend-email.provider";
 import {
   buildInvoiceEmailHtml,
   buildInvoiceEmailText,
@@ -37,11 +40,11 @@ function createCommunication(overrides: Partial<Communication> = {}): Communicat
     customerId: "customer-1",
     purpose: "invoice_delivery",
     channel: "email",
-    provider: "brevo",
+    provider: "resend",
     subject: "Invoice INV-000184 from Adebayo Studio",
     toRecipients: ["accounts@northstar.example"],
     ccRecipients: [],
-    providerMessageId: "<msg-1@relay.brevo.com>",
+    providerMessageId: "email-id-1",
     providerIdempotencyKey: "11111111-1111-4111-8111-111111111111",
     retryClaimToken: null,
     retryClaimedAt: null,
@@ -105,7 +108,7 @@ function stubDb(queues: {
 function setup(input: {
   db?: ReturnType<typeof stubDb>;
   config?: Record<string, string | undefined>;
-  brevo?: Partial<BrevoEmailProvider>;
+  resend?: Partial<ResendEmailProvider>;
   audit?: { create: jest.Mock };
 } = {}) {
   mockRandomUUID.mockReset();
@@ -114,20 +117,20 @@ function setup(input: {
   const configService = {
     get: jest.fn((key: string) => input.config?.[key])
   };
-  const brevoEmailProvider = {
+  const resendEmailProvider = {
     isConfigured: jest.fn(() => true),
     getFromEmail: jest.fn(() => "billing@lumina.example"),
-    sendEmail: jest.fn(async () => ({ providerMessageId: "<msg-9@relay.brevo.com>" })),
-    ...(input.brevo ?? {})
+    sendEmail: jest.fn(async () => ({ providerMessageId: "email-id-9" })),
+    ...(input.resend ?? {})
   };
   const auditLogService = input.audit ?? { create: jest.fn(async () => ({})) };
   const service = new CommunicationsService(
     { db } as never,
     configService as never,
-    brevoEmailProvider as never,
+    resendEmailProvider as never,
     auditLogService as never
   );
-  return { auditLogService, brevoEmailProvider, configService, db, service };
+  return { auditLogService, resendEmailProvider, configService, db, service };
 }
 
 describe("email recipient helpers", () => {
@@ -195,25 +198,21 @@ describe("aggregateRecipientStatuses", () => {
   });
 });
 
-describe("mapBrevoEventType", () => {
+describe("mapResendEventType", () => {
   it.each([
-    ["delivered", "delivered"],
-    ["request", "accepted"],
-    ["sent", "accepted"],
-    ["deferred", "deferred"],
-    ["soft_bounce", "deferred"],
-    ["hard_bounce", "failed"],
-    ["blocked", "failed"],
-    ["invalid", "failed"],
-    ["invalid_email", "failed"],
-    ["error", "failed"]
+    ["email.sent", "accepted"],
+    ["email.delivered", "delivered"],
+    ["email.delivery_delayed", "deferred"],
+    ["email.bounced", "failed"],
+    ["email.failed", "failed"],
+    ["email.complained", "failed"]
   ])("maps %s to %s", (raw, outcome) => {
-    expect(mapBrevoEventType(raw).outcome).toBe(outcome);
+    expect(mapResendEventType(raw).outcome).toBe(outcome);
   });
 
   it("ignores engagement events without changing delivery state", () => {
-    expect(mapBrevoEventType("opened").outcome).toBe("ignored");
-    expect(mapBrevoEventType("click").outcome).toBe("ignored");
+    expect(mapResendEventType("email.opened").outcome).toBe("ignored");
+    expect(mapResendEventType("email.clicked").outcome).toBe("ignored");
   });
 
   it("maps communication status to delivery display state", () => {
@@ -255,8 +254,8 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       providerMessageId: null,
       retryClaimToken: "test-claim-token"
     });
-    const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
-    const { brevoEmailProvider, db, service } = setup({
+    const accepted = createCommunication({ providerMessageId: "email-id-9" });
+    const { resendEmailProvider, db, service } = setup({
       db: stubDb({
         insert: [[claimedPending]],
         select: [[claimedPending], [], [accepted]],
@@ -270,7 +269,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       communication: accepted,
       outcome: "accepted"
     });
-    expect(brevoEmailProvider.sendEmail).toHaveBeenCalledWith(
+    expect(resendEmailProvider.sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: [{ email: "accounts@northstar.example", name: "Northstar Projects" }],
         cc: [{ email: "finance@northstar.example" }],
@@ -294,7 +293,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
         select: [[claimedPending]],
         update: [[{ id: "comm-1" }], []]
       }),
-      brevo: {
+      resend: {
         sendEmail: jest.fn(async () => {
           throw new BadGatewayException("Email provider could not send the message.");
         })
@@ -319,7 +318,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
         select: [[claimedPending]],
         update: [[uncertain]]
       }),
-      brevo: {
+      resend: {
         sendEmail: jest.fn(async () => {
           throw new EmailUncertainError();
         })
@@ -390,7 +389,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       providerMessageId: null,
       retryClaimToken: "test-claim-token"
     });
-    const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
+    const accepted = createCommunication({ providerMessageId: "email-id-9" });
     const audit = { create: jest.fn(async () => { throw new Error("audit down"); }) };
     const { service } = setup({
       db: stubDb({
@@ -408,14 +407,14 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
   });
 
   it("refuses to fake delivery when the provider is not configured", async () => {
-    const { brevoEmailProvider, db, service } = setup({
-      brevo: { isConfigured: jest.fn(() => false) }
+    const { resendEmailProvider, db, service } = setup({
+      resend: { isConfigured: jest.fn(() => false) }
     });
 
     await expect(service.sendInvoiceEmail(baseInput)).rejects.toBeInstanceOf(
       ServiceUnavailableException
     );
-    expect(brevoEmailProvider.sendEmail).not.toHaveBeenCalled();
+    expect(resendEmailProvider.sendEmail).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
   });
 
@@ -424,7 +423,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       status: "submission_uncertain",
       providerIdempotencyKey: "reuse-key-1"
     });
-    const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
+    const accepted = createCommunication({ providerMessageId: "email-id-9" });
     const sendInvoiceEmail = jest.fn(async () => ({
       communication: accepted,
       outcome: "accepted" as const
@@ -451,7 +450,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       status: "pending",
       providerIdempotencyKey: "reuse-pending-key"
     });
-    const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
+    const accepted = createCommunication({ providerMessageId: "email-id-9" });
     const sendInvoiceEmail = jest.fn(async () => ({
       communication: accepted,
       outcome: "accepted" as const
@@ -477,7 +476,7 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
       status: "delivered",
       providerIdempotencyKey: "old-key-1"
     });
-    const accepted = createCommunication({ providerMessageId: "<msg-9@relay.brevo.com>" });
+    const accepted = createCommunication({ providerMessageId: "email-id-9" });
     const sendInvoiceEmail = jest.fn(async () => ({
       communication: accepted,
       outcome: "accepted" as const
@@ -493,8 +492,52 @@ describe("CommunicationsService.sendInvoiceEmail", () => {
   });
 });
 
-describe("CommunicationsService.processBrevoWebhook", () => {
-  const secret = "webhook-secret";
+describe("CommunicationsService.processResendWebhook", () => {
+  const secret = "whsec_dGVzdC13ZWJob29rLXNlY3JldA==";
+  let svixSequence = 0;
+
+  function resendPayload(
+    emailId: string | null,
+    type: string,
+    to: string[]
+  ): ResendWebhookPayload {
+    return {
+      type,
+      created_at: "2026-09-18T10:00:00.000Z",
+      data: {
+        email_id: emailId,
+        message_id: "<resend-test-message-id>",
+        from: "billing@lumina.example",
+        to,
+        subject: "Invoice INV-000184 from Adebayo Studio",
+        tags: [{ name: "invoice_delivery", value: "invoice_delivery" }]
+      }
+    };
+  }
+
+  function signPayload(messageId: string, timestamp: Date, rawBody: string): string {
+    const stripped = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
+    const signature = createHmac("sha256", Buffer.from(stripped, "base64"))
+      .update(`${messageId}.${Math.floor(timestamp.getTime() / 1000)}.${rawBody}`)
+      .digest("base64");
+    return `v1,${signature}`;
+  }
+
+  function signedInput(payload: ResendWebhookPayload, svixId?: string) {
+    svixSequence += 1;
+    const messageId = svixId ?? `msg_test_${svixSequence}`;
+    const rawBody = JSON.stringify(payload);
+    const timestamp = new Date();
+    return {
+      headers: {
+        svixId: messageId,
+        svixTimestamp: Math.floor(timestamp.getTime() / 1000).toString(),
+        svixSignature: signPayload(messageId, timestamp, rawBody)
+      },
+      rawBody,
+      payload
+    };
+  }
 
   function createRecipient(overrides: Record<string, unknown> = {}) {
     return {
@@ -520,46 +563,55 @@ describe("CommunicationsService.processBrevoWebhook", () => {
     select: unknown[][];
     insert?: unknown[][];
     update?: unknown[][];
-    payload: Record<string, unknown>;
+    payload: ResendWebhookPayload;
+    svixId?: string;
   }) {
     const { db, service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
+      config: { RESEND_WEBHOOK_SECRET: secret },
       db: stubDb({
         select: input.select,
         insert: input.insert ?? [[{ id: "event-1" }]],
         update: input.update ?? []
       })
     });
-    const result = await service.processBrevoWebhook(secret, input.payload as never);
+    const result = await service.processResendWebhook(signedInput(input.payload, input.svixId));
     return { db, result };
   }
 
-  it("rejects requests without a configured or matching secret", async () => {
+  it("rejects unsigned requests and fails closed without a secret", async () => {
     const { service } = setup({ config: {} });
     await expect(
-      service.processBrevoWebhook("anything", { event: "delivered" })
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+      service.processResendWebhook(
+        signedInput(resendPayload("email-id-1", "email.delivered", ["accounts@northstar.example"]))
+      )
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    const { service: secured } = setup({ config: { BREVO_WEBHOOK_SECRET: secret } });
-    await expect(secured.processBrevoWebhook("wrong", { event: "delivered" })).rejects.toBeInstanceOf(
-      UnauthorizedException
+    const { service: secured } = setup({ config: { RESEND_WEBHOOK_SECRET: secret } });
+    const forged = signedInput(
+      resendPayload("email-id-1", "email.delivered", ["accounts@northstar.example"])
     );
+    await expect(
+      secured.processResendWebhook({
+        ...forged,
+        headers: { ...forged.headers, svixSignature: "v1,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" }
+      })
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it("handles unknown message ids and malformed payloads safely", async () => {
+  it("handles unknown email ids and unsigned event identity safely", async () => {
     const { service } = setup({
-      config: { BREVO_WEBHOOK_SECRET: secret },
+      config: { RESEND_WEBHOOK_SECRET: secret },
       db: stubDb({ select: [[]] })
     });
 
     await expect(
-      service.processBrevoWebhook(secret, {
-        id: "evt-unknown-1",
-        event: "delivered",
-        "message-id": "<unknown@relay.brevo.com>"
-      })
+      service.processResendWebhook(
+        signedInput(resendPayload("email-unknown", "email.delivered", ["accounts@northstar.example"]))
+      )
     ).resolves.toEqual({ received: true, unknown: true });
-    await expect(service.processBrevoWebhook(secret, {})).resolves.toEqual({
+
+    const unsigned = signedInput(resendPayload(null, "email.delivered", []), "not a valid id!!");
+    await expect(service.processResendWebhook(unsigned)).resolves.toEqual({
       received: true,
       ignored: true
     });
@@ -567,18 +619,19 @@ describe("CommunicationsService.processBrevoWebhook", () => {
 
   it("ignores replayed events without touching delivery state", async () => {
     const replayed = createCommunication();
-    const { db, result } = await runWebhook({
-      select: [[replayed], [replayed]],
-      insert: [[]],
-      payload: {
-        id: "evt-replay-1",
-        event: "delivered",
-        "message-id": "<msg-1@relay.brevo.com>",
-        ts_event: 1758192000
-      }
+    const { db, service } = setup({
+      config: { RESEND_WEBHOOK_SECRET: secret },
+      db: stubDb({ select: [[replayed], [replayed]], insert: [[]] })
     });
+    const replay = signedInput(
+      resendPayload("email-id-1", "email.delivered", ["accounts@northstar.example"]),
+      "msg_replay_1"
+    );
 
-    expect(result).toEqual({ received: true, duplicate: true });
+    await expect(service.processResendWebhook(replay)).resolves.toEqual({
+      received: true,
+      duplicate: true
+    });
     expect(db.update).not.toHaveBeenCalled();
   });
 
@@ -588,11 +641,15 @@ describe("CommunicationsService.processBrevoWebhook", () => {
       select: [[communication], [communication], [], []],
       update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }]],
       payload: {
-        id: "evt-attacker-1",
-        event: "delivered",
-        email: "attacker@example.com",
-        "message-id": "<msg-1@relay.brevo.com>",
-        organisationId: "attacker-org"
+        type: "email.delivered",
+        created_at: "2026-09-18T10:00:00.000Z",
+        data: {
+          email_id: "email-id-1",
+          from: "billing@lumina.example",
+          to: ["attacker@example.com"],
+          subject: "Invoice INV-000184 from Adebayo Studio",
+          organisationId: "attacker-org"
+        } as NonNullable<ResendWebhookPayload["data"]>
       }
     });
 
@@ -610,18 +667,14 @@ describe("CommunicationsService.processBrevoWebhook", () => {
       select: [[communication], [communication], [], [existing]],
       insert: [[{ id: "event-unknown-recipient" }]],
       update: [[{ id: "quarantine-resolve" }]],
-      payload: {
-        id: "evt-unknown-recipient-1",
-        event: "delivered",
-        email: "unknown@example.com",
-        "message-id": "<msg-1@relay.brevo.com>"
-      }
+      payload: resendPayload("email-id-1", "email.delivered", ["unknown@example.com"])
     });
 
     expect(result).toEqual({ received: true });
     // The single update resolves the quarantine row. Recipient and parent
     // delivery state are untouched when recipient rows exist but the event
-    // recipient is unknown.
+    // recipient is unknown, so an event for another context cannot mutate
+    // this communication.
     expect(db.update).toHaveBeenCalledTimes(1);
   });
 
@@ -631,12 +684,7 @@ describe("CommunicationsService.processBrevoWebhook", () => {
     const { db, result } = await runWebhook({
       select: [[communication], [communication], [recipient], [{ ...recipient, status: "delivered" }]],
       update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-1" }], [{ id: "comm-1" }]],
-      payload: {
-        id: "evt-delivered-1",
-        event: "delivered",
-        email: "accounts@northstar.example",
-        "message-id": "<msg-1@relay.brevo.com>"
-      }
+      payload: resendPayload("email-id-1", "email.delivered", ["accounts@northstar.example"])
     });
 
     expect(result).toEqual({ received: true });
@@ -650,12 +698,7 @@ describe("CommunicationsService.processBrevoWebhook", () => {
       select: [[communication], [communication], [recipient]],
       insert: [[{ id: "event-2" }]],
       update: [[{ id: "quarantine-resolve" }]],
-      payload: {
-        id: "evt-late-failure-1",
-        event: "hard_bounce",
-        email: "accounts@northstar.example",
-        "message-id": "<msg-1@relay.brevo.com>"
-      }
+      payload: resendPayload("email-id-1", "email.failed", ["accounts@northstar.example"])
     });
 
     expect(result).toEqual({ received: true });
@@ -680,12 +723,7 @@ describe("CommunicationsService.processBrevoWebhook", () => {
       ],
       insert: [[{ id: "event-3" }]],
       update: [[{ id: "quarantine-resolve" }], [{ id: "recipient-bounce" }], [{ id: "comm-1" }]],
-      payload: {
-        id: "evt-partial-1",
-        event: "hard_bounce",
-        email: "bounce@example.com",
-        "message-id": "<msg-1@relay.brevo.com>"
-      }
+      payload: resendPayload("email-id-1", "email.bounced", ["bounce@example.com"])
     });
 
     expect(result).toEqual({ received: true });

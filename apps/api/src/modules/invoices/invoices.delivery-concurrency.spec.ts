@@ -279,7 +279,7 @@ describe("concurrent public views (real Postgres)", () => {
     const auditCreate = jest.fn(async () => ({}));
     const communicationsService = new CommunicationsService(
       databaseService(),
-      stubConfig({ BREVO_WEBHOOK_SECRET: "test-secret" }),
+      stubConfig({ RESEND_WEBHOOK_SECRET: "whsec_dGVzdC13ZWJob29rLXNlY3JldA==" }),
       {} as never,
       { create: auditCreate } as unknown as AuditLogService
     );

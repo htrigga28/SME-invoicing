@@ -1274,6 +1274,74 @@ describe("PaymentsService refunds", () => {
     expect(refundTx.updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
   });
 
+  it.each([
+    ["wrong amount", { amountKobo: 1, currency: "NGN", transactionReference: "SME-INV000001-ABC123", providerRefundId: "refund-provider-1" }],
+    ["wrong currency", { amountKobo: 170000, currency: "USD", transactionReference: "SME-INV000001-ABC123", providerRefundId: "refund-provider-1" }],
+    ["wrong reference", { amountKobo: 170000, currency: "NGN", transactionReference: "SME-OTHER-999", providerRefundId: "refund-provider-1" }],
+    ["missing refund identity", { amountKobo: 170000, currency: "NGN", transactionReference: "SME-INV000001-ABC123", providerRefundId: null }]
+  ])("holds a %s provider response as needs_attention without moving balances", async (_case, response) => {
+    const { paystackService, service, transaction } = setup();
+    const refundTx = createRefundTx();
+    transaction.mockImplementation(async (callback) => callback(refundTx.tx));
+    paystackService.createRefund.mockResolvedValue({
+      providerRefundId: response.providerRefundId,
+      status: "pending",
+      amountKobo: response.amountKobo,
+      currency: response.currency,
+      transactionReference: response.transactionReference
+    });
+    const internals = service as unknown as {
+      calculateInvoiceFinancialSummaryForId: jest.Mock;
+      createAuditLog: jest.Mock;
+      getRefundablePaymentState: jest.Mock;
+      lockInvoiceFinancialState: jest.Mock;
+    };
+    internals.getRefundablePaymentState = jest.fn().mockResolvedValue({
+      payment: createPayment({ status: "successful", amountKobo: 170000 }),
+      financialSummary: { overpaymentKobo: 170000 },
+      remainingRefundableKobo: 170000
+    });
+    internals.calculateInvoiceFinancialSummaryForId = jest.fn().mockResolvedValue({
+      financialSummary: { overpaymentKobo: 170000, processedRefundsKobo: 0 }
+    });
+    internals.createAuditLog = jest.fn().mockResolvedValue(undefined);
+    internals.lockInvoiceFinancialState = jest.fn().mockResolvedValue({
+      invoice: createInvoice({
+        amountPaidKobo: 340000,
+        balanceDueKobo: 0,
+        status: "paid",
+        totalKobo: 170000
+      }),
+      payments: [
+        createPayment({ status: "successful", amountKobo: 170000 }),
+        createPayment({ id: "payment-2", status: "successful", amountKobo: 170000 })
+      ],
+      refunds: []
+    });
+
+    const result = await service.createPaymentRefund(
+      context as never,
+      { userId: "user-1" } as never,
+      "payment-1",
+      { amountKobo: 170000, reason: "Duplicate payment" }
+    );
+
+    // The stubbed update returns a fixed row, so the status assertion targets
+    // the SET clause: the implementation must persist needs_attention and
+    // never apply the mismatched provider status to the refund.
+    expect(result.refund).toMatchObject({ id: "refund-pending" });
+    expect(refundTx.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "needs_attention",
+        providerMetadataRedacted: expect.objectContaining({ responseMismatch: true })
+      })
+    );
+    expect(internals.createAuditLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "payment_refund_response_mismatch" })
+    );
+  });
+
   it("rejects refund amounts above the invoice overpayment before calling Paystack", async () => {
     const { paystackService, service } = setup();
     const internals = service as unknown as {
