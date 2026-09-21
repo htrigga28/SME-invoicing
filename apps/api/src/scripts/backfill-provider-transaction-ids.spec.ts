@@ -1,7 +1,9 @@
 import type { PaystackVerifyResponse } from "../modules/paystack/paystack.service";
 import {
   backfillProviderTransactionIds,
-  type ProviderTransactionIdRepairCandidate
+  type ProviderTransactionIdRepairCandidate,
+  type ProviderTransactionIdRepairDeps,
+  type ProviderTransactionIdRepairSummary
 } from "./backfill-provider-transaction-ids";
 
 const candidate: ProviderTransactionIdRepairCandidate = {
@@ -33,228 +35,115 @@ function createVerification(
   };
 }
 
+function createSummary(
+  overrides: Partial<ProviderTransactionIdRepairSummary> = {}
+): ProviderTransactionIdRepairSummary {
+  return {
+    scanned: 0,
+    genuineCandidates: 0,
+    excludedDemo: 0,
+    repaired: 0,
+    skipped: 0,
+    failed: 0,
+    ...overrides
+  };
+}
+
+async function runRepair(options: {
+  candidates: ProviderTransactionIdRepairCandidate[];
+  persist?: (paymentId: string, providerTransactionId: string) => Promise<boolean>;
+  verifyTransaction?: (reference: string) => Promise<PaystackVerifyResponse>;
+}) {
+  const persist = jest.fn(options.persist ?? (async () => true));
+  const verifyTransaction = jest.fn(options.verifyTransaction ?? (async () => createVerification()));
+
+  const summary = await backfillProviderTransactionIds({
+    listMissing: jest.fn(async () => options.candidates),
+    log: jest.fn(),
+    persist,
+    verifyTransaction
+  });
+
+  return { persist, summary, verifyTransaction };
+}
+
 describe("backfillProviderTransactionIds", () => {
   it("repairs a row when exact Paystack evidence matches", async () => {
-    const persist = jest.fn(async () => true);
+    const { persist, summary } = await runRepair({ candidates: [candidate] });
 
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction: jest.fn(async () => createVerification())
-    });
-
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 1,
-      skipped: 0,
-      failed: 0
-    });
+    expect(summary).toEqual(createSummary({ scanned: 1, genuineCandidates: 1, repaired: 1 }));
     expect(persist).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledWith("payment-1", "1004723697");
   });
 
   it("excludes deterministic synthetic/demo payments from verification", async () => {
-    const verifyTransaction = jest.fn(async () => createVerification());
-    const persist = jest.fn(async () => true);
-
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [demoCandidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction
+    const { persist, summary, verifyTransaction } = await runRepair({
+      candidates: [demoCandidate]
     });
 
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 0,
-      excludedDemo: 1,
-      repaired: 0,
-      skipped: 0,
-      failed: 0
-    });
+    expect(summary).toEqual(createSummary({ scanned: 1, excludedDemo: 1 }));
     expect(verifyTransaction).not.toHaveBeenCalled();
     expect(persist).not.toHaveBeenCalled();
   });
 
   it("distinguishes demo data from genuine unresolved legacy payments", async () => {
-    const verifyTransaction = jest.fn(async () => createVerification());
-    const persist = jest.fn(async () => true);
-
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [demoCandidate, candidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction
+    const { persist, summary, verifyTransaction } = await runRepair({
+      candidates: [demoCandidate, candidate]
     });
 
-    expect(summary).toEqual({
-      scanned: 2,
-      genuineCandidates: 1,
-      excludedDemo: 1,
-      repaired: 1,
-      skipped: 0,
-      failed: 0
-    });
+    expect(summary).toEqual(
+      createSummary({ scanned: 2, genuineCandidates: 1, excludedDemo: 1, repaired: 1 })
+    );
     expect(verifyTransaction).toHaveBeenCalledTimes(1);
     expect(verifyTransaction).toHaveBeenCalledWith(candidate.providerReference);
     expect(persist).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledWith("payment-1", "1004723697");
   });
 
-  it("skips a row when the verified reference does not match exactly", async () => {
+  const mismatchCases: Array<[string, Partial<PaystackVerifyResponse>]> = [
+    ["the verified reference does not match exactly", { reference: "OTHER-REFERENCE" }],
+    ["the verified amount does not match", { amountKobo: candidate.amountKobo + 1 }],
+    ["the verified currency does not match", { currency: "USD" }],
+    ["the Paystack status is failed", { status: "failed" }],
+    ["the Paystack status is abandoned", { status: "abandoned" }],
+    ["the Paystack status is pending", { status: "pending" }],
+    ["Paystack returns no transaction ID", { providerTransactionId: null }]
+  ];
+
+  it.each(mismatchCases)("skips a row when %s", async (_name, overrides) => {
     const persist = jest.fn(async () => true);
 
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
+    const { summary } = await runRepair({
+      candidates: [candidate],
       persist,
-      verifyTransaction: jest.fn(async () => createVerification({ reference: "OTHER-REFERENCE" }))
+      verifyTransaction: async () => createVerification(overrides)
     });
 
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 1,
-      failed: 0
-    });
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it("skips a row when the verified amount does not match", async () => {
-    const persist = jest.fn(async () => true);
-
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction: jest.fn(async () =>
-        createVerification({ amountKobo: candidate.amountKobo + 1 })
-      )
-    });
-
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 1,
-      failed: 0
-    });
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it("skips a row when the verified currency does not match", async () => {
-    const persist = jest.fn(async () => true);
-
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction: jest.fn(async () => createVerification({ currency: "USD" }))
-    });
-
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 1,
-      failed: 0
-    });
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it.each(["failed", "abandoned", "pending"])(
-    "skips a row when the Paystack status is %s",
-    async (status) => {
-      const persist = jest.fn(async () => true);
-
-      const summary = await backfillProviderTransactionIds({
-        listMissing: jest.fn(async () => [candidate]),
-        log: jest.fn(),
-        persist,
-        verifyTransaction: jest.fn(async () => createVerification({ status }))
-      });
-
-      expect(summary).toEqual({
-        scanned: 1,
-        genuineCandidates: 1,
-        excludedDemo: 0,
-        repaired: 0,
-        skipped: 1,
-        failed: 0
-      });
-      expect(persist).not.toHaveBeenCalled();
-    }
-  );
-
-  it("skips a row when Paystack returns no transaction ID", async () => {
-    const persist = jest.fn(async () => true);
-
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction: jest.fn(async () => createVerification({ providerTransactionId: null }))
-    });
-
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 1,
-      failed: 0
-    });
+    expect(summary).toEqual(createSummary({ scanned: 1, genuineCandidates: 1, skipped: 1 }));
     expect(persist).not.toHaveBeenCalled();
   });
 
   it("skips a row that already has a provider transaction ID", async () => {
     const persist = jest.fn(async () => false);
 
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
-      persist,
-      verifyTransaction: jest.fn(async () => createVerification())
-    });
+    const { summary } = await runRepair({ candidates: [candidate], persist });
 
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 1,
-      failed: 0
-    });
+    expect(summary).toEqual(createSummary({ scanned: 1, genuineCandidates: 1, skipped: 1 }));
     expect(persist).toHaveBeenCalledTimes(1);
   });
 
   it("leaves the row unchanged when Paystack verification is unavailable", async () => {
     const persist = jest.fn(async () => true);
 
-    const summary = await backfillProviderTransactionIds({
-      listMissing: jest.fn(async () => [candidate]),
-      log: jest.fn(),
+    const { summary } = await runRepair({
+      candidates: [candidate],
       persist,
-      verifyTransaction: jest.fn(async () => {
+      verifyTransaction: async () => {
         throw new Error("Paystack is temporarily unavailable.");
-      })
+      }
     });
 
-    expect(summary).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 0,
-      failed: 1
-    });
+    expect(summary).toEqual(createSummary({ scanned: 1, genuineCandidates: 1, failed: 1 }));
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -268,10 +157,8 @@ describe("backfillProviderTransactionIds", () => {
       storedTransactionIds.set(paymentId, providerTransactionId);
       return true;
     });
-    const deps = {
-      listMissing: jest.fn(async () =>
-        storedTransactionIds.has(candidate.id) ? [] : [candidate]
-      ),
+    const deps: ProviderTransactionIdRepairDeps = {
+      listMissing: jest.fn(async () => (storedTransactionIds.has(candidate.id) ? [] : [candidate])),
       log: jest.fn(),
       persist,
       verifyTransaction: jest.fn(async () => createVerification())
@@ -280,22 +167,8 @@ describe("backfillProviderTransactionIds", () => {
     const first = await backfillProviderTransactionIds(deps);
     const second = await backfillProviderTransactionIds(deps);
 
-    expect(first).toEqual({
-      scanned: 1,
-      genuineCandidates: 1,
-      excludedDemo: 0,
-      repaired: 1,
-      skipped: 0,
-      failed: 0
-    });
-    expect(second).toEqual({
-      scanned: 0,
-      genuineCandidates: 0,
-      excludedDemo: 0,
-      repaired: 0,
-      skipped: 0,
-      failed: 0
-    });
+    expect(first).toEqual(createSummary({ scanned: 1, genuineCandidates: 1, repaired: 1 }));
+    expect(second).toEqual(createSummary());
     expect(persist).toHaveBeenCalledTimes(1);
     expect(storedTransactionIds.get(candidate.id)).toBe("1004723697");
   });
