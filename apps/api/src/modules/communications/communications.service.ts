@@ -338,6 +338,8 @@ export class CommunicationsService {
       communication?: Communication;
       claimToken?: string;
       idempotencyKey?: string;
+      purpose?: string;
+      tags?: string[];
       /** Replays a stored immutable provider request instead of building one. */
       snapshot?: SendEmailInput;
     }
@@ -397,6 +399,8 @@ export class CommunicationsService {
         publicUrl: content.publicUrl
       });
       const customerName = content.customerName;
+      const purpose = options?.purpose ?? "invoice_delivery";
+      const tags = options?.tags ?? [purpose, content.invoiceNumber];
       snapshot = {
         fromEmail: this.resendEmailProvider.getFromEmail()!,
         fromName: `${content.businessName} via Lumina`,
@@ -409,7 +413,7 @@ export class CommunicationsService {
         subject,
         htmlContent,
         textContent,
-        tags: ["invoice_delivery", content.invoiceNumber],
+        tags,
         correlationId: options?.communication?.id ?? randomUUID()
       };
     }
@@ -427,7 +431,8 @@ export class CommunicationsService {
         idempotencyKey,
         idempotencyExpiresAt,
         claimToken,
-        communicationId
+        communicationId,
+        options?.purpose ?? "invoice_delivery"
       ));
 
     // Provider boundary: only an explicit provider rejection may mark the
@@ -585,6 +590,126 @@ export class CommunicationsService {
   }
 
   /**
+   * Payment reminder send. Reuses the invoice-delivery provider adapter,
+   * attempt persistence, idempotency, webhook correlation and uncertainty
+   * recovery — only the purpose tag and rendered reminder content differ.
+   * Never called for an uncertain submission: callers must set the
+   * automation job to needs_attention instead of minting a fresh send.
+   */
+  async sendPaymentReminderEmail(
+    input: {
+      organisationId: string;
+      userId: string;
+      invoice: Pick<Invoice, "id" | "invoiceNumber">;
+      customerId: string;
+      content: SendInvoiceEmailInput;
+      subject: string;
+      htmlContent: string;
+      textContent: string;
+    },
+    options?: { claimToken?: string; idempotencyKey?: string }
+  ): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
+    if (!this.resendEmailProvider.isConfigured()) {
+      throw new ServiceUnavailableException(
+        "Email delivery is not configured. The invoice remains unpaid and the reminder was not sent."
+      );
+    }
+
+    let recipients: { to: string[]; cc: string[] };
+    try {
+      recipients = validateSendRecipients(input.content.to, input.content.cc ?? []);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : "Recipients are invalid.");
+    }
+
+    const fromEmail = this.resendEmailProvider.getFromEmail()!;
+    const snapshot = {
+      fromEmail,
+      fromName: `${input.content.businessName} via Lumina`,
+      replyToEmail: input.content.businessEmail,
+      to: recipients.to.map((email) => ({
+        email,
+        name: email === recipients.to[0] ? input.content.customerName : null
+      })),
+      cc: recipients.cc.map((email) => ({ email })),
+      subject: input.subject.trim() || `Reminder: invoice ${input.invoice.invoiceNumber} is due`,
+      htmlContent: input.htmlContent,
+      textContent: input.textContent,
+      tags: ["payment_reminder", input.invoice.invoiceNumber],
+      correlationId: randomUUID()
+    };
+
+    const claimToken = options?.claimToken ?? randomUUID();
+    const idempotencyKey = options?.idempotencyKey ?? randomUUID();
+    const idempotencyExpiresAt = new Date(Date.now() + RESEND_IDEMPOTENCY_WINDOW_MS);
+    const communicationId = randomUUID();
+    snapshot.correlationId = communicationId;
+    const communication = await this.createPendingCommunication(
+      input,
+      snapshot,
+      idempotencyKey,
+      idempotencyExpiresAt,
+      claimToken,
+      communicationId,
+      "payment_reminder"
+    );
+
+    let providerMessageId: string;
+    try {
+      ({ providerMessageId } = await this.resendEmailProvider.sendEmail({
+        ...snapshot,
+        idempotencyKey,
+        correlationId: communication.id
+      }));
+    } catch (error) {
+      if (error instanceof EmailUncertainError) {
+        const current = await this.completeUncertainAttempt(communication, claimToken, error.message);
+        return { communication: current ?? communication, outcome: "uncertain" as const };
+      }
+      const failed = await this.completeFailedAttempt(
+        communication,
+        claimToken,
+        error instanceof Error ? error.message : "Email provider could not send the message."
+      );
+      if (failed) {
+        await this.auditSafely({
+          organisationId: input.organisationId,
+          actorUserId: input.userId,
+          action: "invoice_reminder_failed",
+          entityType: "invoice",
+          entityId: input.invoice.id,
+          metadataRedacted: { invoiceNumber: input.invoice.invoiceNumber, communicationId: communication.id }
+        });
+      }
+      throw error;
+    }
+
+    const acceptedAt = new Date();
+    const persisted = await this.persistProviderAcceptance(
+      communication,
+      claimToken,
+      providerMessageId,
+      acceptedAt
+    );
+    if (!persisted.applied) {
+      return { communication: persisted.communication, outcome: "uncertain" };
+    }
+    await this.auditSafely({
+      organisationId: input.organisationId,
+      actorUserId: input.userId,
+      action: "invoice_reminder_sent",
+      entityType: "invoice",
+      entityId: input.invoice.id,
+      metadataRedacted: {
+        invoiceNumber: input.invoice.invoiceNumber,
+        communicationId: communication.id,
+        recipientCount: recipients.to.length + recipients.cc.length
+      }
+    });
+    return { communication: persisted.communication, outcome: "accepted" as const };
+  }
+
+  /**
    * Internal recovery retry of one unresolved logical attempt. Replays the
    * stored immutable provider request with the original idempotency key, and
    * only inside the provider's idempotency window. Late webhooks can still
@@ -686,7 +811,8 @@ export class CommunicationsService {
     idempotencyKey: string,
     idempotencyExpiresAt: Date,
     claimToken: string,
-    communicationId: string
+    communicationId: string,
+    purpose = "invoice_delivery"
   ): Promise<Communication> {
     const claimedAt = new Date();
     const toEmails = snapshot.to.map((recipient) => recipient.email);
@@ -700,7 +826,7 @@ export class CommunicationsService {
           organisationId: input.organisationId,
           invoiceId: input.invoice.id,
           customerId: input.customerId,
-          purpose: "invoice_delivery",
+          purpose,
           channel: "email",
           provider: "resend",
           subject: snapshot.subject,

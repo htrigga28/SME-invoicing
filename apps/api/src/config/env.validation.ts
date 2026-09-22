@@ -17,6 +17,7 @@ const envSchema = z.object({
   RESEND_FROM_EMAIL: z.string().email().optional(),
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   RESEND_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+  CRON_SECRET: z.string().min(1).optional(),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
   TRUST_PROXY: z.string().min(1).default("loopback"),
   // Compat window for pre-cookie clients that still POST the refresh token in

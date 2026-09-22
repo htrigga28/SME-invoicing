@@ -309,6 +309,7 @@ export class InvoicesService {
           ? `${recipientEmails[0]} +${recipientEmails.length - 1} more`
           : (recipientEmails[0] ?? "customer");
       const resent = index > 0;
+      const isReminder = (communication as { purpose?: string }).purpose === "payment_reminder";
       const metadata = {
         invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
         communicationId: communication.id
@@ -319,10 +320,12 @@ export class InvoicesService {
           id: `email-${communication.id}-accepted`,
           type: "email_accepted",
           occurredAt: new Date(communication.acceptedAt).toISOString(),
-          title: resent
-            ? `Invoice email resent to ${recipientLabel}`
-            : `Invoice emailed to ${recipientLabel}`,
-          detail: "Accepted by the email provider.",
+          title: isReminder
+            ? `Automatic reminder sent to ${recipientLabel}`
+            : resent
+              ? `Invoice email resent to ${recipientLabel}`
+              : `Invoice emailed to ${recipientLabel}`,
+          detail: isReminder ? "Reminder accepted by the email provider." : "Accepted by the email provider.",
           tone: "info",
           actor: null,
           metadata
@@ -334,7 +337,7 @@ export class InvoicesService {
           id: `email-${communication.id}-uncertain`,
           type: "email_uncertain",
           occurredAt: new Date(communication.updatedAt).toISOString(),
-          title: "Email send status uncertain",
+          title: isReminder ? "Reminder send status uncertain" : "Email send status uncertain",
           detail:
             communication.failureReason ??
             "The provider did not confirm receipt. It may still have been sent.",
@@ -349,7 +352,7 @@ export class InvoicesService {
           id: `email-${communication.id}-delivered`,
           type: "email_delivered",
           occurredAt: new Date(communication.deliveredAt).toISOString(),
-          title: "Email delivered",
+          title: isReminder ? `Reminder delivered to ${recipientLabel}` : "Email delivered",
           detail:
             recipients.length > 1
               ? `Delivered to all ${recipients.length} recipients.`

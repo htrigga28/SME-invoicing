@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/internal/automation/run",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

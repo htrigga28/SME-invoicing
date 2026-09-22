@@ -19,10 +19,10 @@ import {
   invoices,
   invoiceStatusEvents,
   invoiceViewEvents,
-  organisationPaymentAccounts,
+  automationJobs, organisationPaymentAccounts,
   organisationInvitations,
-  organisationMembers,
-  organisations,
+  organisationMembers, organisationReminderSettings,
+  organisations, recurringInvoiceOccurrences, recurringInvoiceScheduleLineItems, recurringInvoiceSchedules, reminderSteps,
   paymentEvents,
   payments,
   users
@@ -1522,6 +1522,81 @@ export async function seedDemo() {
         }
       }
 
+      // T022 automation demo data (idempotent, no real email).
+      const demoCustomerRows = await db.select().from(customers).where(eq(customers.organisationId, organisation.id)).limit(5);
+      const seedCustomer = demoCustomerRows[0];
+      if (seedCustomer) {
+        const seedSchedules: Array<{ name: string; status: "active" | "paused" | "completed"; frequency: "monthly" | "quarterly"; anchorDay: number; anchorMonth: number; startDate: string; nextIssueDate: string; endDate?: string }> = [
+          { name: "Monthly retainer (demo)", status: "active", frequency: "monthly", anchorDay: 15, anchorMonth: 9, startDate: "2026-09-15", nextIssueDate: "2026-10-15" },
+          { name: "Paused retainer (demo)", status: "paused", frequency: "monthly", anchorDay: 1, anchorMonth: 9, startDate: "2026-09-01", nextIssueDate: "2026-09-01" },
+          { name: "Completed retainer (demo)", status: "completed", frequency: "quarterly", anchorDay: 1, anchorMonth: 1, startDate: "2026-01-01", nextIssueDate: "2026-10-01", endDate: "2026-07-01" }
+        ];
+        for (const s of seedSchedules) {
+          const [existing] = await db.select({ id: recurringInvoiceSchedules.id }).from(recurringInvoiceSchedules).where(and(eq(recurringInvoiceSchedules.organisationId, organisation.id), eq(recurringInvoiceSchedules.name, s.name))).limit(1);
+          if (!existing) {
+            await db.insert(recurringInvoiceSchedules).values({
+              organisationId: organisation.id, customerId: seedCustomer.id, name: s.name,
+              status: s.status, frequency: s.frequency, anchorDay: s.anchorDay, anchorMonth: s.anchorMonth,
+              startDate: s.startDate, nextIssueDate: s.nextIssueDate, endDate: s.endDate ?? null, dueTermsDays: 14,
+              autoSend: false, toRecipients: [seedCustomer.email], ccRecipients: [],
+              discountKobo: 0, taxKobo: 0, createdByUserId: owner.id
+            });
+          }
+        }
+        const schedRows = await db.select().from(recurringInvoiceSchedules).where(eq(recurringInvoiceSchedules.organisationId, organisation.id));
+        const activeSched = schedRows.find((s) => s.name === "Monthly retainer (demo)");
+        if (activeSched) {
+          const existingItems = await db.select().from(recurringInvoiceScheduleLineItems).where(eq(recurringInvoiceScheduleLineItems.scheduleId, activeSched.id)).limit(1);
+          if (existingItems.length === 0) {
+            await db.insert(recurringInvoiceScheduleLineItems).values({
+              organisationId: organisation.id, scheduleId: activeSched.id,
+              description: "Monthly retainer", quantity: "1", unitPriceKobo: 78400, sortOrder: 0
+            });
+          }
+          await db.insert(recurringInvoiceOccurrences).values({
+            organisationId: organisation.id, scheduleId: activeSched.id,
+            scheduledFor: "2026-09-15", status: "generated"
+          }).onConflictDoNothing();
+        }
+        if (demoCustomerRows[1]) {
+          await db.update(customers).set({ automaticRemindersEnabled: false }).where(eq(customers.id, demoCustomerRows[1].id));
+        }
+        await db.insert(organisationReminderSettings).values({ organisationId: organisation.id, enabled: true, updatedByUserId: owner.id }).onConflictDoUpdate({ target: organisationReminderSettings.organisationId, set: { enabled: true, updatedByUserId: owner.id } });
+        await db.insert(reminderSteps).values([
+          { organisationId: organisation.id, relativeDays: -3, subjectTemplate: "Invoice {{invoiceNumber}} is due soon", bodyTemplate: "Hello {{customerName}}, invoice {{invoiceNumber}} for {{amountDue}} is due on {{dueDate}}. Pay here: {{publicInvoiceUrl}} Thank you, {{businessName}}", enabled: true, sortOrder: 0 },
+          { organisationId: organisation.id, relativeDays: 1, subjectTemplate: "Invoice {{invoiceNumber}} is overdue", bodyTemplate: "Hello {{customerName}}, invoice {{invoiceNumber}} for {{amountDue}} was due on {{dueDate}}. Pay here: {{publicInvoiceUrl}} Thank you, {{businessName}}", enabled: true, sortOrder: 1 },
+          { organisationId: organisation.id, relativeDays: 7, subjectTemplate: "Reminder: {{amountDue}} is still outstanding", bodyTemplate: "Hello {{customerName}}, invoice {{invoiceNumber}} for {{amountDue}} is still unpaid. Pay here: {{publicInvoiceUrl}} Thank you, {{businessName}}", enabled: true, sortOrder: 2 }
+        ]).onConflictDoNothing();
+        const demoInvoices = await db.select().from(invoices).where(eq(invoices.organisationId, organisation.id)).limit(5);
+        if (demoInvoices[0]) {
+          await db.update(invoices).set({ automaticRemindersEnabled: false }).where(eq(invoices.id, demoInvoices[0].id));
+        }
+        if (demoInvoices[1]) {
+          await db.update(invoices).set({ scheduledSendDate: "2026-10-07", scheduledSendTo: [seedCustomer.email] }).where(eq(invoices.id, demoInvoices[1].id));
+          await db.insert(automationJobs).values({
+            organisationId: organisation.id, kind: "invoice_scheduled_send", resourceType: "invoice",
+            resourceId: demoInvoices[1].id, scheduledFor: "2026-10-07",
+            idempotencyKey: `seed-scheduled:${demoInvoices[1].id}:2026-10-07`, status: "pending", maxAttempts: 3
+          }).onConflictDoNothing();
+        }
+        if (demoInvoices[2]) {
+          await db.insert(automationJobs).values({
+            organisationId: organisation.id, kind: "invoice_reminder_send", resourceType: "invoice",
+            resourceId: demoInvoices[2].id, scheduledFor: "2026-10-01",
+            idempotencyKey: `seed-reminder-done:${demoInvoices[2].id}`, status: "completed",
+            maxAttempts: 3, completedAt: now,
+            payloadRedacted: { invoiceId: demoInvoices[2].id, relativeDays: 1 }
+          }).onConflictDoNothing();
+        }
+        if (demoInvoices[3]) {
+          await db.insert(automationJobs).values({
+            organisationId: organisation.id, kind: "recurring_invoice_generate", resourceType: "recurring_schedule",
+            resourceId: activeSched ? activeSched.id : demoInvoices[3].id, scheduledFor: "2026-10-01",
+            idempotencyKey: `seed-needs-attention:${demoInvoices[3].id}`, status: "needs_attention",
+            maxAttempts: 3, lastError: "Email delivery is not configured in seed."
+          }).onConflictDoNothing();
+        }
+      }
       console.log("Development seed complete.");
       console.log(`Demo organisation: ${organisationName}`);
       console.log("Demo password for all seeded users: DemoPass123!");
@@ -1550,3 +1625,4 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
