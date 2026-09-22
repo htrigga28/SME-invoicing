@@ -30,7 +30,7 @@ import {
   type ResendInvoiceEmailInput,
   type SendInvoiceEmailInput
 } from "./invoices-api";
-import { DeliveryBadge, InvoiceActivityTimeline } from "./invoice-activity";
+import { DeliveryBadge, InvoiceActivityTimeline } from "./invoice-activity"; import { InvoiceAutomationPanel } from "./invoice-automation-panel";
 import { InvoiceDocument } from "./invoice-document";
 import { formatDate, formatMoney, InvoiceStatusBadge, StatusPanel } from "./invoice-ui";
 import { SendInvoiceDialog } from "./send-invoice-dialog";
@@ -533,6 +533,7 @@ export function InvoiceDetailContent({
           tone="warning"
         />
       ) : null}
+      <InvoiceAutomationPanel accessToken={accessToken} invoice={invoice as unknown as { id: string; status: string; scheduledSendDate?: string | null; automaticRemindersEnabled?: boolean }} canManage={canManageInvoices(role)} onChanged={() => { void loadInvoice(); void loadActivity(); }} />
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
@@ -793,3 +794,5 @@ function SummaryRow({ label, strong, value }: { label: string; strong?: boolean;
     </div>
   );
 }
+
+

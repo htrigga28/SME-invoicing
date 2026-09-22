@@ -68,7 +68,7 @@ export class ResendEmailProvider implements EmailProvider {
         html: input.htmlContent,
         text: input.textContent,
         tags: [
-          { name: "invoice_delivery", value: "invoice_delivery" },
+          { name: input.tags[0] ?? "invoice_delivery", value: input.tags[0] ?? "invoice_delivery" },
           { name: RESEND_COMMUNICATION_TAG, value: input.correlationId }
         ]
       },

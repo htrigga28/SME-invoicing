@@ -250,6 +250,7 @@ export const customers = pgTable(
     email: varchar("email", { length: 320 }).notNull(),
     phone: varchar("phone", { length: 50 }),
     billingAddress: text("billing_address"),
+    automaticRemindersEnabled: boolean("automatic_reminders_enabled").notNull().default(true),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null"
     }),
@@ -354,6 +355,11 @@ export const invoices = pgTable(
     paidAt: timestamp("paid_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
+    automaticRemindersEnabled: boolean("automatic_reminders_enabled").notNull().default(true),
+    scheduledSendDate: date("scheduled_send_date"),
+    scheduledSendTo: jsonb("scheduled_send_to").$type<string[]>(),
+    scheduledSendCc: jsonb("scheduled_send_cc").$type<string[]>(),
+    scheduledSendSubject: varchar("scheduled_send_subject", { length: 300 }),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null"
     }),
@@ -1024,6 +1030,176 @@ export const invoiceViewEvents = pgTable(
   })
 );
 
+export const automationJobs = pgTable(
+  "automation_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 40 }).notNull(),
+    resourceType: varchar("resource_type", { length: 60 }).notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    scheduledFor: date("scheduled_for").notNull(),
+    runAt: timestamp("run_at", { withTimezone: true }),
+    idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull().unique(),
+    status: varchar("status", { length: 30 }).notNull().default("pending"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    claimToken: varchar("claim_token", { length: 36 }),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastError: varchar("last_error", { length: 500 }),
+    payloadRedacted: jsonb("payload_redacted").$type<Record<string, unknown>>(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    skippedAt: timestamp("skipped_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    orgStatusScheduledIndex: index("automation_jobs_org_status_scheduled_idx").on(
+      table.organisationId,
+      table.status,
+      table.scheduledFor
+    ),
+    orgResourceIndex: index("automation_jobs_org_resource_idx").on(
+      table.organisationId,
+      table.resourceType,
+      table.resourceId
+    )
+  })
+);
+
+export const recurringInvoiceSchedules = pgTable(
+  "recurring_invoice_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    name: varchar("name", { length: 200 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    frequency: varchar("frequency", { length: 20 }).notNull(),
+    anchorDay: integer("anchor_day").notNull(),
+    anchorMonth: integer("anchor_month").notNull(),
+    startDate: date("start_date").notNull(),
+    nextIssueDate: date("next_issue_date").notNull(),
+    endDate: date("end_date"),
+    dueTermsDays: integer("due_terms_days").notNull().default(14),
+    autoSend: boolean("auto_send").notNull().default(false),
+    toRecipients: jsonb("to_recipients").$type<string[]>().notNull(),
+    ccRecipients: jsonb("cc_recipients").$type<string[]>().notNull().default([]),
+    emailSubject: varchar("email_subject", { length: 300 }),
+    customerReference: varchar("customer_reference", { length: 120 }),
+    notes: text("notes"),
+    discountKobo: integer("discount_kobo").notNull().default(0),
+    taxKobo: integer("tax_kobo").notNull().default(0),
+    lastGeneratedAt: timestamp("last_generated_at", { withTimezone: true }),
+    lastInvoiceId: uuid("last_invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    lastError: varchar("last_error", { length: 500 }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps
+  },
+  (table) => ({
+    organisationIndex: index("recurring_schedules_org_idx").on(table.organisationId),
+    organisationStatusIndex: index("recurring_schedules_org_status_idx").on(
+      table.organisationId,
+      table.status
+    ),
+    organisationNextIndex: index("recurring_schedules_org_next_idx").on(
+      table.organisationId,
+      table.nextIssueDate
+    )
+  })
+);
+
+export const recurringInvoiceScheduleLineItems = pgTable(
+  "recurring_invoice_schedule_line_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => recurringInvoiceSchedules.id, { onDelete: "cascade" }),
+    catalogueItemId: uuid("catalogue_item_id").references(() => catalogueItems.id, {
+      onDelete: "set null"
+    }),
+    description: text("description").notNull(),
+    quantity: numeric("quantity", { precision: 10, scale: 2 }).notNull(),
+    unitPriceKobo: integer("unit_price_kobo").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps
+  },
+  (table) => ({
+    scheduleIndex: index("recurring_line_items_schedule_idx").on(
+      table.organisationId,
+      table.scheduleId
+    )
+  })
+);
+
+export const recurringInvoiceOccurrences = pgTable(
+  "recurring_invoice_occurrences",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => recurringInvoiceSchedules.id, { onDelete: "cascade" }),
+    scheduledFor: date("scheduled_for").notNull(),
+    invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    errorSummary: varchar("error_summary", { length: 500 }),
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    scheduleDateUnique: uniqueIndex("recurring_occurrences_schedule_date_unique").on(
+      table.scheduleId,
+      table.scheduledFor
+    ),
+    organisationIndex: index("recurring_occurrences_org_idx").on(table.organisationId)
+  })
+);
+
+export const organisationReminderSettings = pgTable("organisation_reminder_settings", {
+  organisationId: uuid("organisation_id")
+    .primaryKey()
+    .references(() => organisations.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  ...timestamps
+});
+
+export const reminderSteps = pgTable(
+  "reminder_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organisationId: uuid("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    relativeDays: integer("relative_days").notNull(),
+    subjectTemplate: varchar("subject_template", { length: 300 }).notNull(),
+    bodyTemplate: text("body_template").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps
+  },
+  (table) => ({
+    organisationIndex: index("reminder_steps_org_idx").on(table.organisationId),
+    organisationDayUnique: uniqueIndex("reminder_steps_org_day_unique").on(
+      table.organisationId,
+      table.relativeDays
+    )
+  })
+);
+
 export const communicationsRelations = relations(communications, ({ many, one }) => ({
   organisation: one(organisations, {
     fields: [communications.organisationId],
@@ -1205,3 +1381,9 @@ export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type MarketingWaitlistEntry = typeof marketingWaitlistEntries.$inferSelect;
 export type NewMarketingWaitlistEntry = typeof marketingWaitlistEntries.$inferInsert;
+export type AutomationJob = typeof automationJobs.$inferSelect;
+export type RecurringInvoiceSchedule = typeof recurringInvoiceSchedules.$inferSelect;
+export type RecurringInvoiceScheduleLineItem = typeof recurringInvoiceScheduleLineItems.$inferSelect;
+export type RecurringInvoiceOccurrence = typeof recurringInvoiceOccurrences.$inferSelect;
+export type OrganisationReminderSetting = typeof organisationReminderSettings.$inferSelect;
+export type ReminderStep = typeof reminderSteps.$inferSelect;

@@ -8,6 +8,7 @@ import { DatabaseModule } from "./database/database.module";
 import { HealthController } from "./health.controller";
 import { AuthModule } from "./modules/auth/auth.module";
 import { AuditLogModule } from "./modules/audit-log/audit-log.module";
+import { AutomationModule } from "./modules/automation/automation.module";
 import { BusinessProfileModule } from "./modules/business-profile/business-profile.module";
 import { CatalogueModule } from "./modules/catalogue/catalogue.module";
 import { CommunicationsModule } from "./modules/communications/communications.module";
@@ -36,6 +37,7 @@ import { TeamModule } from "./modules/team/team.module";
     DatabaseModule,
     AuthModule,
     AuditLogModule,
+    AutomationModule,
     BusinessProfileModule,
     CatalogueModule,
     CommunicationsModule,

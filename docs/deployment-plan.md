@@ -92,3 +92,7 @@ Final portfolio docs should include:
 - Vercel plus a separate API host adds CORS and cookie complexity but keeps Next.js deployment simple.
 - A single full-stack host could reduce domain complexity but may be less portfolio-standard for Next.js plus NestJS.
 - Paystack test mode is sufficient for MVP credibility without handling live money.
+
+## T022 cron + executor (2026-09-22)
+
+API runs as one Vercel Function; no workers/setInterval/BullMQ/Redis. `apps/api/vercel.json` registers `0 8 * * *` → `/internal/automation/run`. CRON_SECRET required in Vercel (Preview + Production); endpoint fails closed without it and never logs it. Local: `pnpm --filter @sme-invoicing/api automation:run [--as-of=YYYY-MM-DD]` (as-of dev/test only, blocked in production). Runner: Lagos date → materialize recurring/reminder/scheduled jobs (idempotent inserts) → reclaim stale running (>10m) → claim ≤25 via FOR UPDATE SKIP LOCKED → process each independently (claim committed before Resend call) → completed/skipped/retry/needs-attention. No PII in cron response/logs.

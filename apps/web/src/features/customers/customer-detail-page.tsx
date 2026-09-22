@@ -16,7 +16,7 @@ import { clearStoredSession } from "@/features/auth/session";
 import { formatMoney, InvoiceStatusBadge } from "@/features/invoices/invoice-ui";
 import { isApiRequestError } from "@/lib/api";
 
-import { archiveCustomer, getCustomer } from "./customers-api";
+import { archiveCustomer, getCustomer } from "./customers-api"; import { setCustomerReminderPreference } from "@/features/reminders/reminders-api";
 import { CustomerStatusBadge, formatDate, StatusPanel } from "./customer-ui";
 import type { CustomerDetailResponse } from "./types";
 import { canManageCustomers } from "./types";
@@ -199,7 +199,7 @@ export function CustomerDetailContent({
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <InvoiceHistoryPanel response={response} />
 
-        <aside className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5">
+        <aside className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"><div className="mb-4 rounded border p-3"><h3 className="text-sm font-semibold">Automatic payment reminders</h3><p className="text-xs">When organisation reminders are enabled, this customer will receive the configured sequence for unpaid invoices.</p>{canManage ? (<Button size="sm" onClick={() => { const next = !((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true); setCustomerReminderPreference(accessToken, customer.id, next).then(() => void loadCustomer()).catch((e) => setError(e instanceof Error ? e.message : "Could not update.")); }}>{((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "Turn off" : "Turn on"}</Button>) : (<p className="text-xs">{((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "On" : "Off"}</p>)}</div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Contact</h2>
           <dl className="mt-3 space-y-3">
             <DetailItem label="Email" value={customer.email} />
@@ -328,3 +328,5 @@ function DetailItem({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+

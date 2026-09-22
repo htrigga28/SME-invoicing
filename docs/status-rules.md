@@ -207,3 +207,7 @@ void > cancelled > paid > partially_paid > overdue > viewed > sent > draft
 ```
 
 Implementation should be explicit and deterministic, not dependent on enum sort order.
+
+## T022 state separation (2026-09-22)
+
+No new invoice statuses. Scheduled draft stays `draft` until executor issues it. Recurring schedule status (active/paused/completed/cancelled), automation-job status, and reminder communication status are separate machines. `sent` with failed email stays `sent`; never fake delivered. Partial success (issued but email unconfigured/uncertain) surfaces as automation needs-attention, not as invoice failure.

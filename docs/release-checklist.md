@@ -75,3 +75,12 @@ names, not secret values.
 - [ ] `invoice_email_idempotency_conflict` audit entries reviewed (should be
   empty; any entry is a local invariant violation to investigate).
 - [ ] Legacy refresh-body usage logs reviewed (should be empty by default).
+
+## T022 release (2026-09-22)
+
+- [ ] Apply migration 0019; verify automation/recurring/reminder tables + new invoice/customer columns
+- [ ] Set CRON_SECRET (Preview + Production, ≥32 chars, distinct per env); verify `/internal/automation/run` 401 without it, 200 with it
+- [ ] Verify Vercel cron registered (`0 8 * * *`); confirm no PII/secrets in executor response/logs
+- [ ] Smoke: schedule due today → run → exactly 1 invoice → rerun → no duplicate; overdue invoice + reminder due → run → 1 reminder → rerun → no duplicate; check Activity timeline
+- [ ] Confirm reminders OFF by default; enabling shows suggested steps (-3/+1/+7); opt-outs suppress
+- [ ] Live cron verification only if actually deployed; otherwise mark as manual release QA

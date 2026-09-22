@@ -736,3 +736,13 @@ Full audit logs are Owner/Admin only for MVP. Accountant operational history can
 ```
 
 `GET /audit-logs/:id` includes the same safe event fields plus `metadataFields`, a concise list of redacted key/value rows. The API never returns arbitrary raw metadata JSON, password or token material, provider subaccount codes, full account numbers, public invoice/receipt tokens, raw webhook/provider/refund payloads, or organisation IDs. Safe masked fields such as `accountNumberLast4` may remain visible.
+
+## T022 automation endpoints (2026-09-22)
+
+- `GET /recurring-invoices?status=` · `POST /recurring-invoices` · `GET/PATCH /recurring-invoices/:id` · `POST /recurring-invoices/:id/pause|resume|cancel` (owner/admin/accountant; viewer read-only)
+- `GET /reminder-settings` (all roles) · `POST /reminder-settings` + `POST/PATCH/DELETE /reminder-settings/steps/:id` (owner/admin only; accountant cannot change org defaults)
+- `POST/PATCH/DELETE /invoices/:id/schedule-send` (owner/admin/accountant; draft only; reschedule replaces pending job; manual send cancels job)
+- `PATCH /invoices/:id/reminder-preference` + `PATCH /customers/:id/reminder-preference` (owner/admin/accountant)
+- `GET /internal/automation/run` (CRON_SECRET Bearer, no session, no org param; returns {date,claimed,completed,skipped,needsAttention,failed} with no PII)
+
+Tenant isolation: every table/query org-scoped; runner derives ownership from stored jobs. Invoice activity timeline includes reminder sent/delivered/uncertain entries (no job IDs in primary UI).

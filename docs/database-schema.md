@@ -657,3 +657,15 @@ Audit logs are append-only and read-only through the T016 UI. API and CSV export
 - Voiding invoices should be allowed for correction/error cases and retained for audit.
 - Raw webhook events should be stored safely with sensitive fields redacted or encrypted where needed.
 - Audit logs should capture significant changes without storing secrets.
+
+## T022 — Recurring billing & reminder automation (2026-09-22)
+
+Africa/Lagos business-date semantics; one daily executor (Vercel Cron `0 8 * * *`, ~09:00 Lagos) via `GET /internal/automation/run` (CRON_SECRET, fail-closed, timing-safe Bearer check, no org ID from caller).
+
+Tables: `automation_jobs` (generic ledger, UNIQUE idempotencyKey, statuses pending/running/completed/failed/needs_attention/skipped/cancelled, claimToken/claimedAt lease 10m, SKIP LOCKED batch 25, max 3 attempts); `recurring_invoice_schedules` + `recurring_invoice_schedule_line_items` (snapshot, not live catalogue) + `recurring_invoice_occurrences` (UNIQUE schedule+date, second defense); `organisation_reminder_settings` (OFF by default) + `reminder_steps` (one per relativeDays, -30..+60); `customers.automaticRemindersEnabled` + `invoices.automaticRemindersEnabled` (default true) + `invoices.scheduledSend{Date,To,Cc,Subject}`.
+
+Recurrence anchor (no drift): weekly +7d; monthly/quarterly clamp to month length then return to anchor (Jan31→Feb28→Mar31); yearly preserves month/day (Feb29→Feb28 off-leap, back on leap). Resume advances to first occurrence on/after today; missed cycles skipped. End date completes schedule.
+
+Reminders: effective rule org.enabled AND customer.opt-in AND invoice.opt-in; balance resolved at send time (partial → remaining); paid/cancelled/voided/non-public skip; latest applicable overdue step only; stale pre-due skipped. Templates allow {{businessName,customerName,invoiceNumber,amountDue,dueDate,publicInvoiceUrl}} only; values escaped; unknown rejected. Purpose `payment_reminder` reuses communications table + Resend provider + webhook correlation; uncertain submission → job needs_attention, never a fresh send.
+
+Migration: `drizzle/0019_complex_jubilee.sql` (forward-only). Seed: active/paused/completed schedules, enabled reminder sequence, customer+invoice opt-outs, scheduled draft, completed + needs-attention jobs (no real email).

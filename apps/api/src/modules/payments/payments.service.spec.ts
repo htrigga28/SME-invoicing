@@ -85,7 +85,7 @@ function createInvoice(overrides: Partial<Invoice> = {}): Invoice {
     viewCount: 0,
     paidAt: null,
     cancelledAt: null,
-    voidedAt: null,
+    voidedAt: null, automaticRemindersEnabled: true, scheduledSendDate: null, scheduledSendTo: null, scheduledSendCc: null, scheduledSendSubject: null,
     createdByUserId: "user-1",
     createdAt: now,
     updatedAt: now,
@@ -181,7 +181,7 @@ function createCustomer() {
     phone: "+2348010000001",
     billingAddress: "14 Allen Avenue",
     createdByUserId: "user-1",
-    archivedAt: null,
+    archivedAt: null, automaticRemindersEnabled: true,
     createdAt: now,
     updatedAt: now
   };

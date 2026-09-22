@@ -417,3 +417,7 @@ Filter by deployment, route, status, and time. Summarize errors without copying 
 ## Launch record
 
 For each launch, record the commit, deployment IDs, migration filenames applied, commands run, smoke-test result, and rollback deployment IDs. Record variable names and status only—never values.
+
+## T022 cron + executor (2026-09-22)
+
+API runs as one Vercel Function; no workers/setInterval/BullMQ/Redis. `apps/api/vercel.json` registers `0 8 * * *` → `/internal/automation/run`. CRON_SECRET required in Vercel (Preview + Production); endpoint fails closed without it and never logs it. Local: `pnpm --filter @sme-invoicing/api automation:run [--as-of=YYYY-MM-DD]` (as-of dev/test only, blocked in production). Runner: Lagos date → materialize recurring/reminder/scheduled jobs (idempotent inserts) → reclaim stale running (>10m) → claim ≤25 via FOR UPDATE SKIP LOCKED → process each independently (claim committed before Resend call) → completed/skipped/retry/needs-attention. No PII in cron response/logs.
