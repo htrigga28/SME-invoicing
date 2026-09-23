@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { and, eq, lte, sql } from "drizzle-orm";
@@ -6,9 +6,10 @@ import { and, eq, lte, sql } from "drizzle-orm";
 import { businessDate } from "../../common/business-date";
 import { assertKoboAmount } from "../../common/money-limits";
 import { nextRecurrenceDate } from "../../common/recurrence";
-import { DatabaseService } from "../../database/database.service";
+import { DatabaseService, type AppDatabase } from "../../database/database.service";
 import {
   automationJobs,
+  auditLogs,
   businessProfiles,
   customers,
   invoiceLineItems,
@@ -22,7 +23,6 @@ import {
   reminderSteps,
   type AutomationJob
 } from "../../database/schema";
-import { AuditLogService } from "../audit-log/audit-log.service";
 import { CommunicationsService } from "../communications/communications.service";
 import { EmailUncertainError } from "../communications/email-provider";
 import { formatKoboToNairaText, renderReminderHtml, renderReminderTemplate } from "./reminder-template";
@@ -30,6 +30,9 @@ import { formatKoboToNairaText, renderReminderHtml, renderReminderTemplate } fro
 const CLAIM_BATCH_SIZE = 25;
 const CLAIM_LEASE_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const MAX_BATCHES_PER_RUN = 8;
+const RUN_BUDGET_MS = 60_000;
+type Transaction = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
 
 export type AutomationSummary = {
   date: string;
@@ -38,6 +41,9 @@ export type AutomationSummary = {
   skipped: number;
   needsAttention: number;
   failed: number;
+  pendingDue: number;
+  needsAttentionBacklog: number;
+  budgetExhausted: boolean;
 };
 
 function addDaysISO(dateOnly: string, days: number): string {
@@ -71,35 +77,62 @@ export class AutomationRunnerService {
   constructor(
     @Inject(DatabaseService) private readonly databaseService: DatabaseService,
     @Inject(ConfigService) private readonly configService: ConfigService,
-    @Inject(CommunicationsService) private readonly communicationsService: CommunicationsService,
-    @Inject(AuditLogService) private readonly auditLogService: AuditLogService
+    @Inject(CommunicationsService) private readonly communicationsService: CommunicationsService
   ) {}
 
   async run(asOfDate?: string): Promise<AutomationSummary> {
+    const deadline = Date.now() + RUN_BUDGET_MS;
     const date = asOfDate ?? businessDate();
     await this.materializeRecurringJobs(date);
     await this.materializeScheduledSendJobs(date);
     await this.materializeReminderJobs(date);
     await this.reclaimStaleJobs();
-    const claimed = await this.claimBatch(date);
+    let claimedCount = 0;
     let completed = 0;
     let skipped = 0;
     let needsAttention = 0;
     let failed = 0;
-    for (const job of claimed) {
-      try {
-        const outcome = await this.processJob(job, date);
-        if (outcome === "completed") completed += 1;
-        else if (outcome === "skipped") skipped += 1;
-        else if (outcome === "needs_attention") needsAttention += 1;
-        else failed += 1;
-      } catch (error) {
-        this.logger.warn(`Automation job ${job.id} failed: ${String(error)}`);
-        await this.markOutcome(job, "failed", error instanceof Error ? error.message.slice(0, 500) : "Job failed.");
-        failed += 1;
+    let batchCount = 0;
+    while (batchCount < MAX_BATCHES_PER_RUN && Date.now() < deadline) {
+      const claimed = await this.claimBatch(date);
+      if (claimed.length === 0) break;
+      batchCount += 1;
+      claimedCount += claimed.length;
+      for (const job of claimed) {
+        try {
+          const outcome = await this.processJob(job, date);
+          if (outcome === "completed") completed += 1;
+          else if (outcome === "skipped") skipped += 1;
+          else if (outcome === "needs_attention") needsAttention += 1;
+          else failed += 1;
+        } catch (error) {
+          this.logger.warn(`Automation job ${job.id} failed: ${String(error)}`);
+          if (await this.markOutcome(job, "failed", error instanceof Error ? error.message.slice(0, 500) : "Job failed.")) failed += 1;
+        }
       }
     }
-    return { date, claimed: claimed.length, completed, skipped, needsAttention, failed };
+    const pendingDue = await this.countPendingDue(date);
+    const [attentionRow] = await this.databaseService.db.select({ count: sql<number>`count(*)::int` })
+      .from(automationJobs).where(eq(automationJobs.status, "needs_attention"));
+    const needsAttentionBacklog = attentionRow?.count ?? 0;
+    const budgetExhausted = pendingDue > 0 && (batchCount >= MAX_BATCHES_PER_RUN || Date.now() >= deadline);
+    if (pendingDue > 0 || needsAttentionBacklog > 0) this.logger.warn(`Automation backlog: ${pendingDue} due pending, ${needsAttentionBacklog} need attention.`);
+    return { date, claimed: claimedCount, completed, skipped, needsAttention, failed, pendingDue, needsAttentionBacklog, budgetExhausted };
+  }
+
+  private async countPendingDue(date: string): Promise<number> {
+    const [row] = await this.databaseService.db.select({ count: sql<number>`count(*)::int` })
+      .from(automationJobs)
+      .where(and(eq(automationJobs.status, "pending"), lte(automationJobs.scheduledFor, date),
+        sql`(${automationJobs.nextAttemptAt} is null or ${automationJobs.nextAttemptAt} <= now())`));
+    return row?.count ?? 0;
+  }
+
+  private async ownsClaim(job: AutomationJob): Promise<boolean> {
+    const [owned] = await this.databaseService.db.select({ id: automationJobs.id }).from(automationJobs)
+      .where(and(eq(automationJobs.id, job.id), eq(automationJobs.claimToken, job.claimToken!), eq(automationJobs.status, "running")))
+      .limit(1);
+    return !!owned;
   }
 
   private async materializeRecurringJobs(date: string): Promise<void> {
@@ -139,7 +172,11 @@ export class AutomationRunnerService {
           maxAttempts: MAX_ATTEMPTS,
           payloadRedacted: { scheduleId: schedule.id, scheduledFor: schedule.nextIssueDate }
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: automationJobs.idempotencyKey,
+          set: { status: "pending", attemptCount: 0, claimToken: null, claimedAt: null, nextAttemptAt: null, lastError: null, completedAt: null, skippedAt: null, updatedAt: new Date() },
+          setWhere: eq(automationJobs.status, "cancelled")
+        });
     }
   }
 
@@ -163,7 +200,11 @@ export class AutomationRunnerService {
           maxAttempts: MAX_ATTEMPTS,
           payloadRedacted: { invoiceId: invoice!.id }
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: automationJobs.idempotencyKey,
+          set: { status: "pending", attemptCount: 0, claimToken: null, claimedAt: null, nextAttemptAt: null, lastError: null, completedAt: null, skippedAt: null, updatedAt: new Date() },
+          setWhere: eq(automationJobs.status, "cancelled")
+        });
     }
   }
 
@@ -226,7 +267,11 @@ export class AutomationRunnerService {
             maxAttempts: MAX_ATTEMPTS,
             payloadRedacted: { invoiceId: invoice!.id, relativeDays: latest.relativeDays, stepId: latest.id }
           })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: automationJobs.idempotencyKey,
+            set: { status: "pending", attemptCount: 0, claimToken: null, claimedAt: null, nextAttemptAt: null, lastError: null, completedAt: null, skippedAt: null, updatedAt: new Date() },
+            setWhere: eq(automationJobs.status, "cancelled")
+          });
       }
     }
   }
@@ -242,7 +287,7 @@ export class AutomationRunnerService {
     // Claim first, commit claim, perform side effect later in a new txn.
     // Raw SQL returns snake_case columns; map back to camelCase Drizzle shape.
     const result = await this.databaseService.db.execute(
-      sql`update automation_jobs set status = 'running', claim_token = ${randomUUID()}, claimed_at = now(), attempt_count = attempt_count + 1, updated_at = now() where id in (select id from automation_jobs where status = 'pending' and scheduled_for <= ${date} and (next_attempt_at is null or next_attempt_at <= now()) order by scheduled_for asc limit ${CLAIM_BATCH_SIZE} for update skip locked) returning *`
+      sql`update automation_jobs set status = 'running', claim_token = gen_random_uuid()::text, claimed_at = now(), attempt_count = attempt_count + 1, updated_at = now() where id in (select id from automation_jobs where status = 'pending' and scheduled_for <= ${date} and (next_attempt_at is null or next_attempt_at <= now()) order by scheduled_for asc limit ${CLAIM_BATCH_SIZE} for update skip locked) returning *`
     );
     const rows = ((result as unknown as { rows: Record<string, unknown>[] }).rows ?? []) as Record<string, unknown>[];
     return rows.map((r) => ({
@@ -287,16 +332,7 @@ export class AutomationRunnerService {
       await this.markOutcome(job, "skipped", "Schedule is no longer available.");
       return "skipped";
     }
-    if (schedule.status !== "active") {
-      await this.markOutcome(job, "skipped", `Schedule is ${schedule.status}.`);
-      await this.markOccurrence(job.organisationId, schedule.id, job.scheduledFor, "skipped", null);
-      return "skipped";
-    }
-    if (schedule.nextIssueDate !== job.scheduledFor) {
-      await this.markOutcome(job, "skipped", "Schedule advanced past this occurrence.");
-      return "skipped";
-    }
-    // Occurrence uniqueness is the second defense (UNIQUE schedule+date).
+    // A worker can crash after generation commits but before delivery or outcome update.
     const [existingOccurrence] = await this.databaseService.db
       .select()
       .from(recurringInvoiceOccurrences)
@@ -308,8 +344,23 @@ export class AutomationRunnerService {
       )
       .limit(1);
     if (existingOccurrence?.status === "generated" && existingOccurrence.invoiceId) {
+      if (schedule.autoSend && (schedule.status === "active" || schedule.status === "completed")) {
+        const [existingInvoice] = await this.databaseService.db.select().from(invoices)
+          .where(eq(invoices.id, existingOccurrence.invoiceId)).limit(1);
+        if (existingInvoice && (existingInvoice.status === "draft" || existingInvoice.status === "sent")) {
+          return this.autoSendGeneratedInvoice(schedule, existingInvoice, job);
+        }
+      }
       await this.markOutcome(job, "completed", null);
       return "completed";
+    }
+    if (schedule.status !== "active") {
+      await this.markOutcome(job, "skipped", `Schedule is ${schedule.status}.`);
+      return "skipped";
+    }
+    if (schedule.nextIssueDate !== job.scheduledFor) {
+      await this.markOutcome(job, "skipped", "Schedule advanced past this occurrence.");
+      return "skipped";
     }
     const [customer] = await this.databaseService.db
       .select()
@@ -318,7 +369,6 @@ export class AutomationRunnerService {
       .limit(1);
     if (!customer || customer.archivedAt) {
       await this.markOutcome(job, "needs_attention", "Customer is archived or missing.");
-      await this.markOccurrence(job.organisationId, schedule.id, job.scheduledFor, "failed", "Customer ineligible.");
       return "needs_attention";
     }
     const lineItems = await this.databaseService.db
@@ -330,33 +380,54 @@ export class AutomationRunnerService {
       return "needs_attention";
     }
     try {
-      const invoice = await this.createInvoiceFromSchedule(schedule, lineItems, job.scheduledFor, customer.id);
-      await this.markOccurrence(job.organisationId, schedule.id, job.scheduledFor, "generated", null, invoice!.id);
-      const nextDate = nextRecurrenceDate({
-        frequency: schedule.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
-        previousScheduledFor: job.scheduledFor,
-        anchorDay: schedule.anchorDay,
-        anchorMonth: schedule.anchorMonth
+      const result = await this.databaseService.db.transaction(async (tx) => {
+        // Lock the claim and schedule until the invoice, occurrence, and next date commit together.
+        const [owned] = await tx.select({ id: automationJobs.id }).from(automationJobs)
+          .where(and(eq(automationJobs.id, job.id), eq(automationJobs.claimToken, job.claimToken!), eq(automationJobs.status, "running")))
+          .for("update");
+        if (!owned) return { kind: "stale" as const };
+        const [current] = await tx.select().from(recurringInvoiceSchedules)
+          .where(eq(recurringInvoiceSchedules.id, schedule.id)).for("update");
+        if (!current || current.status !== "active" || current.nextIssueDate !== job.scheduledFor) return { kind: "stale" as const };
+        await tx.insert(recurringInvoiceOccurrences).values({
+          organisationId: job.organisationId, scheduleId: schedule.id, scheduledFor: job.scheduledFor, status: "pending"
+        }).onConflictDoNothing();
+        const [occurrence] = await tx.select().from(recurringInvoiceOccurrences)
+          .where(and(eq(recurringInvoiceOccurrences.scheduleId, schedule.id), eq(recurringInvoiceOccurrences.scheduledFor, job.scheduledFor)))
+          .for("update");
+        if (occurrence?.invoiceId) return { kind: "existing" as const, invoiceId: occurrence.invoiceId };
+        const invoice = await this.createInvoiceFromSchedule(tx, current, lineItems, job.scheduledFor, customer.id);
+        await tx.update(recurringInvoiceOccurrences).set({
+          status: "generated", invoiceId: invoice.id, generatedAt: new Date(), errorSummary: null, updatedAt: new Date()
+        }).where(eq(recurringInvoiceOccurrences.id, occurrence!.id));
+        const nextDate = nextRecurrenceDate({
+          frequency: current.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
+          previousScheduledFor: job.scheduledFor, anchorDay: current.anchorDay, anchorMonth: current.anchorMonth
+        });
+        await tx.update(recurringInvoiceSchedules).set(current.endDate && nextDate > current.endDate
+          ? { status: "completed", lastGeneratedAt: new Date(), lastInvoiceId: invoice.id, updatedAt: new Date() }
+          : { nextIssueDate: nextDate, lastGeneratedAt: new Date(), lastInvoiceId: invoice.id, lastError: null, updatedAt: new Date() })
+          .where(eq(recurringInvoiceSchedules.id, current.id));
+        await tx.insert(auditLogs).values({
+          organisationId: current.organisationId, actorUserId: null,
+          action: "recurring_invoice_generated", entityType: "invoice", entityId: invoice.id,
+          metadataRedacted: { scheduleId: current.id, scheduledFor: job.scheduledFor }
+        });
+        return { kind: "created" as const, invoice };
       });
-      if (schedule.endDate && nextDate > schedule.endDate) {
-        await this.databaseService.db
-          .update(recurringInvoiceSchedules)
-          .set({ status: "completed", lastGeneratedAt: new Date(), lastInvoiceId: invoice!.id, updatedAt: new Date() })
-          .where(eq(recurringInvoiceSchedules.id, schedule.id));
-      } else {
-        await this.databaseService.db
-          .update(recurringInvoiceSchedules)
-          .set({ nextIssueDate: nextDate, lastGeneratedAt: new Date(), lastInvoiceId: invoice!.id, lastError: null, updatedAt: new Date() })
-          .where(eq(recurringInvoiceSchedules.id, schedule.id));
+      if (result.kind === "stale") return "skipped";
+      if (result.kind === "existing") {
+        if (schedule.autoSend) {
+          const [existingInvoice] = await this.databaseService.db.select().from(invoices)
+            .where(eq(invoices.id, result.invoiceId)).limit(1);
+          if (existingInvoice && (existingInvoice.status === "draft" || existingInvoice.status === "sent")) {
+            return this.autoSendGeneratedInvoice(schedule, existingInvoice, job);
+          }
+        }
+        await this.markOutcome(job, "completed", null);
+        return "completed";
       }
-      await this.auditLogService.create({
-        organisationId: schedule.organisationId,
-        actorUserId: null,
-        action: "recurring_invoice_generated",
-        entityType: "invoice",
-        entityId: invoice!.id,
-        metadataRedacted: { scheduleId: schedule.id, scheduledFor: job.scheduledFor }
-      });
+      const invoice = result.invoice;
       if (schedule.autoSend) {
         return this.autoSendGeneratedInvoice(schedule, invoice, job);
       }
@@ -364,13 +435,13 @@ export class AutomationRunnerService {
       return "completed";
     } catch (error) {
       const message = error instanceof Error ? error.message.slice(0, 500) : "Generation failed.";
-      await this.markOccurrence(job.organisationId, schedule.id, job.scheduledFor, "failed", message);
       await this.markOutcome(job, "failed", message);
       return "failed";
     }
   }
 
   private async createInvoiceFromSchedule(
+    db: Transaction,
     schedule: typeof recurringInvoiceSchedules.$inferSelect,
     lineItems: (typeof recurringInvoiceScheduleLineItems.$inferSelect)[],
     issueDate: string,
@@ -384,9 +455,8 @@ export class AutomationRunnerService {
     const lineTotals = items.map((item) => assertKoboAmount(Math.round(item.quantity * item.unitPriceKobo), "Line total"));
     const subtotal = lineTotals.reduce((s, t) => assertKoboAmount(s + t, "Subtotal"), 0);
     const total = assertKoboAmount(subtotal - schedule.discountKobo + schedule.taxKobo, "Total");
-    const invoiceNumber = await this.nextInvoiceNumber(schedule.organisationId);
+    const invoiceNumber = await this.nextInvoiceNumber(db, schedule.organisationId);
     const publicToken = randomBytes(32).toString("hex");
-    const db = this.databaseService.db;
     const [invoice] = await db
       .insert(invoices)
       .values({
@@ -431,10 +501,10 @@ export class AutomationRunnerService {
     return invoice!;
   }
 
-  private async nextInvoiceNumber(organisationId: string): Promise<string> {
+  private async nextInvoiceNumber(db: Transaction, organisationId: string): Promise<string> {
     // Row-level lock on the org sequence so concurrent generators never collide.
-    const result = await this.databaseService.db.execute<{ next_number: number }>(
-      sql`insert into invoice_number_sequences (organisation_id, next_number) values (${organisationId}, 1) on conflict (organisation_id) do update set next_number = invoice_number_sequences.next_number + 1, updated_at = now() returning invoice_number_sequences.next_number - 1 as next_number`
+    const result = await db.execute<{ next_number: number }>(
+      sql`insert into invoice_number_sequences (organisation_id, next_number) values (${organisationId}, 2) on conflict (organisation_id) do update set next_number = invoice_number_sequences.next_number + 1, updated_at = now() returning invoice_number_sequences.next_number - 1 as next_number`
     );
     const rows = (result as unknown as { rows: { next_number: number }[] }).rows;
     const seq = Number(rows?.[0]?.next_number ?? 1);
@@ -445,14 +515,31 @@ export class AutomationRunnerService {
     schedule: typeof recurringInvoiceSchedules.$inferSelect,
     invoice: typeof invoices.$inferSelect,
     job: AutomationJob
-  ): Promise<"completed" | "needs_attention" | "failed"> {
+  ): Promise<"completed" | "needs_attention" | "failed" | "skipped"> {
     // Issue first (CAS draft->sent), then email through T021 infra.
-    const now = new Date();
-    const issued = await this.databaseService.db
-      .update(invoices)
-      .set({ status: "sent", publicAccessEnabled: true, sentAt: now, updatedAt: now })
-      .where(and(eq(invoices.id, invoice!.id), eq(invoices.status, "draft")))
-      .returning();
+    const issued = invoice.status === "sent" ? [invoice] : await this.databaseService.db.transaction(async (tx) => {
+      const [owned] = await tx.select({ id: automationJobs.id }).from(automationJobs)
+        .where(and(eq(automationJobs.id, job.id), eq(automationJobs.claimToken, job.claimToken!), eq(automationJobs.status, "running")))
+        .for("update");
+      if (!owned) return [];
+      const now = new Date();
+      const rows = await tx.update(invoices)
+        .set({ status: "sent", publicAccessEnabled: true, sentAt: now, updatedAt: now })
+        .where(and(eq(invoices.id, invoice.id), eq(invoices.status, "draft")))
+        .returning();
+      if (rows.length > 0) {
+        await tx.insert(invoiceStatusEvents).values({
+          organisationId: invoice.organisationId, invoiceId: invoice.id,
+          fromStatus: "draft", toStatus: "sent", reason: "recurring_auto_send"
+        });
+        await tx.insert(auditLogs).values({
+          organisationId: invoice.organisationId, actorUserId: null,
+          action: "invoice_sent", entityType: "invoice", entityId: invoice.id,
+          metadataRedacted: { source: "recurring_auto_send" }
+        });
+      }
+      return rows;
+    });
     if (issued.length === 0) {
       await this.markOutcome(job, "failed", "Generated invoice could not be issued.");
       return "failed";
@@ -469,10 +556,11 @@ export class AutomationRunnerService {
       .where(eq(customers.id, schedule.customerId))
       .limit(1);
     try {
+      if (!await this.ownsClaim(job)) return "skipped";
       const result = await this.communicationsService.sendInvoiceEmail(
         {
           organisationId: schedule.organisationId,
-          userId: schedule.createdByUserId ?? schedule.organisationId,
+          userId: schedule.createdByUserId,
           invoice: { id: invoice!.id, invoiceNumber: invoice!.invoiceNumber },
           customerId: schedule.customerId,
           content: {
@@ -540,21 +628,35 @@ export class AutomationRunnerService {
       await this.markOutcome(job, "needs_attention", "Customer is archived or missing.");
       return "needs_attention";
     }
-    const now = new Date();
-    const issued = await this.databaseService.db
-      .update(invoices)
-      .set({
-        status: "sent",
-        publicAccessEnabled: true,
-        sentAt: now,
-        scheduledSendDate: null,
-        scheduledSendTo: null,
-        scheduledSendCc: null,
-        scheduledSendSubject: null,
-        updatedAt: now
-      })
-      .where(and(eq(invoices.id, invoice!.id), eq(invoices.status, "draft")))
-      .returning();
+    const issued = await this.databaseService.db.transaction(async (tx) => {
+      const [owned] = await tx.select({ id: automationJobs.id }).from(automationJobs)
+        .where(and(eq(automationJobs.id, job.id), eq(automationJobs.claimToken, job.claimToken!), eq(automationJobs.status, "running")))
+        .for("update");
+      if (!owned) return [];
+      const now = new Date();
+      return tx.update(invoices)
+        .set({
+          status: "sent", publicAccessEnabled: true, sentAt: now,
+          scheduledSendDate: null, scheduledSendTo: null, scheduledSendCc: null,
+          scheduledSendSubject: null, updatedAt: now
+        })
+        .where(and(eq(invoices.id, invoice.id), eq(invoices.status, "draft"),
+          eq(invoices.scheduledSendDate, job.scheduledFor)))
+        .returning().then(async (rows) => {
+          if (rows.length > 0) {
+            await tx.insert(invoiceStatusEvents).values({
+              organisationId: invoice.organisationId, invoiceId: invoice.id,
+              fromStatus: "draft", toStatus: "sent", reason: "scheduled_send"
+            });
+            await tx.insert(auditLogs).values({
+              organisationId: invoice.organisationId, actorUserId: null,
+              action: "invoice_sent", entityType: "invoice", entityId: invoice.id,
+              metadataRedacted: { source: "scheduled_send" }
+            });
+          }
+          return rows;
+        });
+    });
     if (issued.length === 0) {
       await this.markOutcome(job, "skipped", "Invoice was sent or changed concurrently.");
       return "skipped";
@@ -566,10 +668,11 @@ export class AutomationRunnerService {
       .where(eq(businessProfiles.organisationId, invoice.organisationId))
       .limit(1);
     try {
+      if (!await this.ownsClaim(job)) return "skipped";
       const result = await this.communicationsService.sendInvoiceEmail(
         {
           organisationId: invoice.organisationId,
-          userId: invoice.createdByUserId ?? invoice.organisationId,
+          userId: invoice.createdByUserId,
           invoice: { id: invoice!.id, invoiceNumber: invoice!.invoiceNumber },
           customerId: invoice.customerId,
           content: {
@@ -592,14 +695,6 @@ export class AutomationRunnerService {
         await this.markOutcome(job, "needs_attention", "Email submission uncertain; kept for recovery.");
         return "needs_attention";
       }
-      await this.auditLogService.create({
-        organisationId: invoice.organisationId,
-        actorUserId: null,
-        action: "scheduled_send_completed",
-        entityType: "invoice",
-        entityId: invoice!.id,
-        metadataRedacted: {}
-      });
       await this.markOutcome(job, "completed", null);
       return "completed";
     } catch (error) {
@@ -694,10 +789,23 @@ export class AutomationRunnerService {
       return "failed";
     }
     try {
+      const [latestInvoice] = await this.databaseService.db.select({
+        status: invoices.status, balanceDueKobo: invoices.balanceDueKobo,
+        automaticRemindersEnabled: invoices.automaticRemindersEnabled,
+        publicAccessEnabled: invoices.publicAccessEnabled
+      }).from(invoices).where(eq(invoices.id, invoice.id)).limit(1);
+      const [latestSettings] = await this.databaseService.db.select({ enabled: organisationReminderSettings.enabled })
+        .from(organisationReminderSettings).where(eq(organisationReminderSettings.organisationId, job.organisationId)).limit(1);
+      if (!await this.ownsClaim(job) || !latestSettings?.enabled || !latestInvoice?.automaticRemindersEnabled ||
+          !latestInvoice.publicAccessEnabled || (latestInvoice.balanceDueKobo ?? 0) <= 0 ||
+          !["sent", "viewed", "overdue", "partially_paid"].includes(latestInvoice.status)) {
+        await this.markOutcome(job, "skipped", "Reminder eligibility changed before send.");
+        return "skipped";
+      }
       const result = await this.communicationsService.sendPaymentReminderEmail(
         {
           organisationId: job.organisationId,
-          userId: invoice.createdByUserId ?? job.organisationId,
+          userId: invoice.createdByUserId,
           invoice: { id: invoice!.id, invoiceNumber: invoice!.invoiceNumber },
           customerId: invoice.customerId,
           content: {
@@ -736,66 +844,28 @@ export class AutomationRunnerService {
     }
   }
 
-  private async markOccurrence(
-    organisationId: string,
-    scheduleId: string,
-    scheduledFor: string,
-    status: "pending" | "generated" | "failed" | "skipped",
-    errorSummary: string | null,
-    invoiceId?: string
-  ): Promise<void> {
-    await this.databaseService.db
-      .insert(recurringInvoiceOccurrences)
-      .values({ organisationId, scheduleId, scheduledFor, status, errorSummary, invoiceId: invoiceId ?? null, generatedAt: status === "generated" ? new Date() : null })
-      .onConflictDoUpdate({
-        target: [recurringInvoiceOccurrences.scheduleId, recurringInvoiceOccurrences.scheduledFor],
-        set: { status, errorSummary, invoiceId: invoiceId ?? null, generatedAt: status === "generated" ? new Date() : null, updatedAt: new Date() }
-      });
-  }
-
-  private async markOutcome(job: AutomationJob, status: "completed" | "skipped" | "failed" | "needs_attention", lastError: string | null): Promise<void> {
+  private async markOutcome(job: AutomationJob, status: "completed" | "skipped" | "failed" | "needs_attention", lastError: string | null): Promise<boolean> {
     const now = new Date();
     const attemptCount = job.attemptCount ?? 1;
-    if (status === "completed" || status === "skipped") {
-      await this.databaseService.db
-        .update(automationJobs)
-        .set({
-          status,
-          lastError: lastError?.slice(0, 500) ?? null,
-          completedAt: status === "completed" ? now : null,
-          skippedAt: status === "skipped" ? now : null,
-          claimToken: null,
-          claimedAt: null,
-          updatedAt: now
-        })
-        .where(eq(automationJobs.id, job.id));
-      return;
-    }
-    if (status === "needs_attention") {
-      await this.databaseService.db
-        .update(automationJobs)
-        .set({ status: "needs_attention", lastError: lastError?.slice(0, 500) ?? null, claimToken: null, claimedAt: null, updatedAt: now })
-        .where(eq(automationJobs.id, job.id));
-      return;
-    }
-    if (attemptCount >= (job.maxAttempts ?? MAX_ATTEMPTS)) {
-      await this.databaseService.db
-        .update(automationJobs)
-        .set({ status: "needs_attention", lastError: lastError?.slice(0, 500) ?? null, claimToken: null, claimedAt: null, updatedAt: now })
-        .where(eq(automationJobs.id, job.id));
-      return;
-    }
-    await this.databaseService.db
+    const nextStatus = status === "failed"
+      ? attemptCount >= (job.maxAttempts ?? MAX_ATTEMPTS) ? "needs_attention" : "pending"
+      : status;
+    const updated = await this.databaseService.db
       .update(automationJobs)
       .set({
-        status: "pending",
+        status: nextStatus,
         lastError: lastError?.slice(0, 500) ?? null,
-        nextAttemptAt: new Date(Date.now() + 15 * 60 * 1000 * attemptCount),
+        nextAttemptAt: nextStatus === "pending" ? new Date(Date.now() + 15 * 60 * 1000 * attemptCount) : null,
+        completedAt: nextStatus === "completed" ? now : null,
+        skippedAt: nextStatus === "skipped" ? now : null,
         claimToken: null,
         claimedAt: null,
         updatedAt: now
       })
-      .where(eq(automationJobs.id, job.id));
+      .where(and(eq(automationJobs.id, job.id), eq(automationJobs.status, "running"), eq(automationJobs.claimToken, job.claimToken!)))
+      .returning({ id: automationJobs.id });
+    if (updated.length === 0) this.logger.warn(`Automation job ${job.id} lost its claim before outcome ${status}.`);
+    return updated.length > 0;
   }
 }
 

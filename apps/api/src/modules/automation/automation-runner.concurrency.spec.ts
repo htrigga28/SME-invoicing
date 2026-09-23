@@ -11,9 +11,9 @@ import {
   recurringInvoiceOccurrences,
   recurringInvoiceScheduleLineItems,
   recurringInvoiceSchedules,
-  users
+  users,
+  type AutomationJob
 } from "../../database/schema";
-import { AuditLogService } from "../audit-log/audit-log.service";
 import { AutomationRunnerService } from "./automation-runner.service";
 import {
   requiredRow,
@@ -41,8 +41,7 @@ function runnerWithComms(communications: unknown) {
   return new AutomationRunnerService(
     databaseService(),
     configStub(),
-    communications as never,
-    { create: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService
+    communications as never
   );
 }
 
@@ -121,6 +120,89 @@ async function seedSchedule(orgId: string, customerId: string, overrides: Record
 }
 
 describe("automation runner idempotency", () => {
+  it("does not let a stale claim overwrite a reclaimed job", async () => {
+    const { organisation } = await seedOrg();
+    const [job] = await db.insert(automationJobs).values({
+      organisationId: organisation.id, kind: "unknown", resourceType: "invoice",
+      resourceId: organisation.id, scheduledFor: "2026-09-30",
+      idempotencyKey: `fence:${organisation.id}`, status: "pending"
+    }).returning();
+    const runner = runnerWithComms(noEmailComms) as unknown as {
+      claimBatch(date: string): Promise<AutomationJob[]>;
+      markOutcome(job: AutomationJob, status: "completed", error: null): Promise<boolean>;
+    };
+    const [first] = await runner.claimBatch("2026-09-30");
+    await db.update(automationJobs).set({ status: "pending", claimToken: null, claimedAt: null })
+      .where(eq(automationJobs.id, job!.id));
+    const [second] = await runner.claimBatch("2026-09-30");
+    expect(first!.claimToken).not.toBe(second!.claimToken);
+    expect(await runner.markOutcome(second!, "completed", null)).toBe(true);
+    expect(await runner.markOutcome(first!, "completed", null)).toBe(false);
+    const [persisted] = await db.select().from(automationJobs).where(eq(automationJobs.id, job!.id));
+    expect(persisted!.status).toBe("completed");
+  });
+
+  it("reactivates a cancelled recurring job for the same date", async () => {
+    const { organisation, customer } = await seedOrg();
+    const schedule = await seedSchedule(organisation.id, customer.id, {
+      status: "paused", startDate: "2026-10-20", nextIssueDate: "2026-10-20"
+    });
+    const [job] = await db.insert(automationJobs).values({
+      organisationId: organisation.id, kind: "recurring_invoice_generate",
+      resourceType: "recurring_schedule", resourceId: schedule.id,
+      scheduledFor: "2026-10-20", idempotencyKey: `recurring:${schedule.id}:2026-10-20`,
+      status: "cancelled", attemptCount: 2
+    }).returning();
+    await db.update(recurringInvoiceSchedules).set({ status: "active" })
+      .where(eq(recurringInvoiceSchedules.id, schedule.id));
+    const summary = await runnerWithComms(noEmailComms).run("2026-10-20");
+    expect(summary.completed).toBeGreaterThanOrEqual(1);
+    const [rearmed] = await db.select().from(automationJobs).where(eq(automationJobs.id, job!.id));
+    expect(rearmed!.status).toBe("completed");
+    expect(rearmed!.attemptCount).toBe(1);
+  });
+
+  it("drains more than one claim batch", async () => {
+    const { organisation } = await seedOrg();
+    await db.insert(automationJobs).values(Array.from({ length: 27 }, (_, index) => ({
+      organisationId: organisation.id, kind: "unknown", resourceType: "invoice",
+      resourceId: organisation.id, scheduledFor: "2026-09-30",
+      idempotencyKey: `batch:${organisation.id}:${index}`, status: "pending"
+    })));
+    const summary = await runnerWithComms(noEmailComms).run("2026-09-30");
+    expect(summary.claimed).toBeGreaterThanOrEqual(27);
+    expect(summary.pendingDue).toBe(0);
+  });
+
+  it("does not issue a scheduled invoice after cancellation wins", async () => {
+    const { organisation, customer } = await seedOrg();
+    const [invoice] = await db.insert(invoices).values({
+      organisationId: organisation.id, customerId: customer.id,
+      invoiceNumber: `CANCEL-${Date.now()}`, publicToken: `cancel-${Date.now()}`,
+      status: "draft", currency: "NGN", issueDate: "2026-09-20", dueDate: "2026-10-20",
+      subtotalKobo: 1000, totalKobo: 1000, balanceDueKobo: 1000,
+      scheduledSendDate: "2026-09-30", scheduledSendTo: [customer.email]
+    }).returning();
+    const [job] = await db.insert(automationJobs).values({
+      organisationId: organisation.id, kind: "invoice_scheduled_send", resourceType: "invoice",
+      resourceId: invoice!.id, scheduledFor: "2026-09-30",
+      idempotencyKey: `scheduled:${invoice!.id}:2026-09-30`, status: "pending"
+    }).returning();
+    const comms = { sendInvoiceEmail: jest.fn(), sendPaymentReminderEmail: jest.fn() };
+    const runner = runnerWithComms(comms) as unknown as {
+      claimBatch(date: string): Promise<AutomationJob[]>;
+      processScheduledSend(job: AutomationJob): Promise<string>;
+    };
+    const [claimed] = await runner.claimBatch("2026-09-30");
+    await db.update(invoices).set({ scheduledSendDate: null }).where(eq(invoices.id, invoice!.id));
+    await db.update(automationJobs).set({ status: "cancelled", claimToken: null, claimedAt: null })
+      .where(eq(automationJobs.id, job!.id));
+    expect(await runner.processScheduledSend(claimed!)).toBe("skipped");
+    const [persisted] = await db.select().from(invoices).where(eq(invoices.id, invoice!.id));
+    expect(persisted!.status).toBe("draft");
+    expect(comms.sendInvoiceEmail).not.toHaveBeenCalled();
+  });
+
   it("generates exactly one invoice for a due schedule across duplicate runs", async () => {
     const { organisation, customer } = await seedOrg();
     const schedule = await seedSchedule(organisation.id, customer.id);
