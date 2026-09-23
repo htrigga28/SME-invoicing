@@ -31,6 +31,7 @@ import type { ActiveOrganisationContext } from "../../common/types/request-conte
 import { assertInvoiceQuantity, assertKoboAmount } from "../../common/money-limits";
 import { DatabaseService } from "../../database/database.service";
 import {
+  automationJobs,
   businessProfiles,
   auditLogs,
   customers,
@@ -911,6 +912,10 @@ export class InvoicesService {
       metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber },
       patch: {
         publicAccessEnabled: true,
+        scheduledSendDate: null,
+        scheduledSendTo: null,
+        scheduledSendCc: null,
+        scheduledSendSubject: null,
         sentAt,
         status: "sent",
         updatedAt: sentAt
@@ -1502,6 +1507,12 @@ export class InvoicesService {
         }
 
         throw new Error("Invoice transition failed.");
+      }
+
+      if (input.action === "invoice_sent") {
+        await tx.update(automationJobs)
+          .set({ status: "cancelled", claimToken: null, skippedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(automationJobs.organisationId, context.activeOrganisation.id), eq(automationJobs.resourceId, invoice.id), eq(automationJobs.kind, "invoice_scheduled_send"), inArray(automationJobs.status, ["pending", "running"])));
       }
 
       await tx.insert(invoiceStatusEvents).values({

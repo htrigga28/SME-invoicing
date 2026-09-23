@@ -9,7 +9,8 @@ const productionConfig = {
   FRONTEND_APP_URL: "https://app.example.test",
   MARKETING_SITE_URL: "https://www.example.test",
   API_PUBLIC_URL: "https://api.example.test",
-  CORS_ORIGINS: "https://app.example.test,https://www.example.test"
+  CORS_ORIGINS: "https://app.example.test,https://www.example.test",
+  CRON_SECRET: "cron-production-secret-32-characters-minimum"
 };
 
 describe("validateEnv", () => {
@@ -33,6 +34,12 @@ describe("validateEnv", () => {
         JWT_ACCESS_SECRET: "dev-access-secret-change-me"
       })
     ).toThrow(/Development JWT secrets/);
+  });
+
+  it("requires a strong production cron secret", () => {
+    expect(() => validateEnv({ ...productionConfig, CRON_SECRET: undefined })).toThrow(/CRON_SECRET/);
+    expect(() => validateEnv({ ...productionConfig, CRON_SECRET: "too-short" })).toThrow(/CRON_SECRET/);
+    expect(() => validateEnv({ ...productionConfig, CRON_SECRET: "dev-placeholder-secret-that-is-long-enough" })).toThrow(/CRON_SECRET/);
   });
 
   it("rejects localhost CORS origins in production", () => {

@@ -148,7 +148,7 @@ export async function startTestPostgres(): Promise<TestPostgres> {
   const port = await findFreePort();
 
   try {
-    await execFileAsync(binary("initdb"), ["-D", databaseDir, "-U", "postgres", "--auth=trust"]);
+    await execFileAsync(binary("initdb"), ["-D", databaseDir, "-U", "postgres", "--auth=trust", "--encoding=UTF8"]);
     await runControlBinary(binary("pg_ctl"), [
       "-D",
       databaseDir,

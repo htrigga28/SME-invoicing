@@ -40,11 +40,11 @@ function configStub() {
   } as unknown as ConfigService;
 }
 
-function communicationsService() {
+function communicationsService(provider: unknown = {}) {
   return new CommunicationsService(
     databaseService(),
     configStub(),
-    {} as never,
+    provider as never,
     { create: auditCreate } as unknown as AuditLogService
   );
 }
@@ -200,6 +200,56 @@ beforeAll(async () => {
   pool = await startApiTestPool();
   db = pool.db;
   databaseService = pool.databaseService;
+});
+
+describe("automation communication persistence (real Postgres)", () => {
+  it.each(["scheduled_send", "recurring_send", "payment_reminder"])(
+    "stores a bounded key and nullable system actor before %s provider submission",
+    async (purpose) => {
+      const { invoice, organisation } = await seedDeliveryFixture({
+        status: "accepted",
+        recipientEmails: ["accounts@northstar.example"]
+      });
+      const logicalKey = `auto:${purpose}:${invoice.id}:2026-09-30`;
+      const sendEmail = jest.fn(async (request: { idempotencyKey: string }) => {
+        const [stored] = await db.select().from(communications)
+          .where(eq(communications.providerIdempotencyKey, request.idempotencyKey)).limit(1);
+        expect(stored).toBeDefined();
+        expect(stored!.createdByUserId).toBeNull();
+        expect(request.idempotencyKey.length).toBeLessThanOrEqual(36);
+        return { providerMessageId: `resend-${purpose}` };
+      });
+      const service = communicationsService({
+        isConfigured: () => true,
+        getFromEmail: () => "billing@example.test",
+        sendEmail
+      });
+      const content = {
+        customerEmail: "accounts@northstar.example",
+        customerName: "Northstar",
+        businessName: "Lumina",
+        invoiceNumber: invoice.invoiceNumber,
+        amountDueKobo: invoice.balanceDueKobo,
+        dueDate: invoice.dueDate,
+        publicUrl: "https://app.example.test/invoice/test",
+        to: ["accounts@northstar.example"],
+        cc: []
+      };
+      const base = {
+        organisationId: organisation.id,
+        userId: null,
+        invoice: { id: invoice.id, invoiceNumber: invoice.invoiceNumber },
+        customerId: invoice.customerId,
+        content
+      };
+      if (purpose === "payment_reminder") {
+        await service.sendPaymentReminderEmail({ ...base, subject: "Reminder", htmlContent: "<p>Reminder</p>", textContent: "Reminder" }, { idempotencyKey: logicalKey });
+      } else {
+        await service.sendInvoiceEmail(base, { idempotencyKey: logicalKey, purpose });
+      }
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+    }
+  );
 });
 
 afterAll(async () => {

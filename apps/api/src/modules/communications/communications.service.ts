@@ -329,7 +329,7 @@ export class CommunicationsService {
   async sendInvoiceEmail(
     input: {
       organisationId: string;
-      userId: string;
+      userId: string | null;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
       content?: SendInvoiceEmailInput;
@@ -419,7 +419,7 @@ export class CommunicationsService {
     }
 
     const claimToken = options?.claimToken ?? randomUUID();
-    const idempotencyKey = options?.idempotencyKey ?? randomUUID();
+    const idempotencyKey = this.boundedIdempotencyKey(options?.idempotencyKey ?? randomUUID());
     const idempotencyExpiresAt = new Date(Date.now() + RESEND_IDEMPOTENCY_WINDOW_MS);
     const communicationId = options?.communication?.id ?? randomUUID();
     snapshot.correlationId = communicationId;
@@ -599,7 +599,7 @@ export class CommunicationsService {
   async sendPaymentReminderEmail(
     input: {
       organisationId: string;
-      userId: string;
+      userId: string | null;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
       content: SendInvoiceEmailInput;
@@ -640,7 +640,7 @@ export class CommunicationsService {
     };
 
     const claimToken = options?.claimToken ?? randomUUID();
-    const idempotencyKey = options?.idempotencyKey ?? randomUUID();
+    const idempotencyKey = this.boundedIdempotencyKey(options?.idempotencyKey ?? randomUUID());
     const idempotencyExpiresAt = new Date(Date.now() + RESEND_IDEMPOTENCY_WINDOW_MS);
     const communicationId = randomUUID();
     snapshot.correlationId = communicationId;
@@ -802,7 +802,7 @@ export class CommunicationsService {
   private async createPendingCommunication(
     input: {
       organisationId: string;
-      userId: string;
+      userId: string | null;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
       content?: SendInvoiceEmailInput;
@@ -867,6 +867,12 @@ export class CommunicationsService {
 
       return created;
     });
+  }
+
+  private boundedIdempotencyKey(key: string): string {
+    // Automation ledger keys can exceed the 36-character DB column. A stable
+    // 128-bit digest preserves retry identity in both Postgres and Resend.
+    return key.length <= 36 ? key : createHash("sha256").update(key).digest("hex").slice(0, 32);
   }
 
   private retryClaimLeaseMs(): number {

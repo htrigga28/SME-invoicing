@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { DatabaseService } from "../../database/database.service";
 import {
+  auditLogs,
   customers,
   invoices,
   organisationReminderSettings,
@@ -81,16 +82,20 @@ export class ReminderSettingsService {
     const orgId = context.activeOrganisation.id;
     const steps = dto.steps ?? SUGGESTED_STEPS;
     validateSteps(steps);
-    await this.databaseService.db
+    if (dto.enabled && steps.filter((step) => step.enabled ?? true).length === 0) {
+      throw new BadRequestException("Enable at least one reminder step before turning on reminders.");
+    }
+    await this.databaseService.db.transaction(async (tx) => {
+    await tx
       .insert(organisationReminderSettings)
       .values({ organisationId: orgId, enabled: dto.enabled, updatedByUserId: context.user.id })
       .onConflictDoUpdate({
         target: organisationReminderSettings.organisationId,
         set: { enabled: dto.enabled, updatedByUserId: context.user.id, updatedAt: new Date() }
       });
-    await this.databaseService.db.delete(reminderSteps).where(eq(reminderSteps.organisationId, orgId));
+    await tx.delete(reminderSteps).where(eq(reminderSteps.organisationId, orgId));
     if (steps.length > 0) {
-      await this.databaseService.db.insert(reminderSteps).values(
+      await tx.insert(reminderSteps).values(
         steps.map((step, index) => ({
           organisationId: orgId,
           relativeDays: step.relativeDays,
@@ -101,13 +106,14 @@ export class ReminderSettingsService {
         }))
       );
     }
-    await this.auditLogService.create({
+    await tx.insert(auditLogs).values({
       organisationId: orgId,
       actorUserId: context.user.id,
       action: dto.enabled ? "reminder_settings_enabled" : "reminder_settings_disabled",
       entityType: "organisation",
       entityId: orgId,
       metadataRedacted: { stepCount: steps.length }
+    });
     });
     return this.getSettings(orgId);
   }

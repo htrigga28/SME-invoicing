@@ -50,7 +50,8 @@ export function validateEnv(config: Record<string, unknown>) {
     JWT_ACCESS_SECRET: parsed.JWT_ACCESS_SECRET,
     JWT_REFRESH_SECRET: parsed.JWT_REFRESH_SECRET,
     MARKETING_SITE_URL: parsed.MARKETING_SITE_URL,
-    PAYSTACK_SECRET_KEY: parsed.PAYSTACK_SECRET_KEY
+    PAYSTACK_SECRET_KEY: parsed.PAYSTACK_SECRET_KEY,
+    CRON_SECRET: parsed.CRON_SECRET
   };
   const missing = Object.entries(requiredProductionValues)
     .filter(([, value]) => !value)
@@ -58,6 +59,10 @@ export function validateEnv(config: Record<string, unknown>) {
 
   if (missing.length > 0) {
     throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
+  }
+
+  if (parsed.CRON_SECRET!.length < 32 || /^(dev|test|example|placeholder|change.?me)/i.test(parsed.CRON_SECRET!)) {
+    throw new Error("CRON_SECRET must be at least 32 characters and cannot be a development placeholder in production.");
   }
 
   const corsOrigins = parsed.CORS_ORIGINS.split(",")
