@@ -38,6 +38,14 @@ describe("authenticated navigation", () => {
     }
   });
 
+  it("shows read-only reminder settings to every authenticated role", () => {
+    for (const role of ["owner", "admin", "accountant", "viewer"] as const) {
+      expect(getNavigationItems(role)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ href: "/settings/reminders" })])
+      );
+    }
+  });
+
   it("groups payment setup under Settings instead of receivables/operations", () => {
     const sections = getNavigationSections("owner");
     const receivables = sections.find((section) => section.label === "Receivables");

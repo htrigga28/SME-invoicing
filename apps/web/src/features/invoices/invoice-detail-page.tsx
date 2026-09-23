@@ -533,7 +533,7 @@ export function InvoiceDetailContent({
           tone="warning"
         />
       ) : null}
-      <InvoiceAutomationPanel accessToken={accessToken} invoice={invoice as unknown as { id: string; status: string; scheduledSendDate?: string | null; automaticRemindersEnabled?: boolean }} canManage={canManageInvoices(role)} onChanged={() => { void loadInvoice(); void loadActivity(); }} />
+      <InvoiceAutomationPanel accessToken={accessToken} invoice={invoice} canManage={canManageInvoices(role)} onChanged={() => { void loadInvoice(); void loadActivity(); }} />
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">

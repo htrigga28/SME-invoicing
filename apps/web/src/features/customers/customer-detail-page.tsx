@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button, LinkButton } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DataTable,
@@ -199,7 +200,7 @@ export function CustomerDetailContent({
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <InvoiceHistoryPanel response={response} />
 
-        <aside className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"><div className="mb-4 rounded border p-3"><h3 className="text-sm font-semibold">Automatic payment reminders</h3><p className="text-xs">When organisation reminders are enabled, this customer will receive the configured sequence for unpaid invoices.</p>{canManage ? (<Button size="sm" onClick={() => { const next = !((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true); setCustomerReminderPreference(accessToken, customer.id, next).then(() => void loadCustomer()).catch((e) => setError(e instanceof Error ? e.message : "Could not update.")); }}>{((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "Turn off" : "Turn on"}</Button>) : (<p className="text-xs">{((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "On" : "Off"}</p>)}</div>
+        <aside className="rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface)] p-5"><div className="mb-5 space-y-3 border-b border-[var(--border-subtle)] pb-5"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Payment reminders</h3><StatusBadge tone={((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "success" : "neutral"}>{((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "On" : "Off"}</StatusBadge></div><p className="text-xs text-[var(--text-secondary)]">When organisation reminders are enabled, this customer receives the configured sequence for unpaid invoices.</p>{canManage && <Button size="sm" variant="secondary" onClick={() => { const next = !((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true); setCustomerReminderPreference(accessToken, customer.id, next).then(() => void loadCustomer()).catch((e) => setError(e instanceof Error ? e.message : "Could not update.")); }}>{((customer as unknown as { automaticRemindersEnabled?: boolean }).automaticRemindersEnabled ?? true) ? "Turn off" : "Turn on"}</Button>}</div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Contact</h2>
           <dl className="mt-3 space-y-3">
             <DetailItem label="Email" value={customer.email} />

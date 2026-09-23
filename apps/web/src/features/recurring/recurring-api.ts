@@ -33,6 +33,10 @@ export function createRecurring(accessToken: string, input: CreateRecurringInput
   return apiRequest("/recurring-invoices", { method: "POST", accessToken, body: input });
 }
 
+export function updateRecurring(accessToken: string, id: string, input: Omit<CreateRecurringInput, "customerId" | "startDate">) {
+  return apiRequest(`/recurring-invoices/${encodeURIComponent(id)}`, { method: "PATCH", accessToken, body: input });
+}
+
 export function pauseRecurring(accessToken: string, id: string) {
   return apiRequest(`/recurring-invoices/${encodeURIComponent(id)}/pause`, { method: "POST", accessToken });
 }

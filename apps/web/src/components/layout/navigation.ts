@@ -63,8 +63,7 @@ const settingsRoutes: AppRoute[] = [
     href: "/settings/reminders",
     icon: "settings",
     label: "Payment reminders",
-    status: "available",
-    allowedRoles: ["owner", "admin"]
+    status: "available"
   },
   {
     href: "/settings/team",
