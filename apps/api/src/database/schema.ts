@@ -1164,6 +1164,7 @@ export const recurringInvoiceOccurrences = pgTable(
       table.scheduleId,
       table.scheduledFor
     ),
+    invoiceUnique: uniqueIndex("recurring_occurrences_invoice_id_unique").on(table.invoiceId),
     organisationIndex: index("recurring_occurrences_org_idx").on(table.organisationId)
   })
 );

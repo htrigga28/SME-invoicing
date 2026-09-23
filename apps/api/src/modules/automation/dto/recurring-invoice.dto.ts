@@ -4,19 +4,29 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
-  IsDateString,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Max,
   MaxLength,
   Min,
-  ValidateNested
+  ValidateNested,
+  ValidateBy
 } from "class-validator";
 
 import { MAX_KOBO } from "../../../common/money-limits";
+import { isValidBusinessDate } from "../../../common/business-date";
+
+const IsBusinessDate = () => ValidateBy({
+  name: "isBusinessDate",
+  validator: {
+    validate: (value: unknown) => typeof value === "string" && isValidBusinessDate(value),
+    defaultMessage: () => "Date must be a valid YYYY-MM-DD business date."
+  }
+});
 
 export class RecurringLineItemDto {
   @ApiPropertyOptional()
@@ -31,6 +41,8 @@ export class RecurringLineItemDto {
 
   @ApiProperty()
   @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
   quantity!: number;
 
   @ApiProperty()
@@ -52,7 +64,7 @@ export class CreateRecurringInvoiceDto {
   customerId!: string;
 
   @ApiProperty({ example: "2026-09-30" })
-  @IsDateString()
+  @IsBusinessDate()
   startDate!: string;
 
   @ApiProperty({ enum: ["weekly", "monthly", "quarterly", "yearly"] })
@@ -61,7 +73,7 @@ export class CreateRecurringInvoiceDto {
 
   @ApiPropertyOptional({ example: "2027-09-30" })
   @IsOptional()
-  @IsDateString()
+  @IsBusinessDate()
   endDate?: string | null;
 
   @ApiPropertyOptional({ example: 14 })
@@ -145,7 +157,7 @@ export class UpdateRecurringInvoiceDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsDateString()
+  @IsBusinessDate()
   endDate?: string | null;
 
   @ApiPropertyOptional()
