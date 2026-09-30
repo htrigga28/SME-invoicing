@@ -24,7 +24,7 @@ This record covers the principal engineer findings for PR29 at commit `855eaf2f0
 | Reminder and invoice automation presentation | Use Lumina controls, status styles, error states, confirmations, and scheduling context. | UI interaction tests and browser checks. |
 | Fixed start date; kobo input; missing item controls | Use the Lagos business date. Accept naira values and convert at the API boundary. Support item removal and required recipient edits. | Form tests for amounts, dates, items, and recipients. |
 | Mobile layout | Test real Next pages at 375, 768, 1024, and 1440 pixels with isolated API fixtures. Keep screenshots separate from provider evidence. | Browser results are recorded below. |
-| New-code duplication | Share invoice sequence, totals, transitions, job reset values, and provider submission/persistence. Use mapped update DTOs to retain the create validators without copying them. Do not suppress or exclude code from the quality gate. | The current remote Sonar check must confirm the result. |
+| New-code duplication | Share invoice sequence, totals, transitions, job reset values, and provider submission/persistence. Use mapped update DTOs to retain the create validators without copying them. Do not suppress or exclude code from the quality gate. | A new SonarCloud analysis is required. The last analysis covers the original reviewed commit, not these changes. |
 
 ## Independent Review
 
@@ -41,13 +41,25 @@ This record covers the principal engineer findings for PR29 at commit `855eaf2f0
 - Browser QA passed all 24 checks at 375, 768, 1024, and 1440 pixels. These checks use real Next pages and isolated API fixtures.
 - Independent review found no remaining P0, P1, or P2 source finding after the fixes.
 - Screenshots: [mobile recurring form](lumina-v2/pr29-qa/recurring-form-mobile.png), [desktop reminders](lumina-v2/pr29-qa/reminders-desktop.png), [desktop recurring detail](lumina-v2/pr29-qa/recurring-detail-desktop.png).
-- Remote CI, deployment checks, and Sonar results must be read back after push.
+- GitHub CI and all three Vercel deployments passed for code commit `6ba97e9`. The PR records the checks for the final documentation commit.
+- SonarCloud still reports the 22 September analysis for `855eaf2f`. It has not produced a check for the repaired commits. The last analysis reports 4.0% new-code duplication against a 3% limit. This stale result cannot confirm the repair. A check rerun request returned `404`; no local Sonar credential is available.
+
+## Isolated Preview Smoke Test
+
+The API deployment for `6ba97e9` passed the test on 30 September. The branch uses only the database `lumina_pr29_review_20260930`, migrated through `0020`. The fixture has a disabled payment account record for the onboarding guard. It makes no payment provider call.
+
+- `/health` and `/health/ready` returned `200`; readiness checked the database.
+- The executor rejected missing and incorrect cron credentials with `401`.
+- A recurring schedule created one invoice with one line item and number `INV-000001`.
+- A second run claimed no jobs. It kept the same occurrence and invoice.
+- A scheduled send issued the invoice and reported `needs_attention` because email is not configured. It did not report delivery success.
+- A due reminder also reported `needs_attention`. Repeated runs did not retry either job or create a communication.
 
 ## Live Environment Limits
 
 The Preview API has a cron secret, but its Vercel environment does not have the Resend variables. Production has email configuration. On 30 September 2026, the Production API returned `200` for `/health`, but `404` for `/health/ready` and `/internal/automation/run`. It runs an earlier release and cannot execute T022.
 
-The user permits testing in Production. This repair does not promote unmerged PR code to Production. Live recurring generation, scheduled email, reminder email, and repeated-run checks against the repaired deployment remain required before merge. An isolated database named `lumina_pr29_review_20260930` is migrated through `0020` and assigned only to this PR Preview branch. Its fixture test will check the repaired executor without processing other workspaces. Local real-Postgres tests and browser API fixtures do not replace the live email test.
+The user permits testing in Production. This repair does not promote unmerged PR code to Production. Live provider acceptance for scheduled email and reminder email, and safe repeat runs after acceptance, remain required before merge. The isolated Preview test covers generation and the missing-provider state. Local real-Postgres tests and browser API fixtures do not replace the live email test.
 
 ## Rollout
 
