@@ -285,7 +285,7 @@ function createInvoice(): Invoice {
     viewCount: 0,
     paidAt: null,
     cancelledAt: null,
-    voidedAt: null,
+    voidedAt: null, automaticRemindersEnabled: true, scheduledSendDate: null, scheduledSendTo: null, scheduledSendCc: null, scheduledSendSubject: null,
     createdByUserId: "user-1",
     createdAt: new Date("2026-07-01T00:00:00.000Z"),
     updatedAt: new Date("2026-07-01T00:00:00.000Z")

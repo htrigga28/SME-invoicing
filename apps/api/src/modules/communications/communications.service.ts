@@ -329,7 +329,7 @@ export class CommunicationsService {
   async sendInvoiceEmail(
     input: {
       organisationId: string;
-      userId: string;
+      userId: string | null;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
       content?: SendInvoiceEmailInput;
@@ -338,6 +338,8 @@ export class CommunicationsService {
       communication?: Communication;
       claimToken?: string;
       idempotencyKey?: string;
+      purpose?: string;
+      tags?: string[];
       /** Replays a stored immutable provider request instead of building one. */
       snapshot?: SendEmailInput;
     }
@@ -397,6 +399,8 @@ export class CommunicationsService {
         publicUrl: content.publicUrl
       });
       const customerName = content.customerName;
+      const purpose = options?.purpose ?? "invoice_delivery";
+      const tags = options?.tags ?? [purpose, content.invoiceNumber];
       snapshot = {
         fromEmail: this.resendEmailProvider.getFromEmail()!,
         fromName: `${content.businessName} via Lumina`,
@@ -409,13 +413,13 @@ export class CommunicationsService {
         subject,
         htmlContent,
         textContent,
-        tags: ["invoice_delivery", content.invoiceNumber],
+        tags,
         correlationId: options?.communication?.id ?? randomUUID()
       };
     }
 
     const claimToken = options?.claimToken ?? randomUUID();
-    const idempotencyKey = options?.idempotencyKey ?? randomUUID();
+    const idempotencyKey = this.boundedIdempotencyKey(options?.idempotencyKey ?? randomUUID());
     const idempotencyExpiresAt = new Date(Date.now() + RESEND_IDEMPOTENCY_WINDOW_MS);
     const communicationId = options?.communication?.id ?? randomUUID();
     snapshot.correlationId = communicationId;
@@ -427,7 +431,8 @@ export class CommunicationsService {
         idempotencyKey,
         idempotencyExpiresAt,
         claimToken,
-        communicationId
+        communicationId,
+        options?.purpose ?? "invoice_delivery"
       ));
 
     // Provider boundary: only an explicit provider rejection may mark the
@@ -479,7 +484,10 @@ export class CommunicationsService {
         await this.auditSafely({
           organisationId: input.organisationId,
           actorUserId: input.userId,
-          action: "invoice_email_failed",
+          action:
+            communication.purpose === "payment_reminder"
+              ? "invoice_reminder_failed"
+              : "invoice_email_failed",
           entityType: "invoice",
           entityId: input.invoice.id,
           metadataRedacted: {
@@ -529,7 +537,10 @@ export class CommunicationsService {
     await this.auditSafely({
       organisationId: input.organisationId,
       actorUserId: input.userId,
-      action: "invoice_email_sent",
+      action:
+        communication.purpose === "payment_reminder"
+          ? "invoice_reminder_sent"
+          : "invoice_email_sent",
       entityType: "invoice",
       entityId: input.invoice.id,
       metadataRedacted: {
@@ -582,6 +593,65 @@ export class CommunicationsService {
     }
 
     return this.sendInvoiceEmail(input);
+  }
+
+  /**
+   * Payment reminder send. Reuses the invoice-delivery provider adapter,
+   * attempt persistence, idempotency, webhook correlation and uncertainty
+   * recovery — only the purpose tag and rendered reminder content differ.
+   * Never called for an uncertain submission: callers must set the
+   * automation job to needs_attention instead of minting a fresh send.
+   */
+  async sendPaymentReminderEmail(
+    input: {
+      organisationId: string;
+      userId: string | null;
+      invoice: Pick<Invoice, "id" | "invoiceNumber">;
+      customerId: string;
+      content: SendInvoiceEmailInput;
+      subject: string;
+      htmlContent: string;
+      textContent: string;
+    },
+    options?: { claimToken?: string; idempotencyKey?: string }
+  ): Promise<{ communication: Communication; outcome: "accepted" | "uncertain" }> {
+    if (!this.resendEmailProvider.isConfigured()) {
+      throw new ServiceUnavailableException(
+        "Email delivery is not configured. The invoice remains unpaid and the reminder was not sent."
+      );
+    }
+
+    let recipients: { to: string[]; cc: string[] };
+    try {
+      recipients = validateSendRecipients(input.content.to, input.content.cc ?? []);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Recipients are invalid."
+      );
+    }
+
+    const fromEmail = this.resendEmailProvider.getFromEmail()!;
+    const snapshot = {
+      fromEmail,
+      fromName: `${input.content.businessName} via Lumina`,
+      replyToEmail: input.content.businessEmail,
+      to: recipients.to.map((email) => ({
+        email,
+        name: email === recipients.to[0] ? input.content.customerName : null
+      })),
+      cc: recipients.cc.map((email) => ({ email })),
+      subject: input.subject.trim() || `Reminder: invoice ${input.invoice.invoiceNumber} is due`,
+      htmlContent: input.htmlContent,
+      textContent: input.textContent,
+      tags: ["payment_reminder", input.invoice.invoiceNumber],
+      correlationId: randomUUID()
+    };
+
+    return this.sendInvoiceEmail(input, {
+      ...options,
+      snapshot,
+      purpose: "payment_reminder"
+    });
   }
 
   /**
@@ -677,7 +747,7 @@ export class CommunicationsService {
   private async createPendingCommunication(
     input: {
       organisationId: string;
-      userId: string;
+      userId: string | null;
       invoice: Pick<Invoice, "id" | "invoiceNumber">;
       customerId: string;
       content?: SendInvoiceEmailInput;
@@ -686,7 +756,8 @@ export class CommunicationsService {
     idempotencyKey: string,
     idempotencyExpiresAt: Date,
     claimToken: string,
-    communicationId: string
+    communicationId: string,
+    purpose = "invoice_delivery"
   ): Promise<Communication> {
     const claimedAt = new Date();
     const toEmails = snapshot.to.map((recipient) => recipient.email);
@@ -700,7 +771,7 @@ export class CommunicationsService {
           organisationId: input.organisationId,
           invoiceId: input.invoice.id,
           customerId: input.customerId,
-          purpose: "invoice_delivery",
+          purpose,
           channel: "email",
           provider: "resend",
           subject: snapshot.subject,
@@ -741,6 +812,12 @@ export class CommunicationsService {
 
       return created;
     });
+  }
+
+  private boundedIdempotencyKey(key: string): string {
+    // Automation ledger keys can exceed the 36-character DB column. A stable
+    // 128-bit digest preserves retry identity in both Postgres and Resend.
+    return key.length <= 36 ? key : createHash("sha256").update(key).digest("hex").slice(0, 32);
   }
 
   private retryClaimLeaseMs(): number {

@@ -9,10 +9,31 @@ const productionConfig = {
   FRONTEND_APP_URL: "https://app.example.test",
   MARKETING_SITE_URL: "https://www.example.test",
   API_PUBLIC_URL: "https://api.example.test",
-  CORS_ORIGINS: "https://app.example.test,https://www.example.test"
+  CORS_ORIGINS: "https://app.example.test,https://www.example.test",
+  CRON_SECRET: "cron-production-secret-32-characters-minimum"
 };
 
 describe("validateEnv", () => {
+  it.each(["preview", "production"])(
+    "keeps the provider timeout within the Vercel %s function budget",
+    (environment) => {
+      expect(() =>
+        validateEnv({
+          ...productionConfig,
+          VERCEL_ENV: environment,
+          RESEND_REQUEST_TIMEOUT_MS: 30001
+        })
+      ).toThrow(/RESEND_REQUEST_TIMEOUT_MS/);
+      expect(
+        validateEnv({
+          ...productionConfig,
+          VERCEL_ENV: environment,
+          RESEND_REQUEST_TIMEOUT_MS: 30000
+        }).RESEND_REQUEST_TIMEOUT_MS
+      ).toBe(30000);
+    }
+  );
+
   it("accepts a complete production configuration", () => {
     expect(validateEnv(productionConfig)).toMatchObject(productionConfig);
   });
@@ -34,6 +55,41 @@ describe("validateEnv", () => {
       })
     ).toThrow(/Development JWT secrets/);
   });
+
+  it("requires a strong production cron secret", () => {
+    expect(() => validateEnv({ ...productionConfig, CRON_SECRET: undefined })).toThrow(
+      /CRON_SECRET/
+    );
+    expect(() => validateEnv({ ...productionConfig, CRON_SECRET: "too-short" })).toThrow(
+      /CRON_SECRET/
+    );
+    expect(() =>
+      validateEnv({
+        ...productionConfig,
+        CRON_SECRET: "dev-placeholder-secret-that-is-long-enough"
+      })
+    ).toThrow(/CRON_SECRET/);
+  });
+
+  it.each(["preview", "production"])(
+    "requires a strong cron secret for Vercel %s",
+    (environment) => {
+      const config = { NODE_ENV: "test", VERCEL_ENV: environment };
+      for (const secret of [
+        undefined,
+        "too-short",
+        "preview-change-me-secret-that-is-long-enough",
+        "replace_me_cron_secret_32_chars_min",
+        " ".repeat(40)
+      ]) {
+        expect(() => validateEnv({ ...config, CRON_SECRET: secret })).toThrow(/CRON_SECRET/);
+      }
+      expect(validateEnv({ ...config, CRON_SECRET: productionConfig.CRON_SECRET })).toMatchObject({
+        VERCEL_ENV: environment,
+        CRON_SECRET: productionConfig.CRON_SECRET
+      });
+    }
+  );
 
   it("rejects localhost CORS origins in production", () => {
     expect(() =>

@@ -11,26 +11,16 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  ilike,
-  inArray,
-  isNull,
-  lte,
-  or,
-  sql,
-  type SQL
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
 import { assertInvoiceQuantity, assertKoboAmount } from "../../common/money-limits";
+import { calculateInvoiceTotals } from "../../common/invoice-totals";
+import { nextInvoiceNumber } from "../../common/invoice-number";
+import { transitionInvoiceInTransaction } from "./invoice-transition";
 import { DatabaseService } from "../../database/database.service";
 import {
+  automationJobs,
   businessProfiles,
   auditLogs,
   customers,
@@ -118,44 +108,9 @@ type PaymentSummary =
         | "payment_unavailable";
     };
 
-type SequenceExecutor = {
-  execute: <TRow extends Record<string, unknown>>(query: SQL) => Promise<{ rows: TRow[] }>;
-};
-
 const editableStatuses: InvoiceStatusValue[] = ["draft"];
 const cancelableStatuses: InvoiceStatusValue[] = ["draft", "sent", "viewed", "overdue"];
 const voidableStatuses: InvoiceStatusValue[] = ["draft", "sent", "viewed", "overdue", "cancelled"];
-
-function calculateInvoiceTotals(input: {
-  discountKobo?: number;
-  lineItems: { quantity: number; unitPriceKobo: number }[];
-  taxKobo?: number;
-}) {
-  const lineTotalsKobo = input.lineItems.map((item) =>
-    assertKoboAmount(Math.round(item.quantity * item.unitPriceKobo), "Line total")
-  );
-  const subtotalKobo = lineTotalsKobo.reduce(
-    (sum, lineTotal) => assertKoboAmount(sum + lineTotal, "Invoice subtotal"),
-    0
-  );
-  const discountKobo = assertKoboAmount(input.discountKobo ?? 0, "Discount");
-  const taxKobo = assertKoboAmount(input.taxKobo ?? 0, "Tax");
-  const totalKobo = assertKoboAmount(subtotalKobo - discountKobo + taxKobo, "Invoice total");
-
-  return {
-    lineTotalsKobo,
-    subtotalKobo,
-    discountKobo,
-    taxKobo,
-    totalKobo,
-    amountPaidKobo: 0,
-    balanceDueKobo: totalKobo
-  };
-}
-
-function formatInvoiceNumber(sequenceNumber: number) {
-  return `INV-${sequenceNumber.toString().padStart(6, "0")}`;
-}
 
 export type InvoiceActivityTone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -309,6 +264,7 @@ export class InvoicesService {
           ? `${recipientEmails[0]} +${recipientEmails.length - 1} more`
           : (recipientEmails[0] ?? "customer");
       const resent = index > 0;
+      const isReminder = (communication as { purpose?: string }).purpose === "payment_reminder";
       const metadata = {
         invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber,
         communicationId: communication.id
@@ -319,10 +275,14 @@ export class InvoicesService {
           id: `email-${communication.id}-accepted`,
           type: "email_accepted",
           occurredAt: new Date(communication.acceptedAt).toISOString(),
-          title: resent
-            ? `Invoice email resent to ${recipientLabel}`
-            : `Invoice emailed to ${recipientLabel}`,
-          detail: "Accepted by the email provider.",
+          title: isReminder
+            ? `Automatic reminder sent to ${recipientLabel}`
+            : resent
+              ? `Invoice email resent to ${recipientLabel}`
+              : `Invoice emailed to ${recipientLabel}`,
+          detail: isReminder
+            ? "Reminder accepted by the email provider."
+            : "Accepted by the email provider.",
           tone: "info",
           actor: null,
           metadata
@@ -334,7 +294,7 @@ export class InvoicesService {
           id: `email-${communication.id}-uncertain`,
           type: "email_uncertain",
           occurredAt: new Date(communication.updatedAt).toISOString(),
-          title: "Email send status uncertain",
+          title: isReminder ? "Reminder send status uncertain" : "Email send status uncertain",
           detail:
             communication.failureReason ??
             "The provider did not confirm receipt. It may still have been sent.",
@@ -349,7 +309,7 @@ export class InvoicesService {
           id: `email-${communication.id}-delivered`,
           type: "email_delivered",
           occurredAt: new Date(communication.deliveredAt).toISOString(),
-          title: "Email delivered",
+          title: isReminder ? `Reminder delivered to ${recipientLabel}` : "Email delivered",
           detail:
             recipients.length > 1
               ? `Delivered to all ${recipients.length} recipients.`
@@ -674,11 +634,7 @@ export class InvoicesService {
     });
 
     const created = await this.databaseService.db.transaction(async (tx) => {
-      const sequenceNumber = await this.nextInvoiceSequenceNumber(
-        tx as SequenceExecutor,
-        context.activeOrganisation.id
-      );
-      const invoiceNumber = formatInvoiceNumber(sequenceNumber);
+      const invoiceNumber = await nextInvoiceNumber(tx, context.activeOrganisation.id);
       const publicToken = this.generatePublicToken();
 
       const [invoice] = await tx
@@ -908,6 +864,10 @@ export class InvoicesService {
       metadata: { invoiceNumber: invoiceWithCustomer.invoice.invoiceNumber },
       patch: {
         publicAccessEnabled: true,
+        scheduledSendDate: null,
+        scheduledSendTo: null,
+        scheduledSendCc: null,
+        scheduledSendSubject: null,
         sentAt,
         status: "sent",
         updatedAt: sentAt
@@ -1474,69 +1434,54 @@ export class InvoicesService {
     }
   ) {
     await this.databaseService.db.transaction(async (tx) => {
-      const conditions = [
-        eq(invoices.id, invoice.id),
-        eq(invoices.organisationId, context.activeOrganisation.id)
-      ];
-
-      if (input.expectedFromStatus) {
-        conditions.push(eq(invoices.status, input.expectedFromStatus));
-      } else if (input.expectedFromStatuses?.length) {
-        conditions.push(inArray(invoices.status, input.expectedFromStatuses));
+      // Match the runner's job-before-invoice lock order.
+      if (input.action === "invoice_sent") {
+        await tx
+          .select({ id: automationJobs.id })
+          .from(automationJobs)
+          .where(
+            and(
+              eq(automationJobs.organisationId, context.activeOrganisation.id),
+              eq(automationJobs.resourceId, invoice.id),
+              eq(automationJobs.kind, "invoice_scheduled_send"),
+              inArray(automationJobs.status, ["pending", "running", "sending"])
+            )
+          )
+          .orderBy(asc(automationJobs.id))
+          .for("update");
       }
-
-      const [updated] = await tx
-        .update(invoices)
-        .set(input.patch)
-        .where(and(...conditions))
-        .returning();
-
+      const updated = await transitionInvoiceInTransaction(tx, invoice, {
+        ...input,
+        actorUserId: context.user.id,
+        expectedFromStatuses: input.expectedFromStatus
+          ? [input.expectedFromStatus]
+          : input.expectedFromStatuses
+      });
       if (!updated) {
-        if (input.expectedFromStatus || input.expectedFromStatuses?.length) {
-          throw new ConflictException(
-            "The invoice changed before the request completed. Refresh and try again."
-          );
-        }
-
-        throw new Error("Invoice transition failed.");
+        throw new ConflictException(
+          "The invoice changed before the request completed. Refresh and try again."
+        );
       }
-
-      await tx.insert(invoiceStatusEvents).values({
-        organisationId: context.activeOrganisation.id,
-        invoiceId: invoice.id,
-        fromStatus: input.expectedFromStatus ?? invoice.status,
-        toStatus: input.toStatus,
-        reason: input.reason,
-        actorUserId: context.user.id,
-        metadataRedacted: input.metadata
-      });
-
-      await tx.insert(auditLogs).values({
-        organisationId: context.activeOrganisation.id,
-        actorUserId: context.user.id,
-        action: input.action,
-        entityType: "invoice",
-        entityId: invoice.id,
-        metadataRedacted: input.metadata
-      });
+      if (input.action === "invoice_sent") {
+        await tx
+          .update(automationJobs)
+          .set({
+            status: "cancelled",
+            claimToken: null,
+            claimedAt: null,
+            skippedAt: new Date(),
+            updatedAt: new Date()
+          })
+          .where(
+            and(
+              eq(automationJobs.organisationId, context.activeOrganisation.id),
+              eq(automationJobs.resourceId, invoice.id),
+              eq(automationJobs.kind, "invoice_scheduled_send"),
+              inArray(automationJobs.status, ["pending", "running"])
+            )
+          );
+      }
     });
-  }
-
-  private async nextInvoiceSequenceNumber(tx: SequenceExecutor, organisationId: string) {
-    const result = await tx.execute<{ sequence_number: number }>(sql`
-      insert into invoice_number_sequences (organisation_id, next_number, updated_at)
-      values (${organisationId}, 2, now())
-      on conflict (organisation_id)
-      do update set next_number = invoice_number_sequences.next_number + 1, updated_at = now()
-      returning next_number - 1 as sequence_number
-    `);
-    const [row] = result.rows;
-
-    if (!row) {
-      throw new Error("Invoice number generation failed.");
-    }
-
-    return Number(row.sequence_number);
   }
 
   private async findCustomerForInvoice(organisationId: string, customerId: string) {

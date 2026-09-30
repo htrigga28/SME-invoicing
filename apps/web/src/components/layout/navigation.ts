@@ -30,6 +30,7 @@ const overviewRoutes: AppRoute[] = [
 
 const receivablesRoutes: AppRoute[] = [
   { href: "/invoices", icon: "invoices", label: "Invoices", status: "available" },
+  { href: "/recurring-invoices", icon: "invoices", label: "Recurring", status: "available" },
   { href: "/customers", icon: "customers", label: "Customers", status: "available" },
   { href: "/payments", icon: "payments", label: "Payments", status: "available" },
   { href: "/receipts", icon: "receipts", label: "Receipts", status: "available" },
@@ -56,6 +57,12 @@ const settingsRoutes: AppRoute[] = [
     href: "/settings/payment-setup",
     icon: "settings",
     label: "Payment setup",
+    status: "available"
+  },
+  {
+    href: "/settings/reminders",
+    icon: "settings",
+    label: "Payment reminders",
     status: "available"
   },
   {

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1).optional(),
   TEST_DATABASE_URL: z.string().min(1).optional(),
@@ -17,6 +18,7 @@ const envSchema = z.object({
   RESEND_FROM_EMAIL: z.string().email().optional(),
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   RESEND_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+  CRON_SECRET: z.string().min(1).optional(),
   CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:3002"),
   TRUST_PROXY: z.string().min(1).default("loopback"),
   // Compat window for pre-cookie clients that still POST the refresh token in
@@ -37,7 +39,30 @@ export function validateEnv(config: Record<string, unknown>) {
     );
   }
 
+  if (
+    (parsed.NODE_ENV === "production" ||
+      ["preview", "production"].includes(parsed.VERCEL_ENV ?? "")) &&
+    parsed.RESEND_REQUEST_TIMEOUT_MS > 30000
+  ) {
+    throw new Error("RESEND_REQUEST_TIMEOUT_MS must not exceed 30000 in Preview or Production.");
+  }
+
+  const assertCronSecret = () => {
+    const cronSecret = parsed.CRON_SECRET;
+    if (
+      !cronSecret ||
+      cronSecret.trim().length < 32 ||
+      /^(dev|test|example|placeholder|change.?me|replace.?me)/i.test(cronSecret) ||
+      /change.?me|replace.?me|placeholder/i.test(cronSecret)
+    ) {
+      throw new Error(
+        "CRON_SECRET must be at least 32 characters and cannot be a development placeholder in Preview or Production."
+      );
+    }
+  };
+
   if (parsed.NODE_ENV !== "production") {
+    if (["preview", "production"].includes(parsed.VERCEL_ENV ?? "")) assertCronSecret();
     return parsed;
   }
 
@@ -49,7 +74,8 @@ export function validateEnv(config: Record<string, unknown>) {
     JWT_ACCESS_SECRET: parsed.JWT_ACCESS_SECRET,
     JWT_REFRESH_SECRET: parsed.JWT_REFRESH_SECRET,
     MARKETING_SITE_URL: parsed.MARKETING_SITE_URL,
-    PAYSTACK_SECRET_KEY: parsed.PAYSTACK_SECRET_KEY
+    PAYSTACK_SECRET_KEY: parsed.PAYSTACK_SECRET_KEY,
+    CRON_SECRET: parsed.CRON_SECRET
   };
   const missing = Object.entries(requiredProductionValues)
     .filter(([, value]) => !value)
@@ -58,6 +84,8 @@ export function validateEnv(config: Record<string, unknown>) {
   if (missing.length > 0) {
     throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
   }
+
+  assertCronSecret();
 
   const corsOrigins = parsed.CORS_ORIGINS.split(",")
     .map((origin) => origin.trim())

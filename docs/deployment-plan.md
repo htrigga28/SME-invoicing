@@ -92,3 +92,7 @@ Final portfolio docs should include:
 - Vercel plus a separate API host adds CORS and cookie complexity but keeps Next.js deployment simple.
 - A single full-stack host could reduce domain complexity but may be less portfolio-standard for Next.js plus NestJS.
 - Paystack test mode is sufficient for MVP credibility without handling live money.
+
+## T022 cron + executor (2026-09-22)
+
+The API cron runs daily at 08:00 UTC. Preview and Production each need a distinct `CRON_SECRET` with at least 32 characters. Production startup checks this value. Each invocation processes up to eight batches of 25 due jobs within 60 seconds and reports backlog counts. Check the backlog after deployment and adjust execution capacity if it does not drain.

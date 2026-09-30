@@ -111,3 +111,7 @@ Owner role transfer, Owner removal, and self-removal are out of scope for the MV
 - RBAC checks should happen before mutation and before returning private data.
 - Audit logs should record sensitive administrative actions such as invitations, role changes, invoice voiding, and business profile completion.
 - Full audit log access is Owner/Admin only for MVP. Accountant operational history can be exposed later through entity-specific timelines instead of the full audit log.
+
+## T022 RBAC (2026-09-22)
+
+Owner/Admin: reminder defaults + steps, schedules, scheduled sends, opt-outs. Accountant: schedules + sends + opt-outs, but NOT org reminder defaults. Viewer: read schedules/settings/activity only. Server-enforced; `x-organisation-id` fail-closed.
