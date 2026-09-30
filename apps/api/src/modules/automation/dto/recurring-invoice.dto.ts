@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   ArrayMinSize,
@@ -17,16 +17,17 @@ import {
   ValidateBy
 } from "class-validator";
 
-import { MAX_KOBO } from "../../../common/money-limits";
+import { MAX_INVOICE_QUANTITY, MAX_KOBO } from "../../../common/money-limits";
 import { isValidBusinessDate } from "../../../common/business-date";
 
-const IsBusinessDate = () => ValidateBy({
-  name: "isBusinessDate",
-  validator: {
-    validate: (value: unknown) => typeof value === "string" && isValidBusinessDate(value),
-    defaultMessage: () => "Date must be a valid YYYY-MM-DD business date."
-  }
-});
+const IsBusinessDate = () =>
+  ValidateBy({
+    name: "isBusinessDate",
+    validator: {
+      validate: (value: unknown) => typeof value === "string" && isValidBusinessDate(value),
+      defaultMessage: () => "Date must be a valid YYYY-MM-DD business date."
+    }
+  });
 
 export class RecurringLineItemDto {
   @ApiPropertyOptional()
@@ -43,6 +44,7 @@ export class RecurringLineItemDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
+  @Max(MAX_INVOICE_QUANTITY)
   quantity!: number;
 
   @ApiProperty()
@@ -143,86 +145,6 @@ export class CreateRecurringInvoiceDto {
   lineItems!: RecurringLineItemDto[];
 }
 
-export class UpdateRecurringInvoiceDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  name?: string;
-
-  @ApiPropertyOptional({ enum: ["weekly", "monthly", "quarterly", "yearly"] })
-  @IsOptional()
-  @IsIn(["weekly", "monthly", "quarterly", "yearly"])
-  frequency?: "weekly" | "monthly" | "quarterly" | "yearly";
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBusinessDate()
-  endDate?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(120)
-  dueTermsDays?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  autoSend?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  toRecipients?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  ccRecipients?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(300)
-  emailSubject?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  customerReference?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  notes?: string | null;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(MAX_KOBO)
-  discountKobo?: number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(MAX_KOBO)
-  taxKobo?: number;
-
-  @ApiPropertyOptional({ type: [RecurringLineItemDto] })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RecurringLineItemDto)
-  lineItems?: RecurringLineItemDto[];
-}
+export class UpdateRecurringInvoiceDto extends PartialType(
+  OmitType(CreateRecurringInvoiceDto, ["customerId", "startDate"] as const)
+) {}

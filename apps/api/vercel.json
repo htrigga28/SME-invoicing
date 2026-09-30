@@ -4,5 +4,10 @@
       "path": "/internal/automation/run",
       "schedule": "0 8 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/main.ts": {
+      "maxDuration": 120
+    }
+  }
 }

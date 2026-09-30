@@ -93,16 +93,16 @@ export function InvoiceAutomationPanel({
       {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
       {invoice.status === "draft" ? (
         <div className="space-y-4">
-          <p className="text-sm text-[var(--text-secondary)]">{invoice.scheduledSendDate ? `Scheduled for ${invoice.scheduledSendDate}.` : "Schedule delivery to issue and email this draft invoice on a chosen business date."}</p>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2"><label className="space-y-1 text-sm">To<Input value={to} readOnly={!canManage} onChange={(e) => setTo(e.target.value)} /></label><label className="space-y-1 text-sm">CC<Input value={cc} readOnly={!canManage} onChange={(e) => setCc(e.target.value)} placeholder="Optional" /></label><label className="space-y-1 text-sm sm:col-span-2">Subject<Input value={subject} readOnly={!canManage} onChange={(e) => setSubject(e.target.value)} placeholder={`Invoice ${invoice.invoiceNumber}`} /></label>{canManage && <label className="space-y-1 text-sm">Send date<Input type="date" min={businessDate} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Schedule send date" /></label>}</div>
-          {canManage && <div className="flex flex-wrap gap-2"><Button onClick={saveSchedule} disabled={busy}>{invoice.scheduledSendDate ? "Change schedule" : "Schedule send"}</Button>{invoice.scheduledSendDate && <Button variant="destructive" onClick={cancelSchedule} disabled={busy}>Cancel schedule</Button>}</div>}
+          <p className="text-sm text-[var(--text-secondary)]">{invoice.scheduledSendDate ? `Scheduled for ${invoice.scheduledSendDate}. The invoice will be issued and emailed on that business date.` : "Schedule delivery to issue and email this draft invoice on a chosen business date."}</p>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2"><label className="space-y-1 text-sm">To<Input className="min-h-11!" value={to} readOnly={!canManage} onChange={(e) => setTo(e.target.value)} /></label><label className="space-y-1 text-sm">CC<Input className="min-h-11!" value={cc} readOnly={!canManage} onChange={(e) => setCc(e.target.value)} placeholder="Optional" /></label><label className="space-y-1 text-sm sm:col-span-2">Subject<Input className="min-h-11!" value={subject} readOnly={!canManage} onChange={(e) => setSubject(e.target.value)} placeholder={`Invoice ${invoice.invoiceNumber}`} /></label>{canManage && <label className="space-y-1 text-sm">Send date<Input className="min-h-11!" type="date" min={businessDate} value={date} onChange={(e) => setDate(e.target.value)} aria-label="Schedule send date" /></label>}</div>
+          {canManage && <div className="flex flex-wrap gap-2"><Button size="lg" onClick={saveSchedule} disabled={busy}>{invoice.scheduledSendDate ? "Change schedule" : "Schedule send"}</Button>{invoice.scheduledSendDate && <Button size="lg" variant="destructive" onClick={cancelSchedule} disabled={busy}>Cancel schedule</Button>}</div>}
           <p className="text-xs text-[var(--text-secondary)]">Lumina runs scheduled sends during the daily automation window in Lagos time (WAT). Exact send time is not guaranteed.</p>
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm">Automatic reminders are {remindersOn ? "on" : "off"} for this invoice.</p>
           {canManage && (
-            <Button onClick={() => toggleReminders(!remindersOn)} disabled={busy}>
+            <Button size="lg" onClick={() => toggleReminders(!remindersOn)} disabled={busy}>
               Turn {remindersOn ? "off" : "on"}
             </Button>
           )}

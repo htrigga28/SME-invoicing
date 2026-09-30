@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { ConflictException } from "@nestjs/common";
 
 import type { AppDatabase } from "../../database/database.service";
 import { automationJobs, customers, invoices, organisations, users } from "../../database/schema";
@@ -57,4 +58,24 @@ it("rejects impossible calendar dates", async () => {
   }).returning(), "invoice");
   const service = new ScheduledSendService(pool.databaseService(), { create: jest.fn() } as unknown as AuditLogService);
   await expect(service.scheduleSend({ activeOrganisation: organisation, user } as never, invoice.id, { scheduledSendDate: "2026-02-31" })).rejects.toThrow(/valid scheduled date/);
+});
+
+it("reports a conflict when a scheduled send has been reserved", async () => {
+  const slug = uniqueSlug("scheduled-reserved");
+  const organisation = requiredRow(await db.insert(organisations).values({ name: "Reserved Org", slug }).returning(), "organisation");
+  const user = requiredRow(await db.insert(users).values({ email: `${slug}@example.test`, name: "Owner", passwordHash: "x" }).returning(), "user");
+  const customer = requiredRow(await db.insert(customers).values({ organisationId: organisation.id, name: "Customer", email: "accounts@example.test" }).returning(), "customer");
+  const invoice = requiredRow(await db.insert(invoices).values({
+    organisationId: organisation.id, customerId: customer.id, invoiceNumber: `INV-${slug.slice(-6)}`,
+    publicToken: `token-${slug}`, status: "sent", currency: "NGN", issueDate: "2026-09-23",
+    dueDate: "2026-10-23", subtotalKobo: 1000, totalKobo: 1000, balanceDueKobo: 1000
+  }).returning(), "invoice");
+  await db.insert(automationJobs).values({
+    organisationId: organisation.id, kind: "invoice_scheduled_send", resourceType: "invoice",
+    resourceId: invoice.id, scheduledFor: "2026-09-23",
+    idempotencyKey: `scheduled-reserved:${invoice.id}`, status: "sending", claimToken: "reserved"
+  });
+  const service = new ScheduledSendService(pool.databaseService(), { create: jest.fn() } as unknown as AuditLogService);
+  await expect(service.cancelScheduledSend({ activeOrganisation: organisation, user } as never, invoice.id))
+    .rejects.toBeInstanceOf(ConflictException);
 });

@@ -484,7 +484,10 @@ export class CommunicationsService {
         await this.auditSafely({
           organisationId: input.organisationId,
           actorUserId: input.userId,
-          action: "invoice_email_failed",
+          action:
+            communication.purpose === "payment_reminder"
+              ? "invoice_reminder_failed"
+              : "invoice_email_failed",
           entityType: "invoice",
           entityId: input.invoice.id,
           metadataRedacted: {
@@ -534,7 +537,10 @@ export class CommunicationsService {
     await this.auditSafely({
       organisationId: input.organisationId,
       actorUserId: input.userId,
-      action: "invoice_email_sent",
+      action:
+        communication.purpose === "payment_reminder"
+          ? "invoice_reminder_sent"
+          : "invoice_email_sent",
       entityType: "invoice",
       entityId: input.invoice.id,
       metadataRedacted: {
@@ -619,7 +625,9 @@ export class CommunicationsService {
     try {
       recipients = validateSendRecipients(input.content.to, input.content.cc ?? []);
     } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : "Recipients are invalid.");
+      throw new BadRequestException(
+        error instanceof Error ? error.message : "Recipients are invalid."
+      );
     }
 
     const fromEmail = this.resendEmailProvider.getFromEmail()!;
@@ -639,74 +647,11 @@ export class CommunicationsService {
       correlationId: randomUUID()
     };
 
-    const claimToken = options?.claimToken ?? randomUUID();
-    const idempotencyKey = this.boundedIdempotencyKey(options?.idempotencyKey ?? randomUUID());
-    const idempotencyExpiresAt = new Date(Date.now() + RESEND_IDEMPOTENCY_WINDOW_MS);
-    const communicationId = randomUUID();
-    snapshot.correlationId = communicationId;
-    const communication = await this.createPendingCommunication(
-      input,
+    return this.sendInvoiceEmail(input, {
+      ...options,
       snapshot,
-      idempotencyKey,
-      idempotencyExpiresAt,
-      claimToken,
-      communicationId,
-      "payment_reminder"
-    );
-
-    let providerMessageId: string;
-    try {
-      ({ providerMessageId } = await this.resendEmailProvider.sendEmail({
-        ...snapshot,
-        idempotencyKey,
-        correlationId: communication.id
-      }));
-    } catch (error) {
-      if (error instanceof EmailUncertainError) {
-        const current = await this.completeUncertainAttempt(communication, claimToken, error.message);
-        return { communication: current ?? communication, outcome: "uncertain" as const };
-      }
-      const failed = await this.completeFailedAttempt(
-        communication,
-        claimToken,
-        error instanceof Error ? error.message : "Email provider could not send the message."
-      );
-      if (failed) {
-        await this.auditSafely({
-          organisationId: input.organisationId,
-          actorUserId: input.userId,
-          action: "invoice_reminder_failed",
-          entityType: "invoice",
-          entityId: input.invoice.id,
-          metadataRedacted: { invoiceNumber: input.invoice.invoiceNumber, communicationId: communication.id }
-        });
-      }
-      throw error;
-    }
-
-    const acceptedAt = new Date();
-    const persisted = await this.persistProviderAcceptance(
-      communication,
-      claimToken,
-      providerMessageId,
-      acceptedAt
-    );
-    if (!persisted.applied) {
-      return { communication: persisted.communication, outcome: "uncertain" };
-    }
-    await this.auditSafely({
-      organisationId: input.organisationId,
-      actorUserId: input.userId,
-      action: "invoice_reminder_sent",
-      entityType: "invoice",
-      entityId: input.invoice.id,
-      metadataRedacted: {
-        invoiceNumber: input.invoice.invoiceNumber,
-        communicationId: communication.id,
-        recipientCount: recipients.to.length + recipients.cc.length
-      }
+      purpose: "payment_reminder"
     });
-    return { communication: persisted.communication, outcome: "accepted" as const };
   }
 
   /**

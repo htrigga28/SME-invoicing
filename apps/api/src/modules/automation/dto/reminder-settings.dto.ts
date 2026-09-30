@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   IsArray,
@@ -9,8 +9,10 @@ import {
   Max,
   MaxLength,
   Min,
-  ValidateNested
+  ValidateNested,
+  ValidateBy
 } from "class-validator";
+import { isValidBusinessDate } from "../../../common/business-date";
 
 export class ReminderStepDto {
   @ApiProperty({ example: -3 })
@@ -36,6 +38,8 @@ export class ReminderStepDto {
   enabled?: boolean;
 }
 
+export class UpdateReminderStepDto extends PartialType(ReminderStepDto) {}
+
 export class UpsertReminderSettingsDto {
   @ApiProperty()
   @IsBoolean()
@@ -57,7 +61,13 @@ export class ReminderPreferenceDto {
 
 export class ScheduleSendDto {
   @ApiProperty({ example: "2026-09-30" })
-  @IsString()
+  @ValidateBy({
+    name: "isBusinessDate",
+    validator: {
+      validate: (value: unknown) => typeof value === "string" && isValidBusinessDate(value),
+      defaultMessage: () => "Date must be a valid YYYY-MM-DD business date."
+    }
+  })
   scheduledSendDate!: string;
 
   @ApiPropertyOptional()

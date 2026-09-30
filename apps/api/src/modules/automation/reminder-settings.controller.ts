@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  UseGuards
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentOrganisation } from "../../common/decorators/current-organisation.decorator";
@@ -6,10 +16,15 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import type { ActiveOrganisationContext } from "../../common/types/request-context";
-import type { ReminderPreferenceDto, ReminderStepDto, UpsertReminderSettingsDto } from "./dto/reminder-settings.dto";
+import {
+  ReminderPreferenceDto,
+  ReminderStepDto,
+  UpdateReminderStepDto,
+  UpsertReminderSettingsDto
+} from "./dto/reminder-settings.dto";
 import { ReminderSettingsService } from "./reminder-settings.service";
 import { ScheduledSendService } from "./scheduled-send.service";
-import type { ScheduleSendDto } from "./dto/reminder-settings.dto";
+import { ScheduleSendDto } from "./dto/reminder-settings.dto";
 
 @ApiTags("Reminder settings")
 @ApiBearerAuth()
@@ -29,13 +44,19 @@ export class ReminderSettingsController {
 
   @Post("reminder-settings")
   @Roles("owner", "admin")
-  put(@CurrentOrganisation() context: ActiveOrganisationContext, @Body() body: UpsertReminderSettingsDto) {
+  put(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Body() body: UpsertReminderSettingsDto
+  ) {
     return this.settings.putSettings(context, body);
   }
 
   @Post("reminder-settings/steps")
   @Roles("owner", "admin")
-  createStep(@CurrentOrganisation() context: ActiveOrganisationContext, @Body() body: ReminderStepDto) {
+  createStep(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Body() body: ReminderStepDto
+  ) {
     return this.settings.createStep(context, body);
   }
 
@@ -44,14 +65,17 @@ export class ReminderSettingsController {
   updateStep(
     @CurrentOrganisation() context: ActiveOrganisationContext,
     @Param("stepId") stepId: string,
-    @Body() body: Partial<ReminderStepDto>
+    @Body() body: UpdateReminderStepDto
   ) {
     return this.settings.updateStep(context, stepId, body);
   }
 
   @Delete("reminder-settings/steps/:stepId")
   @Roles("owner", "admin")
-  deleteStep(@CurrentOrganisation() context: ActiveOrganisationContext, @Param("stepId") stepId: string) {
+  deleteStep(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("stepId") stepId: string
+  ) {
     return this.settings.deleteStep(context, stepId);
   }
 
@@ -97,9 +121,10 @@ export class ReminderSettingsController {
 
   @Delete("invoices/:id/schedule-send")
   @Roles("owner", "admin", "accountant")
-  cancelSchedule(@CurrentOrganisation() context: ActiveOrganisationContext, @Param("id") id: string) {
+  cancelSchedule(
+    @CurrentOrganisation() context: ActiveOrganisationContext,
+    @Param("id") id: string
+  ) {
     return this.scheduledSend.cancelScheduledSend(context, id);
   }
 }
-
-

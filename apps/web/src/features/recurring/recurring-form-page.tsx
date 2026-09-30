@@ -89,6 +89,7 @@ export function RecurringFormContent({ accessToken, role, scheduleId }: { access
     setError(null);
     if (!customerId) return setError("Choose a customer.");
     if (!name.trim()) return setError("Give the schedule a name.");
+    if (scheduleId && !to.split(",").some((address) => address.trim())) return setError("Enter at least one recipient.");
     if (!scheduleId && startDate < lagosBusinessDate()) return setError("Start date cannot be in the past.");
     if (!endNever && (!endDate || endDate < (scheduleId ? nextIssueDate : startDate))) return setError("End date must be on or after the next issue date.");
     if (items.some((i) => !i.description.trim() || !Number.isFinite(i.quantity) || i.quantity <= 0 || Math.abs(i.quantity * 100 - Math.round(i.quantity * 100)) > 0.000001 || !Number.isFinite(Number(i.unitPrice)) || Number(i.unitPrice) < 0 || !/^\d+(\.\d{1,2})?$/.test(i.unitPrice))) {
@@ -131,7 +132,7 @@ export function RecurringFormContent({ accessToken, role, scheduleId }: { access
       <form onSubmit={onSubmit} className="grid min-w-0 gap-5">
         <SectionCard className="space-y-3">
           <h2 className="font-semibold">Customer</h2>
-          <Select aria-label="Customer" value={customerId} disabled={Boolean(scheduleId)} onChange={(e) => setCustomerId(e.target.value)}>
+          <Select className="min-h-11!" aria-label="Customer" value={customerId} disabled={Boolean(scheduleId)} onChange={(e) => setCustomerId(e.target.value)}>
             <option value="">Select customer</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
@@ -146,12 +147,14 @@ export function RecurringFormContent({ accessToken, role, scheduleId }: { access
             <div key={index} className="grid min-w-0 gap-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] p-3 sm:grid-cols-[minmax(0,1fr)_90px_150px_auto] sm:items-end">
               <label className="min-w-0 space-y-1 text-sm">Description
               <Input
+                className="min-h-11!"
                 placeholder="Description"
                 value={item.description}
                 onChange={(e) => setItems(items.map((it, i) => (i === index ? { ...it, description: e.target.value } : it)))}
               /></label>
               <label className="space-y-1 text-sm">Quantity
               <Input
+                className="min-h-11!"
                 type="number"
                 min="0.01"
                 step="any"
@@ -161,32 +164,33 @@ export function RecurringFormContent({ accessToken, role, scheduleId }: { access
               /></label>
               <label className="space-y-1 text-sm">Unit price (₦)
               <Input
+                className="min-h-11!"
                 type="number" min="0" step="0.01" inputMode="decimal" placeholder="0.00"
                 value={item.unitPrice}
                 onChange={(e) => setItems(items.map((it, i) => (i === index ? { ...it, unitPrice: e.target.value } : it)))}
               /></label>
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:block"><p className="text-sm font-semibold">{formatMoney(Math.round(item.quantity * Math.round(Number(item.unitPrice) * 100)))}</p><Button type="button" variant="ghost" disabled={items.length === 1} onClick={() => setItems(items.filter((_, i) => i !== index))}>Remove</Button></div>
+              <div className="flex flex-wrap items-center justify-between gap-2 sm:block"><p className="text-sm font-semibold">{formatMoney(Math.round(item.quantity * Math.round(Number(item.unitPrice) * 100)))}</p><Button size="lg" type="button" variant="ghost" disabled={items.length === 1} onClick={() => setItems(items.filter((_, i) => i !== index))}>Remove</Button></div>
             </div>
           ))}
-          <Button type="button" variant="secondary" onClick={() => setItems([...items, { description: "", quantity: 1, unitPrice: "" }])}>
+          <Button size="lg" type="button" variant="secondary" onClick={() => setItems([...items, { description: "", quantity: 1, unitPrice: "" }])}>
             Add line
           </Button>
-          <div className="grid gap-3 border-t border-[var(--border-subtle)] pt-3 sm:grid-cols-2"><label className="space-y-1 text-sm">Discount (₦)<Input type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} /></label><label className="space-y-1 text-sm">Tax (₦)<Input type="number" min="0" step="0.01" value={tax} onChange={(e) => setTax(e.target.value)} /></label></div>
+          <div className="grid gap-3 border-t border-[var(--border-subtle)] pt-3 sm:grid-cols-2"><label className="space-y-1 text-sm">Discount (₦)<Input className="min-h-11!" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} /></label><label className="space-y-1 text-sm">Tax (₦)<Input className="min-h-11!" type="number" min="0" step="0.01" value={tax} onChange={(e) => setTax(e.target.value)} /></label></div>
           <div className="space-y-1 text-right text-sm"><p>Subtotal {formatMoney(subtotal)}</p><p>Discount −{formatMoney(Math.round(Number(discount) * 100))}</p><p>Tax +{formatMoney(Math.round(Number(tax) * 100))}</p><p className="text-lg font-semibold">Total {formatMoney(amount)}</p></div>
         </SectionCard>
         <SectionCard className="grid gap-4 sm:grid-cols-2">
           <h2 className="font-semibold sm:col-span-2">Schedule</h2>
           <label>
             Schedule name
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Northstar retainer" />
+            <Input className="min-h-11!" value={name} onChange={(e) => setName(e.target.value)} placeholder="Northstar retainer" />
           </label>
           <label>
             Starts
-            <Input type="date" min={scheduleId ? undefined : lagosBusinessDate()} disabled={Boolean(scheduleId)} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <Input className="min-h-11!" type="date" min={scheduleId ? undefined : lagosBusinessDate()} disabled={Boolean(scheduleId)} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </label>
           <label>
             Repeats
-            <Select value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)}>
+            <Select className="min-h-11!" value={frequency} onChange={(e) => setFrequency(e.target.value as typeof frequency)}>
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
               <option value="quarterly">Quarterly</option>
@@ -195,36 +199,36 @@ export function RecurringFormContent({ accessToken, role, scheduleId }: { access
           </label>
           <label>
             Payment terms (days)
-            <Input type="number" min="0" value={String(dueTermsDays)} onChange={(e) => setDueTermsDays(Number(e.target.value))} />
+            <Input className="min-h-11!" type="number" min="0" value={String(dueTermsDays)} onChange={(e) => setDueTermsDays(Number(e.target.value))} />
           </label>
           <div>
-            <label>
-              <input type="radio" checked={endNever} onChange={() => setEndNever(true)} /> Never
+            <label className="inline-flex min-h-11 items-center gap-2 pr-4">
+              <input className="h-4 w-4 min-h-0! shrink-0" type="radio" name="endCondition" checked={endNever} onChange={() => setEndNever(true)} /> Never
             </label>
-            <label>
-              <input type="radio" checked={!endNever} onChange={() => setEndNever(false)} /> On date
-              {!endNever && <Input type="date" min={scheduleId ? nextIssueDate : startDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} />}
+            <label className="inline-flex min-h-11 flex-wrap items-center gap-2">
+              <input className="h-4 w-4 min-h-0! shrink-0" type="radio" name="endCondition" checked={!endNever} onChange={() => setEndNever(false)} /> On date
             </label>
+            {!endNever && <label className="block space-y-1 text-sm">End date<Input className="min-h-11!" type="date" min={scheduleId ? nextIssueDate : startDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>}
           </div>
         </SectionCard>
         <SectionCard className="grid gap-4 sm:grid-cols-2">
           <h2 className="font-semibold sm:col-span-2">Delivery</h2>
-          <label>
-            <input type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> Email each invoice automatically
+          <label className="flex min-h-11 items-center gap-2">
+            <input className="h-4 w-4 min-h-0! shrink-0" type="checkbox" checked={autoSend} onChange={(e) => setAutoSend(e.target.checked)} /> Email each invoice automatically
           </label>
           <p className="text-sm text-[var(--text-secondary)] sm:col-span-2">When on, Lumina emails each new invoice during the daily automation window.</p>
           <label>
             To
-            <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="accounts@northstar.example" />
+            <Input className="min-h-11!" value={to} onChange={(e) => setTo(e.target.value)} placeholder="accounts@northstar.example" />
           </label>
-          <label>CC<Input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="finance@example.com" /></label>
-          <label className="sm:col-span-2">Email subject<Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Optional custom subject" /></label>
-          <p className="text-xs text-[var(--text-secondary)] sm:col-span-2">Separate multiple email addresses with commas. If To is empty, the customer email is used.</p>
+          <label>CC<Input className="min-h-11!" value={cc} onChange={(e) => setCc(e.target.value)} placeholder="finance@example.com" /></label>
+          <label className="sm:col-span-2">Email subject<Input className="min-h-11!" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Optional custom subject" /></label>
+          <p className="text-xs text-[var(--text-secondary)] sm:col-span-2">Separate multiple email addresses with commas. {scheduleId ? "Enter at least one To recipient for this schedule." : "If To is empty, the customer email is used."}</p>
         </SectionCard>
         <p>
           Next invoice: {scheduleId ? nextIssueDate : startDate} · Due {duePreview} · {formatMoney(amount)}
         </p>
-        <Button type="submit" disabled={saving}>
+        <Button size="lg" type="submit" disabled={saving}>
           {saving ? "Saving…" : scheduleId ? "Save changes" : "Save schedule"}
         </Button>
       </form>

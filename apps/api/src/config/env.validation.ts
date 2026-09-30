@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1).optional(),
   TEST_DATABASE_URL: z.string().min(1).optional(),
@@ -38,7 +39,30 @@ export function validateEnv(config: Record<string, unknown>) {
     );
   }
 
+  if (
+    (parsed.NODE_ENV === "production" ||
+      ["preview", "production"].includes(parsed.VERCEL_ENV ?? "")) &&
+    parsed.RESEND_REQUEST_TIMEOUT_MS > 30000
+  ) {
+    throw new Error("RESEND_REQUEST_TIMEOUT_MS must not exceed 30000 in Preview or Production.");
+  }
+
+  const assertCronSecret = () => {
+    const cronSecret = parsed.CRON_SECRET;
+    if (
+      !cronSecret ||
+      cronSecret.trim().length < 32 ||
+      /^(dev|test|example|placeholder|change.?me|replace.?me)/i.test(cronSecret) ||
+      /change.?me|replace.?me|placeholder/i.test(cronSecret)
+    ) {
+      throw new Error(
+        "CRON_SECRET must be at least 32 characters and cannot be a development placeholder in Preview or Production."
+      );
+    }
+  };
+
   if (parsed.NODE_ENV !== "production") {
+    if (["preview", "production"].includes(parsed.VERCEL_ENV ?? "")) assertCronSecret();
     return parsed;
   }
 
@@ -61,9 +85,7 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
   }
 
-  if (parsed.CRON_SECRET!.length < 32 || /^(dev|test|example|placeholder|change.?me)/i.test(parsed.CRON_SECRET!)) {
-    throw new Error("CRON_SECRET must be at least 32 characters and cannot be a development placeholder in production.");
-  }
+  assertCronSecret();
 
   const corsOrigins = parsed.CORS_ORIGINS.split(",")
     .map((origin) => origin.trim())
